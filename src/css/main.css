@@ -976,3 +976,159 @@ select.input-field {
     padding: 20px 14px 32px !important;
   }
 }
+
+/* ---- CV Document Card (หน้า status-all: กรอกใบ CV) ----
+   ซ้าย = ตัวอย่างหน้าเอกสาร (คลิกเปิด Lightbox), ขวา = รายละเอียดเอกสาร */
+.cv-doc {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  min-height: 580px;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.cv-doc-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(239, 246, 255, 0.5);
+  border-right: 1px solid #f1f5f9;
+}
+.cv-doc-thumb {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1.414;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -4px rgba(15, 23, 42, 0.1);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+.cv-doc-thumb:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.1); }
+.cv-doc-thumb:focus-visible { box-shadow: 0 0 0 3px #93c5fd; }
+.cv-doc-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.cv-doc-pdf-fallback { flex-direction: column; align-items: center; justify-content: center; }
+.cv-doc-pdf-fallback .material-icons { font-size: 72px; color: #e11d48; }
+.cv-doc-pdf-fallback p { font-size: 13px; color: #64748b; margin-top: 8px; }
+.cv-doc-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(30, 58, 138, 0.6);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.cv-doc-overlay .material-icons { font-size: 28px; }
+.cv-doc-thumb:hover .cv-doc-overlay, .cv-doc-thumb:focus-visible .cv-doc-overlay { opacity: 1; }
+.cv-doc-caption { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; font-size: 12px; color: #94a3b8; }
+.cv-doc-caption .material-icons { font-size: 15px; }
+
+.cv-doc-info { display: flex; flex-direction: column; justify-content: space-between; padding: 40px; min-width: 0; }
+.cv-doc-main { display: flex; flex-direction: column; gap: 24px; }
+.cv-doc-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cv-doc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cv-doc-badge .material-icons { font-size: 16px; }
+.cv-doc-badge-dot { width: 8px; height: 8px; border-radius: 50%; }
+.cv-doc-badge--pass { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.cv-doc-badge--pass .cv-doc-badge-dot { background: #10b981; }
+.cv-doc-badge--fail { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.cv-doc-badge--fail .cv-doc-badge-dot { background: #ef4444; }
+.cv-doc-badge--wait { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.cv-doc-badge--wait .cv-doc-badge-dot { background: #3b82f6; }
+.cv-doc-code { font-size: 12px; color: #94a3b8; }
+.cv-doc-title { margin: 0; font-size: 20px; font-weight: 700; color: #1e293b; letter-spacing: -0.01em; }
+.cv-doc-title-bar { width: 40px; height: 4px; margin-top: 6px; border-radius: 2px; background: #2563eb; }
+
+.cv-doc-meta { padding: 4px 20px; background: rgba(248, 250, 252, 0.7); border: 1px solid #f1f5f9; border-radius: 12px; }
+.cv-doc-meta-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(226, 232, 240, 0.6); }
+.cv-doc-meta-row:last-child { border-bottom: none; }
+.cv-doc-meta-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  color: #3b82f6;
+}
+.cv-doc-meta-icon .material-icons { font-size: 20px; }
+.cv-doc-meta-icon--rose { background: #fff1f2; color: #f43f5e; }
+.cv-doc-meta-icon--indigo { background: #eef2ff; color: #6366f1; }
+.cv-doc-meta-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cv-doc-meta-label { font-size: 12px; color: #94a3b8; }
+.cv-doc-meta-value { font-size: 14px; font-weight: 600; color: #334155; word-break: break-all; }
+.cv-doc-ext { flex-shrink: 0; padding: 2px 8px; border-radius: 4px; background: #e2e8f0; color: #475569; font-size: 12px; font-weight: 500; }
+
+.cv-doc-note { display: flex; align-items: flex-start; gap: 12px; padding: 20px; background: rgba(239, 246, 255, 0.6); border-left: 4px solid #2563eb; border-radius: 12px; }
+.cv-doc-note > .material-icons { flex-shrink: 0; font-size: 22px; color: #3b82f6; }
+.cv-doc-note-label { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #1e3a8a; }
+.cv-doc-note-text { font-size: 14px; font-style: italic; color: #334155; }
+.cv-doc-note--fail { background: #fef2f2; border-left-color: #dc2626; }
+.cv-doc-note--fail > .material-icons, .cv-doc-note--fail .cv-doc-note-label { color: #b91c1c; }
+
+.cv-doc-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #f1f5f9; }
+.cv-doc-actions-left { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.cv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cv-btn .material-icons { font-size: 18px; }
+.cv-btn-primary { background: #1d4ed8; color: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08); }
+.cv-btn-primary:hover { background: #1e40af; }
+.cv-btn-outline { background: #fff; color: #334155; border-color: #cbd5e1; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); }
+.cv-btn-outline:hover { background: #f8fafc; }
+.cv-btn-ghost { padding: 8px 12px; background: transparent; color: #64748b; }
+.cv-btn-ghost:hover { color: #1e293b; }
+
+@media (max-width: 1024px) {
+  .cv-doc { grid-template-columns: 1fr; min-height: 0; }
+  .cv-doc-preview { border-right: none; border-bottom: 1px solid #f1f5f9; }
+  .cv-doc-info { padding: 32px; }
+}
+@media (max-width: 640px) {
+  .cv-doc-preview, .cv-doc-info { padding: 20px; }
+}
+
+/* Loading state ของการ์ด CV */
+.cv-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 160px; font-size: 14px; color: #94a3b8; }
+.cv-loading-icon { font-size: 20px; animation: cv-spin 1s linear infinite; }
+@keyframes cv-spin { to { transform: rotate(360deg); } }

@@ -13,9 +13,8 @@ let statusAllDataReady = false;
 
 // โหลดข้อมูลทั้งหมดเข้าสู่ทั้ง 6 Section
 async function initPage() {
-  await loadProfile();
-  await loadTrainings();
-  await loadCv();
+  // โหลด 3 ส่วนแรกพร้อมกัน (ไม่ขึ้นต่อกัน) → การ์ด CV แสดงเร็วขึ้นตอนรีเฟรช ไม่ต้องรอ profile/trainings
+  await Promise.all([loadProfile(), loadTrainings(), loadCv()]);
   await loadCompanies();
   await loadSubmissions();
   await loadPlacement();
@@ -187,6 +186,8 @@ function applyInternshipLock(lock) {
   isInternshipLocked = Boolean(lock && lock.locked);
   const cvInputEl = document.getElementById('cv-upload-input') as HTMLInputElement | null;
   if (cvInputEl) cvInputEl.disabled = isInternshipLocked;
+  const cvChangeBtnEl = document.getElementById('cv-change-btn');
+  if (cvChangeBtnEl) cvChangeBtnEl.style.display = isInternshipLocked ? 'none' : '';
 
   let banner = document.getElementById('internship-lock-banner');
   if (!isInternshipLocked) {
@@ -367,15 +368,32 @@ async function loadCv() {
       currentCvData = data.cv;
       if (data.cv.fileUrl) {
         renderCvPreview(data.cv.fileUrl, data.cv.fileName, data.cv.status, data.cv.note);
+      } else {
+        showCvUploadZone();
       }
     } else {
       currentCvData = null;
+      showCvUploadZone();
     }
   } catch (err) {
     console.error('Load CV error:', err);
+    // โหลดไม่ได้และยังไม่เคยแสดง CV → ให้กลับไปที่ช่องอัปโหลด
+    if (!currentCvUrl) showCvUploadZone();
   } finally {
+    const loadingEl = document.getElementById('cv-loading');
+    if (loadingEl) loadingEl.style.display = 'none';
     checkPlacementUnlock();
   }
+}
+
+// แสดงช่องอัปโหลด (ยังไม่มี CV)
+function showCvUploadZone() {
+  const zone = document.getElementById('cv-upload-zone');
+  const content = document.getElementById('cv-upload-content');
+  const preview = document.getElementById('cv-preview-container');
+  if (zone) zone.style.display = 'flex';
+  if (content) content.style.display = 'flex';
+  if (preview) preview.style.display = 'none';
 }
 
 const cvInput = document.getElementById('cv-upload-input');
@@ -387,32 +405,145 @@ const cvPdfName = document.getElementById('cv-pdf-name');
 const cvStatusBadge = document.getElementById('cv-status-badge');
 let currentCvUrl = null;
 
+function formatFileSize(bytes) {
+  if (!bytes || bytes <= 0) return '-';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatThaiDateTime(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '-';
+  const date = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time} น.`;
+}
+
+// ลิงก์ดาวน์โหลด: Cloudinary ใส่ fl_attachment ให้เบราว์เซอร์ดาวน์โหลดแทนการเปิดดู
+function getCvDownloadUrl(fileUrl) {
+  if (fileUrl.includes('cloudinary.com') && fileUrl.includes('/upload/')) {
+    return fileUrl.replace('/upload/', '/upload/fl_attachment/');
+  }
+  return fileUrl;
+}
+
+// ขนาดไฟล์ไม่ได้เก็บใน DB → ถาม Content-Length จาก URL ไฟล์ (ถ้าไม่ได้ก็แสดง "-")
+async function loadCvFileSize(fileUrl) {
+  const sizeEl = document.getElementById('cv-file-size');
+  if (!sizeEl) return;
+  sizeEl.textContent = '-';
+  try {
+    const res = await fetch(fileUrl, { method: 'HEAD' });
+    if (!res.ok || fileUrl !== currentCvUrl) return;
+    const len = Number(res.headers.get('content-length'));
+    if (len > 0) sizeEl.textContent = formatFileSize(len);
+  } catch {
+    // ignore (CORS / network)
+  }
+}
+
+// ชื่อไฟล์ภาษาไทยที่ถูกบันทึกแบบ latin1 (เช่น "à¹\u0081à¸...") → แปลงกลับเป็น UTF-8
+function fixMojibakeName(name) {
+  if (!name || !/[À-ÿ]/.test(name)) return name;
+  try {
+    const bytes = Uint8Array.from(name, (c) => c.charCodeAt(0) & 0xff);
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return name;
+  }
+}
+
+function renderCvDetails(cv, fileUrl, rawFileName, status, note) {
+  const fileName = fixMojibakeName(rawFileName);
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  const ext = ((fileName || fileUrl).split('?')[0].split('.').pop() || '').toUpperCase();
+  setText('cv-file-ext', ext && ext.length <= 5 ? ext : 'FILE');
+  setText('cv-pdf-name', fileName || 'CV');
+
+  const uploadedAt = cv && cv.uploadedAt ? new Date(cv.uploadedAt) : null;
+  if (cv && cv.id) {
+    const year = uploadedAt && !isNaN(uploadedAt.getTime()) ? uploadedAt.getFullYear() + 543 : '';
+    setText('cv-doc-code', `CV-${year ? year + '-' : ''}${String(cv.id).padStart(4, '0')}`);
+  } else {
+    setText('cv-doc-code', '-');
+  }
+  setText('cv-uploaded-at', formatThaiDateTime(cv && cv.uploadedAt));
+
+  if (status === 'PENDING' || !status) {
+    setText('cv-reviewer', 'รออาจารย์ตรวจ');
+  } else if (cv && cv.reviewerName) {
+    setText('cv-reviewer', cv.reviewerRole ? `${cv.reviewerName} (${cv.reviewerRole})` : cv.reviewerName);
+  } else {
+    setText('cv-reviewer', '-');
+  }
+
+  const noteBox = document.getElementById('cv-note-box');
+  if (noteBox) {
+    const noteText = status === 'REJECTED' ? (note || 'กรุณาอัปโหลดใหม่') : note;
+    if (noteText) {
+      noteBox.style.display = 'flex';
+      noteBox.classList.toggle('cv-doc-note--fail', status === 'REJECTED');
+      setText('cv-note-label', status === 'REJECTED' ? 'เหตุผลที่ไม่ผ่าน / สิ่งที่ต้องแก้ไข:' : 'ข้อเสนอแนะจากผู้ตรวจ:');
+      setText('cv-note-text', `"${noteText}"`);
+    } else {
+      noteBox.style.display = 'none';
+    }
+  }
+
+  const downloadBtn = document.getElementById('cv-download-btn') as HTMLAnchorElement | null;
+  if (downloadBtn) {
+    downloadBtn.href = getCvDownloadUrl(fileUrl);
+    downloadBtn.setAttribute('download', fileName || 'CV');
+  }
+
+  loadCvFileSize(fileUrl);
+}
+
 function renderCvPreview(fileUrl, fileName, status, note) {
   currentCvUrl = fileUrl;
   cvUploadContent.style.display = 'none';
-  cvPreviewContainer.style.display = 'flex';
-  const cvChangeBtn = document.getElementById('cv-change-btn');
-  if (cvChangeBtn) cvChangeBtn.style.display = 'inline-flex';
+  const cvUploadZone = document.getElementById('cv-upload-zone');
+  if (cvUploadZone) cvUploadZone.style.display = 'none';
+  cvPreviewContainer.style.display = 'block';
 
   // สถานะ CV: CVตรวจแล้ว / ผ่าน & รอผล & CVไม่ผ่าน / ทำใหม่
   if (status === 'APPROVED') {
-    cvStatusBadge.textContent = 'สถานะ: ✓ CVตรวจแล้ว / ผ่าน';
-    cvStatusBadge.className = 'status-pass';
+    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">verified</span> ตรวจแล้ว • ผ่าน';
+    cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--pass';
   } else if (status === 'REJECTED') {
-    cvStatusBadge.innerHTML = `<div>สถานะ: ✗ CVไม่ผ่าน / ทำใหม่</div><div style="margin-top: 8px;">หมายเหตุ : <span style="color: #ff2828ff;">${note || 'กรุณาอัปโหลดใหม่'}</span></div>`;
-    cvStatusBadge.className = 'status-fail';
+    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">cancel</span> ไม่ผ่าน • ทำใหม่';
+    cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--fail';
   } else {
-    cvStatusBadge.textContent = 'สถานะ: ☐ รอผล (รออาจารย์ตรวจ)';
-    cvStatusBadge.className = 'status-wait';
+    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">schedule</span> รอผล • รออาจารย์ตรวจ';
+    cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--wait';
   }
+
+  renderCvDetails(currentCvData, fileUrl, fileName, status, note);
 
   const isPdf = fileUrl.toLowerCase().endsWith('.pdf') || (fileName && fileName.toLowerCase().endsWith('.pdf'));
 
   if (isPdf) {
-    cvPdfName.textContent = fileName || 'CV.pdf';
-    cvPreviewImg.style.display = 'none';
-    cvPreviewPdf.style.display = 'flex';
+    const showPdfIcon = () => {
+      cvPreviewImg.style.display = 'none';
+      cvPreviewPdf.style.display = 'flex';
+    };
+    if (fileUrl.includes('cloudinary.com')) {
+      // Cloudinary แปลงหน้าแรกของ PDF เป็นรูป .jpg ให้ → แสดงเป็นรูป ถ้าโหลดไม่ได้ค่อยกลับไปใช้ไอคอน PDF
+      cvPreviewImg.onerror = showPdfIcon;
+      cvPreviewImg.src = fileUrl.replace(/\.pdf$/i, '.jpg');
+      cvPreviewImg.style.display = 'block';
+      cvPreviewPdf.style.display = 'none';
+    } else {
+      showPdfIcon();
+    }
   } else {
+    cvPreviewImg.onerror = null;
     cvPreviewImg.src = fileUrl;
     cvPreviewImg.style.display = 'block';
     cvPreviewPdf.style.display = 'none';
@@ -455,6 +586,8 @@ window.openCvModal = function() {
   const modalPdf = document.getElementById('cv-modal-pdf');
 
   modal.style.display = 'flex';
+  const openLink = document.getElementById('cv-modal-open') as HTMLAnchorElement | null;
+  if (openLink) openLink.href = currentCvUrl;
   const isPdf = currentCvUrl.toLowerCase().endsWith('.pdf') || currentCvUrl.includes('.pdf');
 
   if (isPdf) {
@@ -478,6 +611,13 @@ window.openCvModal = function() {
 window.closeCvModal = function() {
   document.getElementById('cv-modal').style.display = 'none';
 };
+
+// กด Esc เพื่อปิด Lightbox
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const modal = document.getElementById('cv-modal');
+  if (modal && modal.style.display !== 'none') window.closeCvModal();
+});
 
 // 4. โหลด Checklist บริษัท
 async function loadCompanies() {

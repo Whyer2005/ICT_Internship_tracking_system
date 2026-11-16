@@ -450,9 +450,29 @@ router.get("/cv", async (req: Request, res: Response) => {
       return res.json({ success: true, cv: null });
     }
     const internshipLock = await getStudentInternshipLock(student);
+
+    // ชื่อ/บทบาทผู้ตรวจ CV (reviewedById = User.id ของอาจารย์/เจ้าหน้าที่)
+    let reviewerName: string | null = null;
+    let reviewerRole: string | null = null;
+    if (student.cv?.reviewedById) {
+      const reviewer = await prisma.staff.findUnique({
+        where: { userId: student.cv.reviewedById },
+        select: { name: true, isAdvisor: true, isCourseAdmin: true, isSupervisor: true, isStaff: true },
+      });
+      if (reviewer) {
+        reviewerName = reviewer.name;
+        const roles: string[] = [];
+        if (reviewer.isAdvisor) roles.push("อาจารย์ที่ปรึกษา");
+        if (reviewer.isCourseAdmin) roles.push("อาจารย์ประจำวิชา");
+        if (reviewer.isSupervisor) roles.push("อาจารย์นิเทศก์");
+        if (reviewer.isStaff) roles.push("เจ้าหน้าที่");
+        reviewerRole = roles.length ? roles.join(" / ") : null;
+      }
+    }
+
     res.json({
       success: true,
-      cv: student.cv || null,
+      cv: student.cv ? { ...student.cv, reviewerName, reviewerRole } : null,
       internshipLock: { locked: internshipLock.locked, message: internshipLock.message },
     });
   } catch (err) {
@@ -478,12 +498,16 @@ router.post("/cv", upload.single("cv"), async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "กรุณาเลือกไฟล์ CV" });
     }
 
+    // multer อ่านชื่อไฟล์เป็น latin1 → แปลงกลับเป็น UTF-8 เพื่อให้ชื่อภาษาไทยไม่เพี้ยน
+    let fileName = req.file.originalname;
+    const utf8Name = Buffer.from(fileName, "latin1").toString("utf8");
+    if (!utf8Name.includes("�")) fileName = utf8Name;
+
     const fileUrl = await uploadToCloudinary(
       req.file.buffer,
-      req.file.originalname,
+      fileName,
       "cv"
     );
-    const fileName = req.file.originalname;
 
     const cv = await prisma.studentCV.upsert({
       where: { studentId: student.id },
