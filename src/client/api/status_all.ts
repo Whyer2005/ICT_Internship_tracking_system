@@ -675,43 +675,10 @@ async function loadSubmissions() {
     const accData = accRes ? await accRes.json().catch(() => null) : null;
     currentAcceptanceData = accData?.success ? accData.acceptance : null;
 
-    const tbody = document.getElementById('submissions-table-body');
-    tbody.innerHTML = '';
-
     if (data.success && data.approvedCompanies) {
       currentSubmissionsData = data.approvedCompanies;
-
-      if (data.approvedCompanies.length > 0) {
-        data.approvedCompanies.forEach((comp, idx) => {
-          const currentStatus = (comp.submission && comp.submission.status) ? comp.submission.status : 'NOT_SUBMITTED';
-
-          // ตัวเลือกสถานะการยื่น:
-          // 1. ยังไม่ได้ยื่น (NOT_SUBMITTED)
-          // 2. ยื่นแล้ว รอสัมภาษณ์ (SUBMITTED_WAITING)
-          // 3. สัมภาษณ์แล้ว รอผล (INTERVIEWED_PENDING)
-          // 4. สัมภาษณ์ผ่านแล้ว (INTERVIEW_PASSED)
-          // 5. สัมภาษณ์ไม่ผ่าน ยื่นเพิ่มแล้ว (INTERVIEW_FAILED_REAPPLIED)
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${idx + 1}</td>
-            <td>${comp.name}</td>
-            <td>
-              <select class="input-field" onchange="updateSubmissionStatus(${comp.id}, this.value)">
-                <option value="NOT_SUBMITTED" ${currentStatus === 'NOT_SUBMITTED' ? 'selected' : ''}>ยังไม่ได้ยื่น</option>
-                <option value="SUBMITTED_WAITING" ${currentStatus === 'SUBMITTED_WAITING' ? 'selected' : ''}>ยื่นแล้ว รอสัมภาษณ์</option>
-                <option value="INTERVIEWED_PENDING" ${currentStatus === 'INTERVIEWED_PENDING' ? 'selected' : ''}>สัมภาษณ์แล้ว รอผล</option>
-                <option value="INTERVIEW_PASSED" ${currentStatus === 'INTERVIEW_PASSED' ? 'selected' : ''}>สัมภาษณ์ผ่านแล้ว</option>
-                <option value="INTERVIEW_FAILED_REAPPLIED" ${currentStatus === 'INTERVIEW_FAILED_REAPPLIED' ? 'selected' : ''}>สัมภาษณ์ไม่ผ่าน ยื่นเพิ่มแล้ว</option>
-              </select>
-            </td>
-            <td>${renderStudentAcceptanceCell()}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-      } else {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666; padding: 20px;">ยังไม่มีบริษัทที่ผ่านการอนุมัติ Checklist (จะแสดงรายชื่อเมื่ออาจารย์ตรวจให้ผ่าน)</td></tr>';
-      }
     }
+    renderSubmissionTables();
     renderStudentAcceptanceCard();
   } catch (err) {
     console.error('Load submissions error:', err);
@@ -719,6 +686,517 @@ async function loadSubmissions() {
     checkPlacementUnlock();
   }
 }
+
+// ตัวเลือกสถานะการยื่น + สี (tone) ของ pill
+const SUBMISSION_STATUS_OPTIONS = [
+  { value: 'NOT_SUBMITTED', label: 'ยังไม่ได้ยื่น', tone: 'gray' },
+  { value: 'SUBMITTED_WAITING', label: 'ยื่นแล้ว รอสัมภาษณ์', tone: 'blue' },
+  { value: 'INTERVIEWED_PENDING', label: 'สัมภาษณ์แล้ว รอผล', tone: 'amber' },
+  { value: 'INTERVIEW_PASSED', label: 'สัมภาษณ์ผ่านแล้ว', tone: 'green' },
+  { value: 'INTERVIEW_FAILED_REAPPLIED', label: 'สัมภาษณ์ไม่ผ่าน ยื่นเพิ่มแล้ว', tone: 'red' },
+];
+
+function getSubmissionStatus(comp) {
+  return (comp.submission && comp.submission.status) ? comp.submission.status : 'NOT_SUBMITTED';
+}
+
+function getSubmissionTone(status) {
+  const opt = SUBMISSION_STATUS_OPTIONS.find((o) => o.value === status);
+  return opt ? opt.tone : 'gray';
+}
+
+function formatSubmissionDate(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// แปลงวันที่เป็น YYYY-MM-DD ตามเวลาเครื่อง (ใช้กับ <input type="date">)
+function toDateInputValue(value) {
+  const d = value ? new Date(value) : new Date();
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// pill สถานะ: ปุ่มเปิดเมนูเลือกสถานะแบบกำหนดเอง (แทน <select> ของเบราว์เซอร์)
+function renderSubmissionStatusPill(comp) {
+  const status = getSubmissionStatus(comp);
+  const opt = SUBMISSION_STATUS_OPTIONS.find((o) => o.value === status) || SUBMISSION_STATUS_OPTIONS[0];
+  return `
+    <span class="sub-status-wrap">
+      <button type="button" class="sub-status sub-status--${opt.tone}" title="คลิกเพื่อเปลี่ยนสถานะ"
+        aria-haspopup="listbox" aria-expanded="false"
+        aria-label="สถานะการยื่น ${escapeStudentHtml(comp.name)}: ${opt.label}"
+        onclick="openSubmissionStatusMenu(${comp.id}, this)">
+        <span class="sub-status-dot"></span>
+        <span class="sub-status-label">${opt.label}</span>
+        <span class="material-icons sub-status-caret">expand_more</span>
+      </button>
+    </span>`;
+}
+
+// ---- เมนูเลือกสถานะ: ลอย (position: fixed) ใต้ pill — ไม่ถูกกรอบการ์ด/ตารางตัด และแถวไม่ขยาย
+// หน้านิสิตใช้ CSS zoom (.student-scale) ทำให้หน่วยของ top/left กับ getBoundingClientRect
+// อาจไม่ตรงกัน (ต่างกันตามเวอร์ชันเบราว์เซอร์) จึงวัดค่าจริงก่อน แล้วค่อยวางตำแหน่ง ----
+// allowFlip = false → วางใต้ปุ่มเสมอ; คืนค่าจำนวน px ที่ล้นขอบล่างจอ (0 = ไม่ล้น)
+function positionSubmissionStatusMenu(menu: HTMLElement, btn: HTMLElement, allowFlip = true): number {
+  const s = menu.style;
+  s.maxHeight = '';
+  s.bottom = 'auto';
+  s.top = '0px';
+  s.left = '0px';
+  const r0 = menu.getBoundingClientRect();
+  s.top = '100px';
+  s.left = '100px';
+  const r1 = menu.getBoundingClientRect();
+  const sy = (r1.top - r0.top) / 100 || 1;
+  const sx = (r1.left - r0.left) / 100 || 1;
+  // ขอบล่างของจอในหน่วยเดียวกับ getBoundingClientRect
+  s.top = 'auto';
+  s.bottom = '0px';
+  const viewportBottom = menu.getBoundingClientRect().bottom;
+  s.bottom = 'auto';
+
+  const b = btn.getBoundingClientRect();
+  const h = r0.height;
+  let targetTop = b.bottom + 6;
+  // ที่ว่างด้านล่างไม่พอ → เปิดขึ้นด้านบน pill
+  if (allowFlip && targetTop + h > viewportBottom - 8 && b.top - 6 - h >= r0.top) {
+    targetTop = b.top - 6 - h;
+  }
+  s.top = `${(targetTop - r0.top) / sy}px`;
+  s.left = `${(b.left - r0.left) / sx}px`;
+  // วางใต้ปุ่มเสมอแต่ล้นขอบล่างจอ → จำกัดความสูงให้พอดีจอ แล้วเลื่อนดูด้านใน
+  const available = viewportBottom - 8 - targetTop;
+  if (!allowFlip && h > available) {
+    s.maxHeight = `${Math.max(160, available) / sy}px`;
+  }
+  return Math.max(0, targetTop + h - (viewportBottom - 8));
+}
+let submissionStatusMenuEl: HTMLElement | null = null;
+let submissionStatusMenuAnchor: HTMLElement | null = null;
+
+function closeSubmissionStatusMenu() {
+  if (submissionStatusMenuEl) submissionStatusMenuEl.remove();
+  if (submissionStatusMenuAnchor) submissionStatusMenuAnchor.setAttribute('aria-expanded', 'false');
+  submissionStatusMenuEl = null;
+  submissionStatusMenuAnchor = null;
+}
+
+window.openSubmissionStatusMenu = function(companyId, btn) {
+  const wasOpenHere = submissionStatusMenuAnchor === btn;
+  closeSubmissionStatusMenu();
+  closeSubmissionDatePicker();
+  if (wasOpenHere) return;
+
+  const comp = (currentSubmissionsData || []).find((c) => c.id === companyId);
+  const current = comp ? getSubmissionStatus(comp) : 'NOT_SUBMITTED';
+
+  const menu = document.createElement('div');
+  menu.className = 'sub-status-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.innerHTML = `
+    <div class="sub-status-menu-title">เลือกสถานะใหม่</div>
+    ${SUBMISSION_STATUS_OPTIONS.map((o) => `
+      <button type="button" role="option" class="sub-status-option sub-status-option--${o.tone}${o.value === current ? ' is-current' : ''}"
+        aria-selected="${o.value === current}" data-value="${o.value}">
+        <span class="sub-status-dot"></span>
+        <span>${o.label}</span>
+      </button>`).join('')}`;
+  menu.addEventListener('click', (e) => {
+    const optBtn = (e.target as HTMLElement).closest('.sub-status-option') as HTMLElement | null;
+    if (!optBtn) return;
+    const value = optBtn.dataset.value;
+    closeSubmissionStatusMenu();
+    if (value && value !== current) window.onSubmissionStatusChange(companyId, value, btn);
+  });
+  menu.addEventListener('keydown', (e) => {
+    const items = Array.from(menu.querySelectorAll('.sub-status-option')) as HTMLElement[];
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSubmissionStatusMenu(); btn.focus(); }
+  });
+
+  btn.parentElement.appendChild(menu);
+  submissionStatusMenuEl = menu;
+  submissionStatusMenuAnchor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  positionSubmissionStatusMenu(menu, btn);
+  const currentItem = menu.querySelector('.is-current') as HTMLElement | null;
+  (currentItem || (menu.querySelector('.sub-status-option') as HTMLElement | null))?.focus({ preventScroll: true });
+};
+
+document.addEventListener('mousedown', (e) => {
+  if (!submissionStatusMenuEl) return;
+  const t = e.target as Node;
+  if (submissionStatusMenuEl.contains(t) || (submissionStatusMenuAnchor && submissionStatusMenuAnchor.contains(t))) return;
+  closeSubmissionStatusMenu();
+});
+// เมนูเป็น position: fixed → เลื่อนหน้า/ย่อขยายจอแล้วปิด เพื่อไม่ให้ค้างผิดที่
+window.addEventListener('resize', closeSubmissionStatusMenu);
+window.addEventListener('scroll', (e) => {
+  if (submissionStatusMenuEl && !submissionStatusMenuEl.contains(e.target as Node)) closeSubmissionStatusMenu();
+}, true);
+
+// วันที่ใต้ชื่อบริษัท: ใช้วันที่ตั้งจากปฏิทิน (submission.updatedAt) ถ้ามี, ไม่งั้นใช้วันที่อนุมัติ Checklist
+function getCompanySubDate(comp) {
+  const setDate = getSubmissionStatus(comp) !== 'NOT_SUBMITTED' && comp.submission && comp.submission.updatedAt;
+  return setDate || comp.reviewedAt || null;
+}
+
+function renderSubmissionCompanyCell(comp) {
+  return `
+    <div class="sub-company">
+      <div class="sub-company-text">
+        <span class="sub-company-name">${escapeStudentHtml(comp.name)}</span>
+        <span class="sub-company-sub">Checklist ผ่านการอนุมัติ${getCompanySubDate(comp) ? ` · ${formatSubmissionDate(getCompanySubDate(comp))}` : ''}</span>
+      </div>
+    </div>`;
+}
+
+// วันสุดท้ายที่ตั้งล่วงหน้าได้: อีก 1 เดือนจากวันนี้ (31 ม.ค. → สิ้นเดือน ก.พ.)
+function getMaxScheduleDate() {
+  const now = new Date();
+  const daysInNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate();
+  return toDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, Math.min(now.getDate(), daysInNextMonth)));
+}
+
+function renderSubmissionDateCell(comp) {
+  const status = getSubmissionStatus(comp);
+  const updatedAt = comp.submission && comp.submission.updatedAt;
+  if (status === 'NOT_SUBMITTED' || !updatedAt) {
+    return '<span class="sub-date-empty">— <span class="sub-chip sub-chip--muted">ยังไม่ได้อัปเดต</span></span>';
+  }
+  const d = new Date(updatedAt);
+  const timeText = isNaN(d.getTime()) ? '' : ` · ${pad2(d.getHours())}:${pad2(d.getMinutes())} น.`;
+  // คลิกเพื่อเปิดปฏิทินนัดหมายวันสัมภาษณ์
+  return `
+    <span class="sub-date-picker">
+      <button type="button" class="sub-date" title="คลิกเพื่อนัดหมายวันสัมภาษณ์" aria-haspopup="dialog"
+        onclick="openSubmissionDatePicker(${comp.id}, this)">
+        <span class="material-icons">event</span>${formatSubmissionDate(updatedAt)}${timeText}
+        <span class="material-icons sub-date-edit">edit_calendar</span>
+      </button>
+    </span>`;
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+// ---- ปฏิทินนัดหมายวันสัมภาษณ์ (popover) ----
+// หมายเหตุ: รูปแบบ Onsite/Online และลิงก์/สถานที่ ยังเป็นแค่หน้าตา (ยังไม่มีคอลัมน์ในฐานข้อมูล)
+// บันทึกจริงเฉพาะวันที่ + เวลา (เก็บใน submission.updatedAt)
+const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const THAI_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+let datePickerEl: HTMLElement | null = null;
+let datePickerAnchor: HTMLElement | null = null;
+let datePickerState: any = null;
+
+function closeSubmissionDatePicker() {
+  if (datePickerEl) datePickerEl.remove();
+  if (datePickerAnchor) datePickerAnchor.setAttribute('aria-expanded', 'false');
+  datePickerEl = null;
+  datePickerAnchor = null;
+  datePickerState = null;
+}
+
+function renderSubmissionDatePicker() {
+  const el = datePickerEl;
+  const st = datePickerState;
+  if (!el || !st) return;
+  const minYmd = toDateInputValue(null);
+  const maxYmd = getMaxScheduleDate();
+  const minMonth = minYmd.slice(0, 7);
+  const maxMonth = maxYmd.slice(0, 7);
+  const viewKey = `${st.viewYear}-${pad2(st.viewMonth + 1)}`;
+
+  const first = new Date(st.viewYear, st.viewMonth, 1);
+  const daysInMonth = new Date(st.viewYear, st.viewMonth + 1, 0).getDate();
+  const rows = Math.ceil((first.getDay() + daysInMonth) / 7);
+  let cells = '';
+  for (let i = 0; i < rows * 7; i++) {
+    const day = new Date(st.viewYear, st.viewMonth, 1 - first.getDay() + i);
+    const ymd = toDateInputValue(day);
+    const outside = day.getMonth() !== st.viewMonth;
+    const disabled = ymd < minYmd || ymd > maxYmd;
+    const cls = ['sub-cal-day'];
+    if (outside) cls.push('is-outside');
+    if (ymd === minYmd) cls.push('is-today');
+    if (ymd === st.selected) cls.push('is-selected');
+    cells += `<button type="button" class="${cls.join(' ')}" data-date="${ymd}"${disabled ? ' disabled' : ''}
+      aria-label="${day.getDate()} ${THAI_MONTHS[day.getMonth()]} ${day.getFullYear() + 543}"
+      aria-pressed="${ymd === st.selected}">${day.getDate()}</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="sub-cal-head">
+      <span class="material-icons">event</span>
+      <h4>นัดหมายวันสัมภาษณ์</h4>
+    </div>
+    <div class="sub-cal-nav">
+      <button type="button" class="sub-cal-nav-btn" data-action="prev" aria-label="เดือนก่อนหน้า"${viewKey <= minMonth ? ' disabled' : ''}><span class="material-icons">chevron_left</span></button>
+      <span class="sub-cal-month">${THAI_MONTHS[st.viewMonth]} ${st.viewYear + 543}</span>
+      <button type="button" class="sub-cal-nav-btn" data-action="next" aria-label="เดือนถัดไป"${viewKey >= maxMonth ? ' disabled' : ''}><span class="material-icons">chevron_right</span></button>
+    </div>
+    <div class="sub-cal-grid">
+      ${THAI_WEEKDAYS.map((w) => `<span class="sub-cal-weekday">${w}</span>`).join('')}
+      ${cells}
+    </div>
+    <div class="sub-cal-divider"></div>
+    <div class="sub-cal-row">
+      <span class="sub-cal-label"><span class="material-icons">schedule</span> เวลาสัมภาษณ์:</span>
+      <span class="sub-cal-time">
+        <input type="text" inputmode="numeric" maxlength="2" class="sub-cal-time-input" data-field="hh" value="${st.hh}" aria-label="ชั่วโมง">
+        <span>:</span>
+        <input type="text" inputmode="numeric" maxlength="2" class="sub-cal-time-input" data-field="mm" value="${st.mm}" aria-label="นาที">
+        <span class="sub-cal-time-unit">น.</span>
+      </span>
+    </div>
+    <div class="sub-cal-row">
+      <span class="sub-cal-label">รูปแบบการสัมภาษณ์:</span>
+      <span class="sub-cal-toggle" role="group" aria-label="รูปแบบการสัมภาษณ์">
+        <button type="button" data-mode="ONSITE" class="${st.mode === 'ONSITE' ? 'is-active' : ''}" aria-pressed="${st.mode === 'ONSITE'}">Onsite</button>
+        <button type="button" data-mode="ONLINE" class="${st.mode === 'ONLINE' ? 'is-active' : ''}" aria-pressed="${st.mode === 'ONLINE'}">Online</button>
+      </span>
+    </div>
+    <label class="sub-cal-field">
+      <span class="sub-cal-field-label">${st.mode === 'ONLINE' ? 'ลิงก์การประชุม / สถานที่:' : 'สถานที่สัมภาษณ์:'}</span>
+      <input type="text" class="sub-cal-location" data-field="location" value="${escapeStudentHtml(st.location)}"
+        placeholder="${st.mode === 'ONLINE' ? 'Google Meet: meet.google.com/abc-defg-hij' : 'เช่น ชั้น 5 อาคาร A'}">
+    </label>
+    <p class="sub-cal-error" role="alert"></p>
+    <div class="sub-cal-actions">
+      <button type="button" class="sub-cal-cancel" data-action="cancel">ยกเลิก</button>
+      <button type="button" class="sub-cal-save" data-action="save"${st.selected ? '' : ' disabled'}>บันทึก</button>
+    </div>`;
+  // ปฏิทินเปิดใต้ช่องวันที่เสมอ (สูงเกินจอ → จำกัดความสูงพอดีจอ + เลื่อนด้านใน)
+  if (datePickerAnchor) positionSubmissionStatusMenu(el, datePickerAnchor, false);
+}
+
+window.openSubmissionDatePicker = function(companyId, btn) {
+  const wasOpenHere = datePickerAnchor === btn;
+  closeSubmissionDatePicker();
+  closeSubmissionStatusMenu();
+  if (wasOpenHere) return;
+
+  const comp = (currentSubmissionsData || []).find((c) => c.id === companyId);
+  const current = comp && comp.submission && comp.submission.updatedAt ? new Date(comp.submission.updatedAt) : null;
+  const currentYmd = current && !isNaN(current.getTime()) ? toDateInputValue(current) : '';
+  const inRange = currentYmd && currentYmd >= toDateInputValue(null) && currentYmd <= getMaxScheduleDate();
+  const view = inRange ? current : new Date();
+
+  datePickerState = {
+    companyId,
+    viewYear: view.getFullYear(),
+    viewMonth: view.getMonth(),
+    selected: inRange ? currentYmd : '',
+    hh: inRange ? pad2(current.getHours()) : '10',
+    mm: inRange ? pad2(current.getMinutes()) : '00',
+    mode: 'ONLINE',
+    location: '',
+  };
+
+  const el = document.createElement('div');
+  el.className = 'sub-cal';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'นัดหมายวันสัมภาษณ์');
+
+  el.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    const st = datePickerState;
+    if (!st) return;
+    const dayBtn = t.closest('.sub-cal-day') as HTMLButtonElement | null;
+    const modeBtn = t.closest('[data-mode]') as HTMLElement | null;
+    const actionBtn = t.closest('[data-action]') as HTMLButtonElement | null;
+    if (dayBtn && !dayBtn.disabled) {
+      st.selected = dayBtn.dataset.date;
+      const picked = new Date(`${st.selected}T00:00:00`);
+      st.viewYear = picked.getFullYear();
+      st.viewMonth = picked.getMonth();
+      renderSubmissionDatePicker();
+    } else if (modeBtn) {
+      st.mode = modeBtn.dataset.mode;
+      renderSubmissionDatePicker();
+    } else if (actionBtn && !actionBtn.disabled) {
+      const action = actionBtn.dataset.action;
+      if (action === 'prev' || action === 'next') {
+        const m = new Date(st.viewYear, st.viewMonth + (action === 'prev' ? -1 : 1), 1);
+        st.viewYear = m.getFullYear();
+        st.viewMonth = m.getMonth();
+        renderSubmissionDatePicker();
+      } else if (action === 'cancel') {
+        const anchor = datePickerAnchor;
+        closeSubmissionDatePicker();
+        anchor?.focus();
+      } else if (action === 'save') {
+        const hh = Number(st.hh);
+        const mm = Number(st.mm);
+        const errEl = el.querySelector('.sub-cal-error');
+        if (!/^\d{1,2}$/.test(st.hh) || !/^\d{1,2}$/.test(st.mm) || hh > 23 || mm > 59) {
+          if (errEl) errEl.textContent = 'กรุณากรอกเวลาให้ถูกต้อง (00:00 - 23:59)';
+          return;
+        }
+        const anchor = datePickerAnchor;
+        const wrap = anchor && anchor.closest('.sub-date-picker');
+        if (wrap) wrap.classList.add('is-saving');
+        const { companyId: id, selected } = st;
+        closeSubmissionDatePicker();
+        window.updateSubmissionStatus(id, undefined, selected, `${pad2(hh)}:${pad2(mm)}`);
+      }
+    }
+  });
+
+  el.addEventListener('input', (e) => {
+    const t = e.target as HTMLInputElement;
+    const st = datePickerState;
+    if (!st || !t.dataset.field) return;
+    if (t.dataset.field === 'hh' || t.dataset.field === 'mm') {
+      t.value = t.value.replace(/\D/g, '').slice(0, 2);
+    }
+    st[t.dataset.field] = t.value;
+  });
+
+  el.addEventListener('focusout', (e) => {
+    const t = e.target as HTMLInputElement;
+    const st = datePickerState;
+    if (st && (t.dataset.field === 'hh' || t.dataset.field === 'mm') && t.value) {
+      t.value = pad2(t.value);
+      st[t.dataset.field] = t.value;
+    }
+  });
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      const anchor = datePickerAnchor;
+      closeSubmissionDatePicker();
+      anchor?.focus();
+    }
+  });
+
+  btn.parentElement.appendChild(el);
+  datePickerEl = el;
+  datePickerAnchor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  renderSubmissionDatePicker();
+  (el.querySelector('.is-selected, .sub-cal-day:not([disabled])') as HTMLElement | null)?.focus({ preventScroll: true });
+};
+
+document.addEventListener('mousedown', (e) => {
+  if (!datePickerEl) return;
+  const t = e.target as Node;
+  if (datePickerEl.contains(t) || (datePickerAnchor && datePickerAnchor.contains(t))) return;
+  closeSubmissionDatePicker();
+});
+window.addEventListener('resize', closeSubmissionDatePicker);
+window.addEventListener('scroll', (e) => {
+  if (datePickerEl && !datePickerEl.contains(e.target as Node)) closeSubmissionDatePicker();
+}, true);
+
+// การ์ด "สัมภาษณ์ครั้งถัดไป": วันที่ตั้งจากปฏิทินที่ใกล้ที่สุดตั้งแต่วันนี้ (ทุกสถานะยกเว้น "ยังไม่ได้ยื่น")
+// (วัน/เวลานัดเก็บใน submission.updatedAt) + นับวันถอยหลัง
+function renderNextInterviewStat(companies) {
+  const dateEl = document.getElementById('sub-stat-next-date');
+  const timeEl = document.getElementById('sub-stat-next-time');
+  const badgeEl = document.getElementById('sub-stat-next-badge');
+  if (!dateEl || !timeEl || !badgeEl) return;
+
+  const todayYmd = toDateInputValue(null);
+  const next = companies
+    .filter((c) => getSubmissionStatus(c) !== 'NOT_SUBMITTED' && c.submission && c.submission.updatedAt)
+    .map((c) => new Date(c.submission.updatedAt))
+    .filter((d) => !isNaN(d.getTime()) && toDateInputValue(d) >= todayYmd)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+
+  if (!next) {
+    dateEl.textContent = '—';
+    timeEl.textContent = 'ยังไม่มีนัด';
+    badgeEl.hidden = true;
+    return;
+  }
+  dateEl.textContent = formatSubmissionDate(next);
+  timeEl.textContent = `${pad2(next.getHours())}:${pad2(next.getMinutes())} น.`;
+  const today = new Date();
+  const days = Math.round(
+    (new Date(next.getFullYear(), next.getMonth(), next.getDate()).getTime() -
+      new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86400000
+  );
+  badgeEl.textContent = days === 0 ? 'วันนี้' : days === 1 ? 'พรุ่งนี้' : `อีก ${days} วัน`;
+  badgeEl.hidden = false;
+}
+
+// แสดงตาราง "รายการที่ยื่นสมัคร" + "ประวัติที่สัมภาษณ์ไม่ผ่าน" + การ์ดสรุป จากข้อมูลในแคช
+function renderSubmissionTables() {
+  const tbody = document.getElementById('submissions-table-body');
+  if (!tbody) return;
+  const companies = currentSubmissionsData || [];
+  const active = companies.filter((c) => getSubmissionStatus(c) !== 'INTERVIEW_FAILED_REAPPLIED');
+  const failed = companies.filter((c) => getSubmissionStatus(c) === 'INTERVIEW_FAILED_REAPPLIED');
+
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  const count = (status) => companies.filter((c) => getSubmissionStatus(c) === status).length;
+  setText('sub-stat-total', String(companies.filter((c) => getSubmissionStatus(c) !== 'NOT_SUBMITTED').length));
+  setText('sub-stat-failed', String(count('INTERVIEW_FAILED_REAPPLIED')));
+  setText('sub-stat-passed', String(count('INTERVIEW_PASSED')));
+  renderNextInterviewStat(companies);
+  setText('sub-count-text', `แสดงผล ${active.length} จากทั้งหมด ${companies.length} รายการ`);
+
+  if (active.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="sub-empty">${companies.length === 0
+      ? 'ยังไม่มีบริษัทที่ผ่านการอนุมัติ Checklist (จะแสดงรายชื่อเมื่ออาจารย์ตรวจให้ผ่าน)'
+      : 'ไม่มีบริษัทที่กำลังดำเนินการ'}</td></tr>`;
+  } else {
+    const note = renderStudentAcceptanceCell();
+    tbody.innerHTML = active.map((comp, idx) => `
+      <tr class="${getSubmissionStatus(comp) === 'SUBMITTED_WAITING' ? 'sub-row--highlight' : ''}">
+        <td class="sub-col-no">${idx + 1}</td>
+        <td>${renderSubmissionCompanyCell(comp)}</td>
+        <td>${renderSubmissionStatusPill(comp)}</td>
+        <td>${renderSubmissionDateCell(comp)}</td>
+        <td>${note}</td>
+      </tr>`).join('');
+  }
+
+  const failedPanel = document.getElementById('sub-failed-panel');
+  const failedBody = document.getElementById('sub-failed-body');
+  if (failedPanel && failedBody) {
+    failedPanel.style.display = failed.length > 0 ? '' : 'none';
+    setText('sub-failed-count', `${failed.length} รายการ`);
+    failedBody.innerHTML = failed.map((comp, idx) => `
+      <tr>
+        <td class="sub-col-no">${idx + 1}</td>
+        <td>${renderSubmissionCompanyCell(comp)}</td>
+        <td>${renderSubmissionStatusPill(comp)}</td>
+        <td>${renderSubmissionDateCell(comp)}</td>
+        <td class="sub-col-action"><button type="button" class="sub-link-btn" onclick="goToChecklistTab()">ยื่นเพิ่ม <span class="material-icons">chevron_right</span></button></td>
+      </tr>`).join('');
+  }
+}
+
+window.onSubmissionStatusChange = function(companyId, value, pill) {
+  if (pill) {
+    pill.className = `sub-status sub-status--${getSubmissionTone(value)} is-saving`;
+    const opt = SUBMISSION_STATUS_OPTIONS.find((o) => o.value === value);
+    const label = pill.querySelector('.sub-status-label');
+    if (label && opt) label.textContent = opt.label;
+  }
+  window.updateSubmissionStatus(companyId, value);
+};
+
+// ไปแท็บ Checklist บริษัท เพื่อเพิ่มบริษัทใหม่
+window.goToChecklistTab = function() {
+  const btn = document.querySelector('.status-nav-item[data-tab="checklist"]') as HTMLElement | null;
+  if (btn) btn.click();
+};
 
 function escapeStudentHtml(str) {
   return String(str || '')
@@ -729,30 +1207,28 @@ function escapeStudentHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// หมายเหตุ (สถานะหนังสือขอความอนุเคราะห์ / ใบตอบรับ) แสดงเป็น callout สี
 function renderStudentAcceptanceCell() {
   const acc = currentAcceptanceData;
+  const callout = (tone, icon, text, extra = '') =>
+    `<div class="sub-note sub-note--${tone}"><span class="material-icons">${icon}</span><span>${text}${extra}</span></div>`;
+
   if (!acc || !acc.requestLetterIssued) {
-    return '<span style="font-size:12.5px; color:#64748B;">รอเจ้าหน้าที่ออกหนังสือขอความอนุเคราะห์</span>';
+    return callout('amber', 'warning_amber', 'รอเจ้าหน้าที่ออกหนังสือขอความอนุเคราะห์');
   }
   if (acc.status === 'ACCEPTED') {
-    return `
-      <div style="font-size:12.5px; font-weight:700; color:#15803D;">✅ เจ้าหน้าที่ยืนยัน: บริษัทตอบรับแล้ว</div>
-    `;
+    return callout('green', 'check_circle', 'เจ้าหน้าที่ยืนยัน: บริษัทตอบรับแล้ว');
   }
   if (acc.status === 'REJECTED') {
-    return '<span style="font-size:12.5px; font-weight:700; color:#B91C1C;">✗ บริษัทปฏิเสธ (ปลดล็อกให้ยื่นใหม่แล้ว)</span>';
+    return callout('red', 'cancel', 'บริษัทปฏิเสธ (ปลดล็อกให้ยื่นใหม่แล้ว)');
   }
   if (acc.fileUrl || acc.submittedByStudent) {
-    return `
-      <div style="font-size:12px; font-weight:600; color:#B45309; margin-bottom:4px;">⏳ อัปโหลดใบตอบรับแล้ว (รอเจ้าหน้าที่ยืนยัน)</div>
-      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-        ${acc.fileUrl ? `<a href="${acc.fileUrl}" target="_blank" rel="noopener" style="font-size:11.5px; color:#2563EB; font-weight:600;">📎 ดูไฟล์ที่อัปโหลด</a>` : ''}
-      </div>
-    `;
+    const link = acc.fileUrl
+      ? ` <a href="${escapeStudentHtml(acc.fileUrl)}" target="_blank" rel="noopener" class="sub-note-link">ดูไฟล์</a>`
+      : '';
+    return callout('sky', 'info', 'อัปโหลดใบตอบรับแล้ว (รอเจ้าหน้าที่ยืนยัน)', link);
   }
-  return `
-    <div style="font-size:12px; color:#2563EB; font-weight:600;">📄 ออกหนังสือแล้ว (${escapeStudentHtml(acc.requestLetterDocNo || '-')})</div>
-  `;
+  return callout('sky', 'description', `ออกหนังสือแล้ว (${escapeStudentHtml(acc.requestLetterDocNo || '-')})`);
 }
 
 function renderStudentAcceptanceCard() {
@@ -1004,12 +1480,13 @@ window.uploadStudentAcceptanceForm = async function(inputEl) {
   }
 };
 
-window.updateSubmissionStatus = async function(companyId, status) {
+// status = undefined → เปลี่ยนแค่วันที่ (date = YYYY-MM-DD จากปฏิทิน)
+window.updateSubmissionStatus = async function(companyId, status, date, time) {
   try {
     const res = await fetch(`/api/student/submissions/${companyId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, date, time })
     });
     const data = await res.json();
     if (data.success) {
@@ -1017,12 +1494,20 @@ window.updateSubmissionStatus = async function(companyId, status) {
       const target = currentSubmissionsData.find(c => c.id === companyId);
       if (target) {
         if (!target.submission) target.submission = {};
-        target.submission.status = status;
+        if (data.submission && data.submission.status) target.submission.status = data.submission.status;
+        else if (status) target.submission.status = status;
+        target.submission.updatedAt = (data.submission && data.submission.updatedAt) || new Date().toISOString();
       }
       checkPlacementUnlock();
-      }
+    } else {
+      alert('อัปเดตสถานะไม่สำเร็จ: ' + (data.message || 'เกิดข้อผิดพลาด'));
+    }
   } catch (err) {
     console.error(err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  } finally {
+    // วาดตารางใหม่ (สำเร็จ = ย้ายแถว/อัปเดตสรุป, ไม่สำเร็จ = คืนค่าเดิม)
+    renderSubmissionTables();
   }
 };
 

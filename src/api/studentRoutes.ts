@@ -1344,20 +1344,22 @@ router.put("/submissions/:companyId", async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
     }
     const companyId = parseInt(req.params.companyId as string, 10);
-    const { status } = req.body;
+    const { date, time } = req.body;
 
     const company = await prisma.company.findFirst({
       where: { id: companyId, studentId: student.id },
+      include: { submission: true },
     });
 
     if (!company) {
       return res.status(404).json({ success: false, message: "ไม่พบบริษัทนี้" });
     }
 
-    if (company.checklistStatus === "APPROVED") {
+    // สถานะการยื่นอัปเดตได้เฉพาะบริษัทที่อาจารย์อนุมัติ Checklist แล้ว (ตรงกับรายการที่ GET /submissions ส่งให้)
+    if (company.checklistStatus !== "APPROVED") {
       return res.status(400).json({
         success: false,
-        message: "อาจารย์ที่ปรึกษาอนุมัติ Checklist แล้ว ไม่สามารถแก้ไขข้อมูลได้",
+        message: "บริษัทนี้ยังไม่ผ่านการอนุมัติ Checklist จึงยังอัปเดตสถานะการยื่นไม่ได้",
       });
     }
 
@@ -1369,14 +1371,47 @@ router.put("/submissions/:companyId", async (req: Request, res: Response) => {
       "INTERVIEW_FAILED_REAPPLIED",
     ];
 
+    // ไม่ส่ง status มา (เช่น เปลี่ยนแค่วันที่) = ใช้สถานะเดิม
+    const status = req.body.status ?? company.submission?.status ?? "NOT_SUBMITTED";
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: "สถานะการยื่นไม่ถูกต้อง" });
     }
 
+    // วันที่ที่นิสิตเลือกจากปฏิทิน (YYYY-MM-DD) — ไม่ส่งมา = ใช้เวลาปัจจุบัน (@updatedAt)
+    let updatedAt: Date | undefined;
+    if (date !== undefined && date !== null && date !== "") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+        return res.status(400).json({ success: false, message: "รูปแบบวันที่ไม่ถูกต้อง" });
+      }
+      // เวลานัด (HH:MM ตามเวลาไทย) — ไม่ส่งมา = เที่ยงวัน
+      let hhmm = "12:00";
+      if (time !== undefined && time !== null && time !== "") {
+        const tm = /^(\d{2}):(\d{2})$/.exec(String(time));
+        if (!tm || Number(tm[1]) > 23 || Number(tm[2]) > 59) {
+          return res.status(400).json({ success: false, message: "รูปแบบเวลาไม่ถูกต้อง" });
+        }
+        hhmm = String(time);
+      }
+      updatedAt = new Date(`${date}T${hhmm}:00+07:00`);
+      if (isNaN(updatedAt.getTime())) {
+        return res.status(400).json({ success: false, message: "รูปแบบวันที่ไม่ถูกต้อง" });
+      }
+      // ตั้งล่วงหน้าได้ตั้งแต่วันนี้ ถึงไม่เกิน 1 เดือน (นับตามเวลาไทย)
+      const toYmd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+      const today = toYmd(new Date());
+      const [y, m, d] = today.split("-").map(Number);
+      // เดือนถัดไป วันเดียวกัน (ถ้าเดือนถัดไปสั้นกว่า เช่น 31 ม.ค. → สิ้นเดือน ก.พ.)
+      const daysInNextMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      const maxDate = new Date(Date.UTC(y, m, Math.min(d, daysInNextMonth))).toISOString().slice(0, 10);
+      if (String(date) < today || String(date) > maxDate) {
+        return res.status(400).json({ success: false, message: "เลือกวันที่ได้ตั้งแต่วันนี้ ถึงไม่เกิน 1 เดือนล่วงหน้า" });
+      }
+    }
+
     const submission = await prisma.companySubmission.upsert({
       where: { companyId },
-      update: { status },
-      create: { companyId, status },
+      update: { status, ...(updatedAt ? { updatedAt } : {}) },
+      create: { companyId, status, ...(updatedAt ? { updatedAt } : {}) },
     });
 
     res.json({ success: true, message: "อัปเดตสถานะการยื่นสำเร็จ", submission });
