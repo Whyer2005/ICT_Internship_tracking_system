@@ -14,6 +14,7 @@
 | 08 | Context Diagram (DFD Level 0) | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [context_diagram.drawio](context_diagram.drawio) | Proposal |
 | 08 | DFD Level 1 | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [dfd_level1.drawio](dfd_level1.drawio) | Proposal |
 | 09 | Activity Diagram | [09_ACTIVITY_DIAGRAM.md](09_ACTIVITY_DIAGRAM.md) | [activity_main_flow.drawio](activity_main_flow.drawio) | สไลด์ประชุม, Proposal |
+| — | สถาปัตยกรรมระบบ (System Architecture) | — | [architecture_diagram.drawio](architecture_diagram.drawio) | Proposal |
 
 ---
 
