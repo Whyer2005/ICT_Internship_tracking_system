@@ -6,6 +6,8 @@ let companiesData = [];
 let masterCompaniesList = [];
 let currentPlacementData = null;
 let isDroppedStudent = false;
+// บริษัทที่อาจารย์ที่ปรึกษาอนุญาตให้แก้ไขข้อมูลบริษัท/ผู้ติดต่อ หลัง Checklist อนุมัติแล้ว
+let infoEditUnlockedIds: number[] = [];
 
 // ตำแหน่งงานมาตรฐาน จัดกลุ่มตามสายงาน (keywords = คำค้นภาษาไทย/คำพ้อง เพื่อให้พิมพ์ค้นหาได้ง่าย)
 const POSITION_GROUPS: Array<{ label: string; items: Array<{ name: string; keywords?: string }> }> = [
@@ -126,6 +128,7 @@ async function loadData() {
     }
 
     currentPlacementData = compData.placement || null;
+    infoEditUnlockedIds = Array.isArray(compData.infoEditUnlockedCompanyIds) ? compData.infoEditUnlockedCompanyIds : [];
     renderInternshipWindowBox(compData);
 
     // เติมข้อมูล Auto-suggest รายชื่อบริษัทจากฐานข้อมูลกลาง (Master Data)
@@ -230,7 +233,10 @@ async function loadData() {
 
       // หากอาจารย์ที่ปรึกษาอนุมัติ Checklist แล้ว ล็อคปุ่มบันทึกและแสดงสถานะ
       const saveBtn = document.getElementById('save-all-btn') as HTMLButtonElement | null;
-      if (currentComp && currentComp.checklistStatus === 'APPROVED' && saveBtn) {
+      const infoEditAllowed = currentComp && infoEditUnlockedIds.includes(currentComp.id);
+      if (currentComp && currentComp.checklistStatus === 'APPROVED' && saveBtn && infoEditAllowed && !isDroppedStudent) {
+        saveBtn.innerHTML = '<span class="material-icons text-2xl">save</span> <span>บันทึกการแก้ไขข้อมูลบริษัท/ผู้ติดต่อ</span>';
+      } else if (currentComp && currentComp.checklistStatus === 'APPROVED' && saveBtn) {
         saveBtn.disabled = true;
         saveBtn.style.opacity = '0.85';
         saveBtn.style.cursor = 'default';
@@ -425,6 +431,9 @@ window.onCompanyNameInput = function(index) {
 
 function renderCompanyCard(comp, index) {
   const isLocked = isDroppedStudent || comp.checklistStatus === 'APPROVED';
+  // ข้อมูลบริษัท/ผู้ติดต่อ: ปลดล็อกเมื่ออาจารย์ที่ปรึกษากดอนุญาต (ชื่อบริษัทและคำตอบ Checklist ยังล็อกอยู่)
+  const isInfoEditUnlocked = !isDroppedStudent && comp.checklistStatus === 'APPROVED' && infoEditUnlockedIds.includes(comp.id);
+  const infoLocked = isLocked && !isInfoEditUnlocked;
   const container = document.getElementById('companies-container');
   const card = document.createElement('div');
   card.className = 'company-card';
@@ -517,6 +526,11 @@ function renderCompanyCard(comp, index) {
             ข้อมูลสถานประกอบการและตำแหน่งงานสำหรับออกหนังสือขอความอนุเคราะห์ (+แบบตอบรับ)
           </h4>
         </div>
+        ${isInfoEditUnlocked ? `
+        <div style="margin-bottom:12px; padding:10px 14px; background:#FFFBEB; border:1px solid #FCD34D; border-radius:10px; font-size:12.5px; color:#92400E; display:flex; align-items:center; gap:8px;">
+          <span class="material-icons" style="font-size:18px;">edit_note</span>
+          <span>อาจารย์ที่ปรึกษาอนุญาตให้แก้ไขข้อมูลบริษัท/ผู้ติดต่อ (แก้ได้ 1 ครั้ง) — ชื่อบริษัทและคำตอบ Checklist ยังแก้ไม่ได้</span>
+        </div>` : ''}
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px;">
           <!-- ตำแหน่งงานที่ฝึก -->
@@ -534,8 +548,8 @@ function renderCompanyCard(comp, index) {
                 onkeydown="window.handlePositionKeydown(${index}, event)"
                 onblur="setTimeout(() => window.closePositionList(${index}), 120)"
                 class="input-field"
-                style="width:100%; padding:7px 10px !important; padding-left:36px !important; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px; background:${isLocked ? '#f8fafc' : 'white'}; ${isLocked ? 'cursor:not-allowed;' : ''}"
-                ${isLocked ? 'readonly' : ''} />
+                style="width:100%; padding:7px 10px !important; padding-left:36px !important; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px; background:${infoLocked ? '#f8fafc' : 'white'}; ${infoLocked ? 'cursor:not-allowed;' : ''}"
+                ${infoLocked ? 'readonly' : ''} />
               <div id="company-position-list-${index}" role="listbox"
                 style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50; max-height:280px; overflow-y:auto; background:white; border:1px solid #CBD5E1; border-radius:10px; box-shadow:0 12px 28px -6px rgba(15,23,42,0.18);"></div>
             </div>
@@ -546,7 +560,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               จังหวัดที่ตั้งสถานประกอบการ <span style="color:#DC2626;">*</span>
             </label>
-            <input type="text" id="company-province-${index}" list="provinces-datalist" value="${escapeHtml(plc.province || '')}" placeholder="เช่น กรุงเทพมหานคร, เชียงใหม่, พะเยา" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-province-${index}" list="provinces-datalist" value="${escapeHtml(plc.province || '')}" placeholder="เช่น กรุงเทพมหานคร, เชียงใหม่, พะเยา" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- ชื่อบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์ (เรียน...) -->
@@ -554,7 +568,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               ชื่อบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์ (เรียน...)
             </label>
-            <input type="text" id="company-contact-name-${index}" value="${escapeHtml(plc.contactPersonName || '')}" placeholder="เช่น ผู้จัดการฝ่ายทรัพยากรบุคคล หรือ คุณสมชาย ใจดี" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-contact-name-${index}" value="${escapeHtml(plc.contactPersonName || '')}" placeholder="เช่น ผู้จัดการฝ่ายทรัพยากรบุคคล หรือ คุณสมชาย ใจดี" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- ตำแหน่งบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์ -->
@@ -562,7 +576,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               ตำแหน่งบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์
             </label>
-            <input type="text" id="company-contact-pos-${index}" value="${escapeHtml(plc.contactPersonPosition || '')}" placeholder="เช่น HR Director หรือ หัวหน้าฝ่ายบุคคล" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-contact-pos-${index}" value="${escapeHtml(plc.contactPersonPosition || '')}" placeholder="เช่น HR Director หรือ หัวหน้าฝ่ายบุคคล" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- ที่อยู่บริษัท -->
@@ -570,7 +584,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               ที่อยู่สถานประกอบการ / แหล่งฝึกงาน <span style="color:#DC2626;">*</span>
             </label>
-            <input type="text" id="company-address-${index}" value="${escapeHtml(plc.companyAddress || '')}" placeholder="เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-address-${index}" value="${escapeHtml(plc.companyAddress || '')}" placeholder="เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- เบอร์โทรศัพท์ -->
@@ -578,7 +592,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               เบอร์โทรติดต่อสถานประกอบการ
             </label>
-            <input type="text" id="company-phone1-${index}" value="${escapeHtml(plc.companyPhone1 || '')}" placeholder="เช่น 02-xxx-xxxx หรือ 08x-xxx-xxxx" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-phone1-${index}" value="${escapeHtml(plc.companyPhone1 || '')}" placeholder="เช่น 02-xxx-xxxx หรือ 08x-xxx-xxxx" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- เบอร์โทรศัพท์สำรอง -->
@@ -586,7 +600,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               เบอร์โทรติดต่อ (สำรอง)
             </label>
-            <input type="text" id="company-phone2-${index}" value="${escapeHtml(plc.companyPhone2 || '')}" placeholder="เช่น 02-xxx-xxxx (ถ้ามี)" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="text" id="company-phone2-${index}" value="${escapeHtml(plc.companyPhone2 || '')}" placeholder="เช่น 02-xxx-xxxx (ถ้ามี)" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
 
           <!-- Email -->
@@ -594,7 +608,7 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               Email สถานประกอบการ
             </label>
-            <input type="email" id="company-email-${index}" value="${escapeHtml(plc.companyEmail || '')}" placeholder="hr@company.com" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${isLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <input type="email" id="company-email-${index}" value="${escapeHtml(plc.companyEmail || '')}" placeholder="hr@company.com" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
           </div>
         </div>
       </div>
@@ -636,10 +650,32 @@ window.toggleCompany = function(index) {
   }
 };
 
-document.getElementById('add-company-btn').addEventListener('click', () => {
+document.getElementById('add-company-btn').addEventListener('click', async () => {
   if (isDroppedStudent) return;
-  if (confirm('ต้องการเคลียร์ฟอร์มเพื่อยื่น Checklist บริษัทแห่งใหม่ใช่หรือไม่? (ข้อมูลบริษัทเดิมที่ถูกปฏิเสธจะถูกเก็บไว้ใน Archive อัตโนมัติ)')) {
+  if (!confirm('ต้องการเคลียร์ฟอร์มเพื่อยื่น Checklist บริษัทแห่งใหม่ใช่หรือไม่? (ข้อมูลบริษัทเดิมที่ถูกปฏิเสธจะถูกเก็บไว้ใน Archive อัตโนมัติ)')) return;
+
+  const rejected = (companiesData || []).find(c => c && c.id && c.checklistStatus === 'REJECTED');
+  if (!rejected) {
     addNewCompanyCard('');
+    return;
+  }
+
+  // เก็บบริษัทเดิมเข้า Archive ทันที แล้วโหลดหน้าใหม่ → ฟอร์มว่าง + ประวัติแสดงด้านล่าง
+  const addBtn = document.getElementById('add-company-btn') as HTMLButtonElement | null;
+  if (addBtn) addBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/student/companies/${rejected.id}/archive`, { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) {
+      alert('⚠️ ' + (data.message || 'เก็บเข้าประวัติไม่สำเร็จ'));
+      return;
+    }
+    window.location.reload();
+  } catch (err) {
+    console.error('Error archiving rejected company:', err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  } finally {
+    if (addBtn) addBtn.disabled = false;
   }
 });
 

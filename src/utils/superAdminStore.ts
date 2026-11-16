@@ -128,6 +128,14 @@ export interface ArchivedCompanyAttempt {
   archivedAt: string;
 }
 
+// อาจารย์ที่ปรึกษาอนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ หลัง Checklist อนุมัติแล้ว (ใช้ได้ 1 ครั้ง)
+export interface CompanyInfoEditUnlock {
+  companyId: number;
+  studentId: number;
+  unlockedBy: string;
+  unlockedAt: string;
+}
+
 export interface InternshipRoundHistory {
   round: number; // เช่น 1
   term: string; // เช่น "2/2568"
@@ -183,6 +191,7 @@ export interface SuperAdminState {
   docWorkflowMap: Record<string, StudentDocWorkflowRecord>;
   archivedApplications: ArchivedCompanyAttempt[];
   studentRoundsMap?: Record<string, StudentRoundState>;
+  companyInfoEditUnlocks?: Record<string, CompanyInfoEditUnlock>; // key = companyId
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -449,6 +458,7 @@ export function loadSuperAdminState(): SuperAdminState {
         ? parsed.archivedApplications
         : DEFAULT_STATE.archivedApplications,
       studentRoundsMap: parsed.studentRoundsMap || {},
+      companyInfoEditUnlocks: parsed.companyInfoEditUnlocks || {},
     };
   } catch (err) {
     console.error("Failed to load super_admin_state.json, using default:", err);

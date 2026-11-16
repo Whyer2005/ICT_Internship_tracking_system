@@ -171,7 +171,6 @@ const STATUS_ALL_SIDEBAR_HTML = `
           ${navButton("checklist-locked", "lock", "Checklist และสถานะการยื่น", ' data-stage="1" data-locked="true"')}
           ${navButton("checklist", "fact_check", "Checklist", ' data-stage="2" hidden')}
           ${navButton("submission", "send", "สถานะการยื่น", ' data-stage="2" hidden')}
-          ${navButton("placement", "business", "ข้อมูลบริษัทที่เข้าฝึกงาน", ' data-stage="2" hidden')}
         </nav>
         <div class="status-sidebar-note">
           <strong>ข้อมูลการฝึกงานของนิสิต</strong>
@@ -187,9 +186,11 @@ const STATUS_ALL_SECTION_TABS = [
   "checklist-locked", // #checklist-locked-card
   "checklist", // #checklist-section
   "submission", // #submission-section
-  "placement", // #placement-locked-card
-  "placement", // #placement-section
+  "placement", // #placement-locked-card (เลิกใช้: ข้อมูลบริษัทอยู่ใน Checklist แล้ว — ตัดออกจากหน้า)
+  "placement", // #placement-section (เลิกใช้)
 ];
+// panel ที่ไม่แสดงในหน้าแล้ว (ตัด HTML ออกตอนประกอบหน้า)
+const REMOVED_PANEL_TABS = new Set(["placement"]);
 
 const STATUS_ALL_PAGE_BODY_HTML = (() => {
   const html = STUDENT_PROFILE_PAGE_BODY_HTML;
@@ -208,6 +209,10 @@ const STATUS_ALL_PAGE_BODY_HTML = (() => {
     let j = i;
     while (j + 1 < starts.length && STATUS_ALL_SECTION_TABS[j + 1] === tab) j++;
     const end = j + 1 < starts.length ? starts[j + 1] : mainEnd;
+    if (REMOVED_PANEL_TABS.has(tab)) {
+      i = j + 1;
+      continue;
+    }
     const active = tab === "personal" ? " is-active" : "";
     panels += `
         <div class="status-all-panel${active}" data-panel="${tab}">

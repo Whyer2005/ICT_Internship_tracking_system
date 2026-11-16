@@ -704,6 +704,10 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       companies: student.companies,
       acceptanceWorkflow,
       archivedApplications: studentArchives,
+      // บริษัทที่อาจารย์ที่ปรึกษาอนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ (หลังอนุมัติ Checklist)
+      editUnlockedCompanyIds: (student.companies || [])
+        .filter((c) => state.companyInfoEditUnlocks?.[String(c.id)])
+        .map((c) => c.id),
       placement: student.placement
         ? {
             ...student.placement,
@@ -770,6 +774,15 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
       },
     });
 
+    // เปลี่ยนผลตรวจแล้ว → ยกเลิกการอนุญาตแก้ไขข้อมูลบริษัทที่ค้างอยู่ (ถ้ามี)
+    if (status !== "APPROVED") {
+      const reviewState = loadSuperAdminState();
+      if (reviewState.companyInfoEditUnlocks?.[String(companyId)]) {
+        delete reviewState.companyInfoEditUnlocks[String(companyId)];
+        saveSuperAdminState(reviewState);
+      }
+    }
+
     res.json({
       success: true,
       message: "บันทึกผลการตรวจ Checklist เรียบร้อยแล้ว",
@@ -778,6 +791,70 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
   } catch (err) {
     console.error("PUT /api/advisor/companies/:id/checklist-review error:", err);
     res.status(500).json({ success: false, message: "บันทึกผลตรวจไม่สำเร็จ" });
+  }
+});
+
+// ==========================================
+// 5.1 อนุญาต / ยกเลิกการอนุญาต ให้นิสิตแก้ไขข้อมูลบริษัทและผู้ติดต่อ หลัง Checklist อนุมัติแล้ว
+//     (แก้ได้เฉพาะข้อมูลบริษัท/ผู้ติดต่อ ไม่รวมชื่อบริษัทและคำตอบ Checklist — ใช้ได้ 1 ครั้งต่อการอนุญาต)
+// ==========================================
+router.put("/companies/:companyId/allow-info-edit", async (req: Request, res: Response) => {
+  try {
+    const advisorStaffId = req.staff!.id;
+    const companyId = parseInt(req.params.companyId as string, 10);
+    const allow = Boolean(req.body?.allow);
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { student: true },
+    });
+    if (!company) {
+      return res.status(404).json({ success: false, message: "ไม่พบบริษัท" });
+    }
+
+    const activeRole = req.session.user?.activeRole || req.session.user?.role;
+    if (
+      activeRole !== "ADVISOR" ||
+      !company.student.advisorId ||
+      company.student.advisorId !== advisorStaffId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "เฉพาะอาจารย์ที่ปรึกษาที่ดูแลนิสิตคนนี้เท่านั้นที่อนุญาตให้แก้ไขข้อมูลได้",
+      });
+    }
+    if (company.checklistStatus !== "APPROVED") {
+      return res.status(400).json({
+        success: false,
+        message: "อนุญาตให้แก้ไขได้เฉพาะ Checklist ที่อนุมัติแล้ว (กรณีอื่นนิสิตแก้ไขได้อยู่แล้ว)",
+      });
+    }
+
+    const state = loadSuperAdminState();
+    state.companyInfoEditUnlocks = state.companyInfoEditUnlocks || {};
+    const key = String(company.id);
+    if (allow) {
+      state.companyInfoEditUnlocks[key] = {
+        companyId: company.id,
+        studentId: company.studentId,
+        unlockedBy: req.staff?.name || req.session.user?.username || "",
+        unlockedAt: new Date().toISOString(),
+      };
+    } else {
+      delete state.companyInfoEditUnlocks[key];
+    }
+    saveSuperAdminState(state);
+
+    res.json({
+      success: true,
+      allowed: allow,
+      message: allow
+        ? "อนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อแล้ว (สถานะ Checklist ยังคงอนุมัติ)"
+        : "ยกเลิกการอนุญาตแก้ไขแล้ว",
+    });
+  } catch (err) {
+    console.error("PUT /api/advisor/companies/:id/allow-info-edit error:", err);
+    res.status(500).json({ success: false, message: "บันทึกไม่สำเร็จ" });
   }
 });
 

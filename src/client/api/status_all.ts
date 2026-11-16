@@ -6,7 +6,6 @@ let currentCvData = null;
 let currentTrainingsData = [];
 let currentCompaniesData = [];
 let currentSubmissionsData = [];
-let currentPlacementData = null;
 let currentAcceptanceData = null;
 // true เมื่อโหลดข้อมูลรอบแรกครบทุกส่วนแล้ว (ใช้โดย sidebar ใน status_all_tabs.js)
 let statusAllDataReady = false;
@@ -17,7 +16,6 @@ async function initPage() {
   await Promise.all([loadProfile(), loadTrainings(), loadCv()]);
   await loadCompanies();
   await loadSubmissions();
-  await loadPlacement();
   statusAllDataReady = true;
   checkPlacementUnlock();
 }
@@ -719,7 +717,6 @@ async function loadSubmissions() {
     console.error('Load submissions error:', err);
   } finally {
     checkPlacementUnlock();
-    updatePlacementCompanyOptions();
   }
 }
 
@@ -1023,264 +1020,20 @@ window.updateSubmissionStatus = async function(companyId, status) {
         target.submission.status = status;
       }
       checkPlacementUnlock();
-      updatePlacementCompanyOptions();
-    }
+      }
   } catch (err) {
     console.error(err);
   }
 };
 
-// 6. โหลดและบันทึกข้อมูลบริษัทที่เข้าฝึกงานจริง
-async function loadPlacement() {
-  try {
-    const res = await fetch('/api/student/placement');
-    const data = await res.json();
-    if (data.success && data.placement) {
-      currentPlacementData = data.placement;
-      const p = data.placement;
-      document.getElementById('plc-position').value = p.position || '';
-      document.getElementById('plc-companyNameTh').value = p.companyNameTh || '';
-      document.getElementById('plc-contactPersonName').value = p.contactPersonName || '';
-      document.getElementById('plc-contactPersonPosition').value = p.contactPersonPosition || '';
-      document.getElementById('plc-companyAddress').value = p.companyAddress || '';
-      document.getElementById('plc-companyPhone1').value = p.companyPhone1 || '';
-      document.getElementById('plc-companyPhone2').value = p.companyPhone2 || '';
-      document.getElementById('plc-companyEmail').value = p.companyEmail || '';
-      document.getElementById('plc-province').value = p.province || '';
-
-      // แสดง Badge สถานะการอนุมัติที่ฝึกงานจากอาจารย์ (ถ้ามี)
-      const badgeContainer = document.getElementById('plc-status-container');
-      const badgeEl = document.getElementById('plc-status-badge');
-      const noteEl = document.getElementById('plc-status-note');
-
-      if (badgeContainer && badgeEl) {
-        badgeContainer.style.display = 'flex';
-        badgeContainer.style.flexWrap = 'wrap';
-        const matchTag = p.isMatchedWithChecklist === false
-          ? ' • ⚠️ [REQ-06] บริษัทที่ยื่นไม่ตรงกับ Checklist เดิม (อาจารย์ที่ปรึกษาจะตรวจสอบเพิ่มเติม)'
-          : p.isMatchedWithChecklist === true
-            ? ' • ✅ [REQ-06] ตรงกับบริษัทที่ผ่านการอนุมัติใน Checklist'
-            : '';
-        // สถานะ: รอผล & อนุมัติที่ฝึกงาน & ไม่อนุมัติที่ฝึกงาน / เปลี่ยนที่ฝึกงาน
-        if (p.status === 'APPROVED') {
-          badgeEl.textContent = 'สถานะ: ✓ อนุมัติที่ฝึกงาน';
-          badgeEl.className = 'status-pass';
-        } else if (p.status === 'REJECTED') {
-          badgeEl.textContent = 'สถานะ: ✗ ไม่อนุมัติที่ฝึกงาน / เปลี่ยนที่ฝึกงาน';
-          badgeEl.className = 'status-fail';
-          if (noteEl) noteEl.textContent = (p.note ? `หมายเหตุ: ${p.note}` : '') + matchTag;
-        } else {
-          badgeEl.textContent = 'สถานะ: ☐ รอผล (รออาจารย์อนุมัติ)';
-          badgeEl.className = 'status-wait';
-          if (noteEl) noteEl.textContent = matchTag.replace(/^ • /, '');
-        }
-      }
-    } else {
-      currentPlacementData = null;
-    }
-  } catch (err) {
-    console.error('Load placement error:', err);
-  } finally {
-    checkPlacementUnlock();
-    updatePlacementCompanyOptions();
-  }
-}
-
-// อัปเดตตัวเลือกชื่อแหล่งฝึกงานจากบริษัทที่สถานะ "สัมภาษณ์ผ่านแล้ว"
-function updatePlacementCompanyOptions() {
-  const select = document.getElementById('plc-company-select');
-  const input = document.getElementById('plc-companyNameTh');
-  const customWrap = document.getElementById('plc-custom-company-wrap');
-  if (!select || !input) return;
-
-  const passedCompanies = (currentSubmissionsData || []).filter(
-    comp => comp.submission && comp.submission.status === 'INTERVIEW_PASSED'
-  );
-
-  const prevVal = select.value;
-  select.innerHTML = '<option value="">-- เลือกบริษัทที่สัมภาษณ์ผ่านแล้ว --</option>';
-
-  passedCompanies.forEach(comp => {
-    const opt = document.createElement('option');
-    opt.value = comp.id;
-    opt.dataset.name = comp.name;
-    // แสดงเฉพาะชื่อบริษัท (เอาเครื่องหมายถูกและคำว่าสัมภาษณ์ผ่านแล้วออก)
-    opt.textContent = comp.name;
-    select.appendChild(opt);
-  });
-
-  // ไม่มีตัวเลือก "อื่นๆ (กรอกระบุเอง)" แล้ว: ชื่อบริษัทต้องมาจาก Checklist ที่สัมภาษณ์ผ่านเท่านั้น
-  // (กันชื่อบริษัทไม่ตรงกับฐานข้อมูลสถานประกอบการ / คิวออกหนังสือ)
-  select.style.display = '';
-  if (customWrap) customWrap.style.display = 'none';
-
-  const currentSavedName = (currentPlacementData && currentPlacementData.companyNameTh)
-    ? currentPlacementData.companyNameTh.trim()
-    : input.value.trim();
-
-  if (currentSavedName) {
-    const matched = passedCompanies.find(
-      c => c.name.trim() === currentSavedName || (currentPlacementData && currentPlacementData.companyId && c.id === currentPlacementData.companyId)
-    );
-    if (matched) {
-      select.value = matched.id;
-      select.style.display = '';
-      if (customWrap) customWrap.style.display = 'none';
-      input.value = matched.name;
-    } else {
-      // ชื่อเดิมที่เคยพิมพ์เอง (ระบบเก่า) ไม่ตรงกับบริษัทใน Checklist -> ให้เลือกใหม่จากรายการ
-      select.value = '';
-      input.value = '';
-    }
-  } else if (prevVal) {
-    const matchedPrev = passedCompanies.find(c => String(c.id) === String(prevVal));
-    if (matchedPrev) {
-      select.value = matchedPrev.id;
-      select.style.display = '';
-      if (customWrap) customWrap.style.display = 'none';
-      input.value = matchedPrev.name;
-    }
-  } else if (!select.value && passedCompanies.length === 1 && !currentPlacementData) {
-    select.value = passedCompanies[0].id;
-    select.style.display = '';
-    if (customWrap) customWrap.style.display = 'none';
-    input.value = passedCompanies[0].name;
-  } else {
-    select.style.display = '';
-    if (customWrap) customWrap.style.display = 'none';
-  }
-}
-
-const companySelectEl = document.getElementById('plc-company-select');
-const customCompanyWrap = document.getElementById('plc-custom-company-wrap');
-const btnBackToSelect = document.getElementById('btn-back-to-select');
-
-if (companySelectEl) {
-  companySelectEl.addEventListener('change', (e) => {
-    const input = document.getElementById('plc-companyNameTh');
-    if (!input) return;
-
-    if (e.target.value === '__other__') {
-      companySelectEl.style.display = 'none';
-      if (customCompanyWrap) customCompanyWrap.style.display = 'block';
-      input.value = '';
-      input.placeholder = 'กรอกชื่อแหล่งฝึกงาน...';
-      input.focus();
-    } else if (e.target.value) {
-      const selectedOption = e.target.options[e.target.selectedIndex];
-      companySelectEl.style.display = '';
-      if (customCompanyWrap) customCompanyWrap.style.display = 'none';
-      input.value = selectedOption ? (selectedOption.dataset.name || selectedOption.text) : '';
-    } else {
-      input.value = '';
-    }
-  });
-}
-
-if (btnBackToSelect) {
-  btnBackToSelect.addEventListener('click', () => {
-    if (customCompanyWrap) customCompanyWrap.style.display = 'none';
-    if (companySelectEl) {
-      companySelectEl.style.display = '';
-      companySelectEl.value = '';
-      companySelectEl.focus();
-    }
-    const input = document.getElementById('plc-companyNameTh');
-    if (input) input.value = '';
-  });
-}
-
-const placementForm = document.getElementById('placement-form');
-if (placementForm) {
-  placementForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    // ประมวลผลชื่อแหล่งฝึกงานจาก dropdown หรือกล่องกรอกในช่องเดียวกัน
-    const companySelect = document.getElementById('plc-company-select');
-    const companyInput = document.getElementById('plc-companyNameTh');
-
-    let finalCompanyName = '';
-    let finalCompanyId = null;
-
-    if (companySelect && companySelect.value) {
-      const selectedOption = companySelect.options[companySelect.selectedIndex];
-      finalCompanyName = selectedOption ? (selectedOption.dataset.name || selectedOption.text) : '';
-      finalCompanyId = companySelect.value;
-    }
-
-    if (!finalCompanyName || !finalCompanyId) {
-      alert('กรุณาเลือกชื่อแหล่งฝึกงานจากรายการบริษัทที่สัมภาษณ์ผ่านแล้ว');
-      if (companySelect) companySelect.focus();
-      return;
-    }
-    if (companyInput) companyInput.value = finalCompanyName;
-
-    // ตรวจว่ากรอกครบทุกช่อง (trim กันการพิมพ์แต่ช่องว่าง)
-    const requiredFields = [
-      ['plc-position', 'ตำแหน่งที่ฝึก'],
-      ['plc-companyNameTh', 'ชื่อแหล่งฝึกงาน'],
-      ['plc-contactPersonName', 'ชื่อบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์'],
-      ['plc-contactPersonPosition', 'ตำแหน่งบุคคลที่ให้ทำหนังสือ'],
-      ['plc-companyAddress', 'ที่อยู่บริษัท'],
-      ['plc-companyPhone1', 'เบอร์โทรติดต่อ'],
-      ['plc-companyPhone2', 'เบอร์โทรติดต่อ (สำรอง)'],
-      ['plc-companyEmail', 'Email สถานประกอบการ'],
-      ['plc-province', 'จังหวัด'],
-    ];
-    for (const [id, label] of requiredFields) {
-      const el = document.getElementById(id);
-      if (!el || !el.value.trim()) {
-        alert('กรุณากรอกข้อมูลให้ครบทุกช่อง: ' + label);
-        if (el) el.focus();
-        return;
-      }
-    }
-
-    const payload = {
-      position: document.getElementById('plc-position').value,
-      companyNameTh: finalCompanyName,
-      companyId: finalCompanyId,
-      contactPersonName: document.getElementById('plc-contactPersonName').value,
-      contactPersonPosition: document.getElementById('plc-contactPersonPosition').value,
-      companyAddress: document.getElementById('plc-companyAddress').value,
-      companyPhone1: document.getElementById('plc-companyPhone1').value,
-      companyPhone2: document.getElementById('plc-companyPhone2').value,
-      companyEmail: document.getElementById('plc-companyEmail').value,
-      province: document.getElementById('plc-province').value,
-    };
-
-    try {
-      const res = await fetch('/api/student/placement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✅ บันทึกข้อมูลแหล่งฝึกงานสำเร็จ');
-        loadPlacement();
-      } else {
-        alert('เกิดข้อผิดพลาด: ' + (data.message || 'บันทึกไม่สำเร็จ'));
-      }
-    } catch (err) {
-      console.error(err);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
-    }
-  });
-}
-
 // =========================================================================
 // 🎯 ฟังก์ชันตรวจสอบเงื่อนไขเพื่อซ่อน/ปลดล็อก
 // 1. ปลดล็อกส่วนที่ 4 & 5 (Checklist และ สถานะการยื่น) เมื่อ ชั่วโมงอบรมครบ & CV ผ่าน
-// 2. ปลดล็อกส่วนที่ 6 (ข้อมูลบริษัท ที่เข้าฝึกงาน) เมื่อครบทั้ง 4 เงื่อนไข
 // =========================================================================
 function checkPlacementUnlock() {
   const checklistSection = document.getElementById('checklist-section');
   const submissionSection = document.getElementById('submission-section');
   const checklistLockedCard = document.getElementById('checklist-locked-card');
-
-  const placementSection = document.getElementById('placement-section');
-  const placementLockedCard = document.getElementById('placement-locked-card');
 
   // 1. เงื่อนไข CV: ได้รับการตรวจผ่านแล้ว (APPROVED)
   const isCvApproved = currentCvData && currentCvData.status === 'APPROVED';
@@ -1301,7 +1054,7 @@ function checkPlacementUnlock() {
   // -----------------------------------------------------------------------
   const isChecklistUnlocked = isCvApproved && isTrainingComplete;
 
-  // เงื่อนไขส่วนที่ 6 (คำนวณไว้ก่อน เพื่อส่งต่อให้ sidebar ด้วย)
+  // สถานะ Checklist / การยื่น (ส่งต่อให้ sidebar)
   const isChecklistApproved = currentCompaniesData.some(c => c.checklistStatus === 'APPROVED');
   const isInterviewPassed = currentSubmissionsData.some(
     comp => comp.submission && comp.submission.status === 'INTERVIEW_PASSED'
@@ -1333,31 +1086,12 @@ function checkPlacementUnlock() {
     if (checklistSection) checklistSection.style.display = 'block';
     if (submissionSection) submissionSection.style.display = 'block';
 
-    // -----------------------------------------------------------------------
-    // 🔒 2. ตรวจสอบการปลดล็อก ส่วนที่ 6 (ข้อมูลบริษัท ที่เข้าฝึกงาน)
-    // -----------------------------------------------------------------------
-    // อัปเดต UI ใน Card แสดงเงื่อนไขส่วนที่ 6 (placement-locked-card)
-    updateRequirementCard('req-cv', isCvApproved, '1. กรอกใบ CV', isCvApproved ? '✓ CVตรวจแล้ว / ผ่าน' : 'รออาจารย์ตรวจผ่าน');
-    updateRequirementCard('req-training', isTrainingComplete, '2. ชั่วโมงการอบรม', `Soft ${approvedSoftHours}/12 ชม. | Hard ${approvedHardHours}/18 ชม.` + (isTrainingComplete ? ' (ผ่านครบ)' : ''));
-    updateRequirementCard('req-checklist', isChecklistApproved, '3. Checklist บริษัท', isChecklistApproved ? '✓ มีบริษัทที่อาจารย์รีวิวผ่านแล้ว' : 'ยังไม่มีบริษัทที่ผ่านการอนุมัติ');
-    updateRequirementCard('req-interview', isInterviewPassed, '4. สถานะการยื่น', isInterviewPassed ? '✓ สัมภาษณ์ผ่านแล้ว' : 'ต้องมีบริษัทที่ "สัมภาษณ์ผ่านแล้ว"');
-
-    const isPlacementComplete = isChecklistApproved && isInterviewPassed;
-    if (isPlacementComplete) {
-      if (placementSection) placementSection.style.display = 'block';
-      if (placementLockedCard) placementLockedCard.style.display = 'none';
-    } else {
-      if (placementSection) placementSection.style.display = 'none';
-      if (placementLockedCard) placementLockedCard.style.display = 'block';
-    }
   } else {
-    // ถ้ายังไม่ผ่านชั่วโมงการอบรม หรือ CV ยังไม่ผ่าน -> ซ่อนส่วนที่ 4, 5, 6
+    // ถ้ายังไม่ผ่านชั่วโมงการอบรม หรือ CV ยังไม่ผ่าน -> ซ่อนส่วนที่ 4, 5
     if (checklistLockedCard) checklistLockedCard.style.display = 'block';
     if (checklistSection) checklistSection.style.display = 'none';
     if (submissionSection) submissionSection.style.display = 'none';
 
-    if (placementSection) placementSection.style.display = 'none';
-    if (placementLockedCard) placementLockedCard.style.display = 'none';
   }
 
   // ส่งสถานะเงื่อนไขชุดเดียวกันนี้ให้ sidebar (status_all_tabs.js) ใช้แสดงเมนู/badge
@@ -1380,8 +1114,6 @@ function checkPlacementUnlock() {
       hasPendingChecklist: currentCompaniesData.some(c => c.checklistStatus !== 'APPROVED' && c.checklistStatus !== 'REJECTED'),
       submissionCount: currentSubmissionsData.length,
       isInterviewPassed,
-      isPlacementUnlocked: Boolean(isChecklistUnlocked && isChecklistApproved && isInterviewPassed),
-      placementStatus: currentPlacementData ? currentPlacementData.status : null,
     },
   }));
 }
@@ -1445,5 +1177,4 @@ window.addEventListener('app:data-updated', () => {
   loadCv();
   loadCompanies();
   loadSubmissions();
-  loadPlacement();
 });

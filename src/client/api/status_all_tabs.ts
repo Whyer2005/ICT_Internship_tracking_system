@@ -8,8 +8,7 @@ type StatusAllTab =
   | "cv"
   | "checklist-locked"
   | "checklist"
-  | "submission"
-  | "placement";
+  | "submission";
 
 type BadgeTone = "done" | "todo" | "pending" | "fail" | "locked" | "muted";
 
@@ -30,8 +29,6 @@ interface UnlockState {
   hasPendingChecklist: boolean;
   submissionCount: number;
   isInterviewPassed: boolean;
-  isPlacementUnlocked: boolean;
-  placementStatus: string | null;
 }
 
 interface TabInfo {
@@ -49,7 +46,9 @@ type UrlMode = "push" | "replace" | null;
   if (!nav) return;
 
   // แท็บที่เขียนลง ?tab= ได้ (checklist-locked เป็นหน้าข้อมูลล็อก ไม่ใส่ใน URL)
-  const URL_TABS: string[] = ["personal", "training", "cv", "checklist", "submission", "placement"];
+  const URL_TABS: string[] = ["personal", "training", "cv", "checklist", "submission"];
+  // แท็บเก่าที่เลิกใช้แล้ว → ส่งไปแท็บใหม่ (ข้อมูลบริษัทย้ายไปอยู่ใน Checklist)
+  const LEGACY_TABS: Record<string, string> = { placement: "checklist" };
   const STAGE_1_TABS: string[] = ["personal", "training", "cv", "checklist-locked"];
   const DEFAULT_TAB = "personal";
 
@@ -116,18 +115,6 @@ type UrlMode = "push" | "replace" | null;
         if (!s.isChecklistUnlocked) return { done: false, locked: true, badge: "ล็อก", tone: "locked", reasons: [] };
         if (s.isInterviewPassed) return { done: true, locked: false, badge: "ผ่านสัมภาษณ์", tone: "done", reasons: [] };
         return { done: false, locked: false, badge: "ยังไม่ครบ", tone: "todo", reasons: [] };
-      }
-      case "placement": {
-        if (!s.isPlacementUnlocked) {
-          const reasons: string[] = [];
-          if (!s.isChecklistApproved) reasons.push("ต้องมี Checklist บริษัทที่ผ่านการอนุมัติ");
-          if (!s.isInterviewPassed) reasons.push("ต้องมีบริษัทที่สัมภาษณ์ผ่านแล้ว");
-          return { done: false, locked: true, badge: "ล็อก", tone: "locked", reasons };
-        }
-        if (s.placementStatus === "APPROVED") return { done: true, locked: false, badge: "อนุมัติแล้ว", tone: "done", reasons: [] };
-        if (s.placementStatus === "REJECTED") return { done: false, locked: false, badge: "ต้องแก้ไข", tone: "fail", reasons: [] };
-        if (s.placementStatus) return { done: false, locked: false, badge: "กำลังรอตรวจ", tone: "pending", reasons: [] };
-        return { done: false, locked: false, badge: "ยังไม่กรอก", tone: "todo", reasons: [] };
       }
       default:
         return { done: false, locked: false, badge: "", tone: "muted", reasons: [] };
@@ -211,7 +198,8 @@ type UrlMode = "push" | "replace" | null;
   }
 
   function readUrlTab(): string | null {
-    const tab = new URL(window.location.href).searchParams.get("tab");
+    const raw = new URL(window.location.href).searchParams.get("tab");
+    const tab = raw && LEGACY_TABS[raw] ? LEGACY_TABS[raw] : raw;
     return tab && URL_TABS.includes(tab) ? tab : null;
   }
 

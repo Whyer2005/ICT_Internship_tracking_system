@@ -15,6 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let isActingAsAdvisor = true;
 let isActingAsCourseAdmin = false;
+// บริษัทที่อาจารย์อนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ (หลังอนุมัติ Checklist)
+let editUnlockedCompanyIds: number[] = [];
+// ข้อมูลบริษัท/ผู้ติดต่อที่นิสิตกรอกใน Checklist (เก็บใน InternshipPlacement)
+let currentPlacement = null;
 
 async function loadStudentChecklistData() {
   const container = document.getElementById('companies-checklist-container');
@@ -116,6 +120,8 @@ async function loadStudentChecklistData() {
     } else {
       // Render บริษัทรอบปัจจุบัน
       companies.forEach((comp, idx) => {
+        editUnlockedCompanyIds = Array.isArray(data.editUnlockedCompanyIds) ? data.editUnlockedCompanyIds : [];
+        currentPlacement = data.placement || null;
         const card = renderCompanyReviewCard(comp, sections, idx, effectiveCanReview);
         container.appendChild(card);
       });
@@ -146,6 +152,48 @@ async function loadStudentChecklistData() {
       </div>
     `;
   }
+}
+
+// ข้อมูลสถานประกอบการที่นิสิตกรอกใน Checklist (แสดงแบบอ่านอย่างเดียว ให้ตรงกับหน้าของนิสิต)
+function renderCompanyInfoBlock(comp) {
+  const p = currentPlacement;
+  // แสดงเฉพาะเมื่อข้อมูลเป็นของบริษัทนี้ (ชื่อตรงกัน หรือยังไม่ได้ผูกชื่อ)
+  if (!p || (p.companyNameTh && comp.name && p.companyNameTh.trim() !== comp.name.trim())) {
+    return `
+      <div class="px-6 py-3">
+        <div style="padding:12px 16px; background:#F8FAFC; border:1px dashed #CBD5E1; border-radius:10px; font-size:13px; color:#64748B;">
+          ยังไม่มีข้อมูลสถานประกอบการ/ผู้ติดต่อสำหรับบริษัทนี้
+        </div>
+      </div>`;
+  }
+  const field = (label, value, full = false) => `
+    <div${full ? ' style="grid-column: 1 / -1;"' : ''}>
+      <div style="font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">${label}</div>
+      <div style="padding:8px 12px; font-size:13px; color:#0F172A; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:8px; min-height:36px; word-break:break-word;">
+        ${p[value] && String(p[value]).trim() ? escapeHtmlText(p[value]) : '<span style="color:#94A3B8;">-</span>'}
+      </div>
+    </div>`;
+  return `
+      <div class="px-6 py-3">
+        <div style="padding:16px 18px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+            <span class="material-icons" style="color:#4338CA; font-size:22px;">apartment</span>
+            <h4 style="font-size:14px; font-weight:800; color:#1E1B4B; margin:0;">
+              ข้อมูลสถานประกอบการและตำแหน่งงานสำหรับออกหนังสือขอความอนุเคราะห์ (+แบบตอบรับ)
+            </h4>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+            ${field('ตำแหน่งที่เข้าฝึกงาน', 'position')}
+            ${field('จังหวัดที่ตั้งสถานประกอบการ', 'province')}
+            ${field('ชื่อบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์ (เรียน...)', 'contactPersonName')}
+            ${field('ตำแหน่งบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์', 'contactPersonPosition')}
+            ${field('ที่อยู่สถานประกอบการ / แหล่งฝึกงาน', 'companyAddress', true)}
+            ${field('เบอร์โทรติดต่อสถานประกอบการ', 'companyPhone1')}
+            ${field('เบอร์โทรติดต่อ (สำรอง)', 'companyPhone2')}
+            ${field('Email สถานประกอบการ', 'companyEmail')}
+          </div>
+        </div>
+      </div>`;
 }
 
 function renderCompanyReviewCard(comp, sections, index, canReview = true) {
@@ -232,6 +280,7 @@ function renderCompanyReviewCard(comp, sections, index, canReview = true) {
 
     <!-- Accordion Body -->
     <div id="body-${comp.id}" class="company-body p-4 bg-white" style="display: block;">
+      ${renderCompanyInfoBlock(comp)}
       ${sectionsHtml}
 
       <!-- ส่วนผลการประเมินด้านล่าง -->
@@ -270,6 +319,8 @@ function renderCompanyReviewCard(comp, sections, index, canReview = true) {
             <textarea id="review-note-${comp.id}" rows="3" class="w-full p-3.5 bg-gray-100 border border-gray-300 rounded-xl text-gray-800 text-sm focus:bg-white focus:outline-none focus:border-blue-500 transition" placeholder="หมายเหตุ">${comp.checklistNote || ''}</textarea>
           </div>
 
+          ${comp.checklistStatus === 'APPROVED' ? renderInfoEditUnlockBox(comp.id, editUnlockedCompanyIds.includes(comp.id)) : ''}
+
           <!-- ปุ่มยืนยันและบันทึก (ภาพที่ 5: ปุ่มสีเขียวขนาดใหญ่) -->
           <div class="flex justify-center pt-4">
             <button type="button" onclick="saveCompanyChecklistReview(${comp.id})" class="w-full sm:w-auto px-12 py-3.5 bg-[#00C853] hover:bg-[#00B248] text-white text-lg font-bold rounded-2xl shadow-md hover:shadow-lg transition cursor-pointer border-none flex items-center justify-center gap-2">
@@ -306,6 +357,49 @@ function renderCompanyReviewCard(comp, sections, index, canReview = true) {
 
   return card;
 }
+
+// กล่องอนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ หลัง Checklist อนุมัติแล้ว (สถานะยังคงอนุมัติ)
+function renderInfoEditUnlockBox(companyId, isUnlocked) {
+  return `
+          <div id="info-edit-box-${companyId}" style="padding:14px 16px; border-radius:12px; border:1px solid ${isUnlocked ? '#FCD34D' : '#E2E8F0'}; background:${isUnlocked ? '#FFFBEB' : '#FFFFFF'};">
+            <div style="font-size:14px; font-weight:700; color:#1E293B; display:flex; align-items:center; gap:6px;">
+              <span class="material-icons" style="font-size:18px; color:${isUnlocked ? '#D97706' : '#64748B'};">${isUnlocked ? 'lock_open' : 'lock'}</span>
+              ${isUnlocked ? 'นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อได้อยู่' : 'ข้อมูลบริษัท/ผู้ติดต่อถูกล็อก (อนุมัติแล้ว)'}
+            </div>
+            <div style="font-size:12px; color:#64748B; margin:4px 0 10px;">
+              ใช้เมื่อนิสิตต้องแก้ไข เช่น ชื่อผู้รับหนังสือ เบอร์โทร ที่อยู่ — ชื่อบริษัทและคำตอบ Checklist แก้ไม่ได้ และสถานะยังคงอนุมัติ (นิสิตบันทึกได้ 1 ครั้งแล้วล็อกอัตโนมัติ)
+            </div>
+            <button type="button" onclick="window.toggleInfoEditUnlock(${companyId}, ${isUnlocked ? 'false' : 'true'})"
+              style="background:${isUnlocked ? '#FFFFFF' : '#F59E0B'}; color:${isUnlocked ? '#B45309' : '#FFFFFF'}; border:1px solid #F59E0B; padding:7px 14px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer;">
+              ${isUnlocked ? 'ยกเลิกการอนุญาตแก้ไข' : 'อนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ'}
+            </button>
+          </div>`;
+}
+
+window.toggleInfoEditUnlock = async function(companyId, allow) {
+  if (allow && !confirm('อนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อใช่หรือไม่? (สถานะ Checklist ยังคงอนุมัติ)')) return;
+  try {
+    const res = await fetch(`/api/advisor/companies/${companyId}/allow-info-edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allow }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert('เกิดข้อผิดพลาด: ' + (data.message || 'บันทึกไม่สำเร็จ'));
+      return;
+    }
+    editUnlockedCompanyIds = allow
+      ? [...editUnlockedCompanyIds.filter(id => id !== companyId), companyId]
+      : editUnlockedCompanyIds.filter(id => id !== companyId);
+    const box = document.getElementById(`info-edit-box-${companyId}`);
+    if (box) box.outerHTML = renderInfoEditUnlockBox(companyId, allow);
+    alert('✅ ' + data.message);
+  } catch (err) {
+    console.error('Error toggling info edit unlock:', err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์');
+  }
+};
 
 // Toggle Accordion
 window.toggleCompanyAccordion = function(companyId) {

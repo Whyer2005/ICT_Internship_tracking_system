@@ -776,6 +776,10 @@ router.get("/companies", async (req: Request, res: Response) => {
       companies,
       masterCompanies,
       archivedCompanies,
+      // บริษัทที่อาจารย์ที่ปรึกษาอนุญาตให้แก้ไขข้อมูลบริษัท/ผู้ติดต่อ หลัง Checklist อนุมัติแล้ว
+      infoEditUnlockedCompanyIds: companies
+        .filter((c) => state.companyInfoEditUnlocks?.[String(c.id)])
+        .map((c) => c.id),
       // รอบที่เปิดรับยื่นอยู่ตอนนี้ (1 รอบ = ผูกอัตโนมัติ / หลายรอบ = แสดง dropdown ให้เลือก)
       openInternshipWindows: eligibility.openWindows.map((w) => ({
         id: w.id,
@@ -792,6 +796,99 @@ router.get("/companies", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("GET /api/student/companies error:", err);
     res.status(500).json({ success: false, message: "ดึงข้อมูลบริษัทไม่สำเร็จ" });
+  }
+});
+
+// ย้าย Checklist บริษัทที่อาจารย์ที่ปรึกษาไม่อนุมัติ (REJECTED) เข้า Archive แบบเก็บข้อมูลครบ
+// (ตำแหน่ง/ที่อยู่/ผู้ติดต่อ/คำตอบ Checklist) แล้วลบออกจากรายการปัจจุบัน เพื่อเริ่ม Checklist บริษัทใหม่
+// หมายเหตุ: เรียก saveSuperAdminState(state) เองหลังเรียกฟังก์ชันนี้
+async function archiveRejectedChecklistCompany(
+  state: ReturnType<typeof loadSuperAdminState>,
+  student: StudentWithRelations,
+  companyId: number
+) {
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, studentId: student.id },
+    include: { answers: { include: { checklistItem: true } } },
+  });
+  if (!company || company.checklistStatus !== "REJECTED") return false;
+
+  // ข้อมูลบริษัท/ผู้ติดต่อถูกเก็บไว้ใน InternshipPlacement ตอนบันทึก Checklist
+  const p = student.placement;
+  const placementMatches = Boolean(p && (!p.companyNameTh || p.companyNameTh === company.name));
+  const info = placementMatches ? p : null;
+
+  state.archivedApplications.unshift({
+    id: `ARCH-${Date.now().toString().slice(-6)}-${company.id}`,
+    studentId: student.id,
+    studentCode: student.studentCode,
+    studentName: student.nameTh,
+    major: student.major || "วิศวกรรมซอฟต์แวร์",
+    companyName: company.name,
+    position: info?.position || "-",
+    companyAddress: info?.companyAddress || "-",
+    province: info?.province || "-",
+    contactPersonName: info?.contactPersonName || "-",
+    phone: info?.companyPhone1 || "-",
+    email: info?.companyEmail || "-",
+    reason: "ADVISOR_REJECTED",
+    note: company.checklistNote || "อาจารย์ที่ปรึกษาไม่อนุมัติ Checklist (ปลดล็อกให้ยื่นบริษัทใหม่)",
+    answers: company.answers.map((a) => ({
+      itemId: a.checklistItemId,
+      description: a.checklistItem?.description || "",
+      checked: a.checked,
+      detail: a.detail || "",
+    })),
+    archivedAt: new Date().toISOString(),
+  });
+
+  await prisma.companyChecklistAnswer.deleteMany({ where: { companyId: company.id } });
+  await prisma.companySubmission.deleteMany({ where: { companyId: company.id } });
+  await prisma.company.delete({ where: { id: company.id } });
+
+  if (p && placementMatches) {
+    await prisma.internshipPlacement.update({
+      where: { id: p.id },
+      data: {
+        companyNameTh: null,
+        position: null,
+        companyAddress: null,
+        province: null,
+        contactPersonName: null,
+        contactPersonPosition: null,
+        companyPhone1: null,
+        companyPhone2: null,
+        companyEmail: null,
+      },
+    });
+  }
+  return true;
+}
+
+// นิสิตกด "ยื่นบริษัทใหม่" หลังอาจารย์ที่ปรึกษาไม่อนุมัติ Checklist → เก็บบริษัทเดิมเข้า Archive ทันที
+router.post("/companies/:id/archive", async (req: Request, res: Response) => {
+  try {
+    const student = await getStudentByUserId(req.session.user!.id);
+    if (!student) {
+      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
+    }
+    if (student.isDropped) {
+      return res.status(403).json({ success: false, message: "บัญชีอยู่ในสถานะดรอป ไม่สามารถยื่นบริษัทใหม่ได้" });
+    }
+    const companyId = parseInt(req.params.id as string, 10);
+    const state = loadSuperAdminState();
+    const archived = await archiveRejectedChecklistCompany(state, student, companyId);
+    if (!archived) {
+      return res.status(400).json({
+        success: false,
+        message: "เก็บเข้าประวัติได้เฉพาะ Checklist ที่อาจารย์ที่ปรึกษาไม่อนุมัติเท่านั้น",
+      });
+    }
+    saveSuperAdminState(state);
+    res.json({ success: true, message: "เก็บบริษัทเดิมเข้าประวัติแล้ว กรุณากรอก Checklist บริษัทแห่งใหม่" });
+  } catch (err: any) {
+    console.error("POST /api/student/companies/:id/archive error:", err);
+    res.status(500).json({ success: false, message: "เก็บเข้าประวัติไม่สำเร็จ: " + err.message });
   }
 });
 
@@ -871,21 +968,7 @@ router.post("/companies", async (req: Request, res: Response) => {
     // หากมีบริษัทที่ถูก REJECTED ค้างอยู่ ให้ย้ายเข้า Archive แบบย่อและเคลียร์เพื่อให้ยื่นบริษัทใหม่ได้
     const rejectedCompanies = existingCompanies.filter((c) => c.checklistStatus === "REJECTED");
     for (const rej of rejectedCompanies) {
-      state.archivedApplications.unshift({
-        id: `ARCH-${Date.now().toString().slice(-6)}`,
-        studentId: student.id,
-        studentCode: student.studentCode,
-        studentName: student.nameTh,
-        major: student.major || "วิศวกรรมซอฟต์แวร์",
-        companyName: rej.name,
-        position: "นิสิตฝึกงาน / สหกิจศึกษา",
-        reason: "ADVISOR_REJECTED",
-        note: rej.checklistNote || "อาจารย์ที่ปรึกษาไม่อนุมัติ Checklist (ปลดล็อกให้ยื่นบริษัทใหม่)",
-        archivedAt: new Date().toISOString(),
-      });
-      await prisma.companyChecklistAnswer.deleteMany({ where: { companyId: rej.id } });
-      await prisma.companySubmission.deleteMany({ where: { companyId: rej.id } });
-      await prisma.company.delete({ where: { id: rej.id } });
+      await archiveRejectedChecklistCompany(state, student, rej.id);
     }
 
     const {
@@ -1079,9 +1162,50 @@ router.put("/companies/:id", async (req: Request, res: Response) => {
     }
 
     if (company.checklistStatus === "APPROVED") {
-      return res.status(400).json({
-        success: false,
-        message: "อาจารย์ที่ปรึกษาอนุมัติ Checklist แล้ว ไม่สามารถแก้ไขข้อมูลได้",
+      // อาจารย์ที่ปรึกษากดอนุญาตให้แก้ไข → แก้ได้เฉพาะข้อมูลบริษัท/ผู้ติดต่อ (ไม่แก้ชื่อบริษัท/คำตอบ Checklist)
+      const editState = loadSuperAdminState();
+      const unlockKey = String(company.id);
+      if (!editState.companyInfoEditUnlocks?.[unlockKey]) {
+        return res.status(400).json({
+          success: false,
+          message: "อาจารย์ที่ปรึกษาอนุมัติ Checklist แล้ว ไม่สามารถแก้ไขข้อมูลได้ (ติดต่ออาจารย์ที่ปรึกษาเพื่อขอแก้ไข)",
+        });
+      }
+      const clean = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      const infoData = {
+        position: clean(position),
+        contactPersonName: clean(contactPersonName),
+        contactPersonPosition: clean(contactPersonPosition),
+        companyAddress: clean(companyAddress),
+        province: clean(province),
+        companyPhone1: clean(companyPhone1),
+        companyPhone2: clean(companyPhone2),
+        companyEmail: clean(companyEmail),
+      };
+      if (!infoData.position || !infoData.companyAddress || !infoData.province) {
+        return res.status(400).json({ success: false, message: "กรุณากรอกตำแหน่ง ที่อยู่ และจังหวัดให้ครบ" });
+      }
+      if (student.placement) {
+        await prisma.internshipPlacement.update({
+          where: { id: student.placement.id },
+          data: { ...infoData, companyNameTh: company.name },
+        });
+      } else {
+        await prisma.internshipPlacement.create({
+          data: { studentId: student.id, ...infoData, companyNameTh: company.name, status: "PENDING" },
+        });
+      }
+      delete editState.companyInfoEditUnlocks![unlockKey];
+      saveSuperAdminState(editState);
+
+      const unchanged = await prisma.company.findUnique({
+        where: { id: companyId },
+        include: { answers: true, submission: true },
+      });
+      return res.json({
+        success: true,
+        message: "บันทึกการแก้ไขข้อมูลบริษัท/ผู้ติดต่อเรียบร้อยแล้ว (Checklist ยังคงสถานะอนุมัติ)",
+        company: unchanged,
       });
     }
 
