@@ -23,6 +23,16 @@
 | 3 | [03_USE_CASES.md](03_USE_CASES.md) | ขั้นตอนการใช้งานตั้งแต่เตรียมตัวจนออกหนังสือส่งตัว | ขั้นตอนตรงกับการทำงานจริงหรือไม่ |
 | 4 | [04_OPEN_ISSUES.md](04_OPEN_ISSUES.md) | **คำถามที่ต้องเคาะในวันประชุม** (ใช้เป็นวาระประชุม) | เตรียมคำตอบหรือข้อยกเว้นของสาขามาล่วงหน้า |
 
+### แผนภาพประกอบ (โฟลเดอร์ [diagrams/](diagrams/README.md))
+
+| แผนภาพ | ไฟล์ |
+|---|---|
+| Use Case Diagram | [diagrams/05_USE_CASE_DIAGRAM.md](diagrams/05_USE_CASE_DIAGRAM.md) |
+| ER Diagram (Crow's Foot / Chen) | [diagrams/06_ER_DIAGRAM.md](diagrams/06_ER_DIAGRAM.md) |
+| Schema Diagram | [diagrams/07_SCHEMA_DIAGRAM.md](diagrams/07_SCHEMA_DIAGRAM.md) |
+| Context Diagram & DFD Level 1 | [diagrams/08_CONTEXT_DFD.md](diagrams/08_CONTEXT_DFD.md) |
+| Activity Diagram | [diagrams/09_ACTIVITY_DIAGRAM.md](diagrams/09_ACTIVITY_DIAGRAM.md) |
+
 ## สัญลักษณ์ที่ใช้ในเอกสาร
 
 | สัญลักษณ์ | ความหมาย |
