@@ -35,7 +35,7 @@ flowchart LR
             UC08(["UC-08 ออกหนังสือขอความอนุเคราะห์<br/>(Issue Request Letter)"])
             UC09(["UC-09 อัปโหลดแบบตอบรับ<br/>(Upload Acceptance Form)"])
             UC10(["UC-10 ตรวจ/ยืนยันแบบตอบรับ<br/>(Verify Acceptance Form)"])
-            UC10I(["อ่านแบบตอบรับด้วย OCR<br/>(OCR Reading)"])
+            UC10I(["วิเคราะห์แบบตอบรับอัตโนมัติ<br/>(OMR)"])
             UC11(["UC-11 ออกหนังสือส่งตัว<br/>(Issue Dispatch Letter)"])
         end
         subgraph G5["5. รอบที่ 2 / ติดตาม / ส่งต่อ (Round 2, Monitoring, Export)"]

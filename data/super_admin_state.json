@@ -668,5 +668,51 @@
       "isSameCompanyAsRound1": false
     }
   },
-  "companyInfoEditUnlocks": {}
+  "companyInfoEditUnlocks": {},
+  "letterBatches": {
+    "REQ-BATCH-517416": {
+      "batchId": "REQ-BATCH-517416",
+      "type": "REQUEST",
+      "companyName": "บริษัท บานาน่า โค้ดดิ้ง จำกัด",
+      "docNo": "อว 7316/ว 763",
+      "letterDate": "2026-11-16",
+      "interviewDate": "2026-02-15",
+      "signatureSnapshot": "",
+      "students": [
+        {
+          "studentId": 12,
+          "studentCode": "67023110",
+          "nameTh": "เอกัทร อินทร์สวัสดิ์",
+          "major": "วิศวกรรมซอฟต์แวร์",
+          "position": "Software Developer",
+          "phone": "0123654789",
+          "companyAddress": "fefe"
+        }
+      ],
+      "issuedAt": "2026-11-16T00:00:00.000Z",
+      "legacy": true
+    },
+    "REQ-BATCH-271647": {
+      "batchId": "REQ-BATCH-271647",
+      "type": "REQUEST",
+      "companyName": "บริษัท บานาน่า โค้ดดิ้ง จำกัด",
+      "docNo": "อว 7316/ว 200",
+      "letterDate": "2026-11-16",
+      "interviewDate": "2026-02-15",
+      "signatureSnapshot": "",
+      "students": [
+        {
+          "studentId": 55,
+          "studentCode": "69023110",
+          "nameTh": "นายคุมะ คุกกี้",
+          "major": "วิศวกรรมซอฟต์แวร์",
+          "position": "Software Developer",
+          "phone": "6666666666",
+          "companyAddress": "34/5 ถ.นิมมานเหมินท์ ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200"
+        }
+      ],
+      "issuedAt": "2026-11-16T00:00:00.000Z",
+      "legacy": true
+    }
+  }
 }

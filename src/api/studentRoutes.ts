@@ -11,6 +11,7 @@ import {
   termSortKey,
   windowDisplayLabel,
 } from "../utils/internshipWindows";
+import { batchesForStudent, getLetterBatch, toBatchStudent } from "../utils/letterBatches";
 import { analyzeAcceptanceForm } from "../utils/acceptanceOcr";
 import {
   loadSuperAdminState,
@@ -592,8 +593,11 @@ router.get("/acceptance-form", async (req: Request, res: Response) => {
     const state = loadSuperAdminState();
     const wf = state.docWorkflowMap[String(student.id)];
 
-    let letterStudents: any[] = [];
-    if (wf) {
+    // รายชื่อในหนังสือมาจาก "ฉบับหนังสือ" (snapshot ณ วันที่ออก) — ถ้าเป็นข้อมูลเก่าที่ยังไม่มีฉบับ ใช้วิธีเดิม
+    const reqBatch = getLetterBatch(state, wf?.requestLetterBatchId);
+    const dspBatch = getLetterBatch(state, wf?.dispatchLetterBatchId);
+    let letterStudents: any[] = reqBatch ? reqBatch.students : [];
+    if (wf && !reqBatch) {
       const batchIds = wf.requestLetterBatchId
         ? Object.values(state.docWorkflowMap)
             .filter((item: any) => item && item.requestLetterBatchId === wf.requestLetterBatchId)
@@ -605,20 +609,40 @@ router.get("/acceptance-form", async (req: Request, res: Response) => {
         where: { id: { in: targetIds } },
         include: { placement: true },
       });
-      letterStudents = dbStudents.map((s) => ({
-        studentCode: s.studentCode,
-        nameTh: s.nameTh,
-        major: s.major || "วิศวกรรมซอฟต์แวร์",
-        position: s.placement?.position || "นิสิตฝึกงาน",
-        phone: s.phone || "-",
-        companyAddress: s.placement?.companyAddress || "",
-      }));
+      letterStudents = dbStudents.map((s) => toBatchStudent(s));
     }
 
-    res.json({
-      success: true,
-      acceptance: toStudentAcceptanceView(wf, state, student, letterStudents),
-    });
+    const view: any = toStudentAcceptanceView(wf, state, student, letterStudents);
+    if (wf) {
+      if (reqBatch) {
+        view.requestLetterDocNo = reqBatch.docNo;
+        view.requestLetterDate = reqBatch.letterDate;
+        view.requestLetterSignatureSnapshot = reqBatch.signatureSnapshot || view.requestLetterSignatureSnapshot;
+        view.companyName = reqBatch.companyName || view.companyName;
+      }
+      // หนังสือส่งตัวแนบรายชื่อเฉพาะนิสิตที่บริษัทตอบรับ (ไม่ใช่รายชื่อของหนังสือขอความอนุเคราะห์)
+      view.dispatchLetterStudents = dspBatch ? dspBatch.students : view.letterStudents;
+      if (dspBatch) {
+        view.dispatchLetterDocNo = dspBatch.docNo;
+        view.dispatchLetterDate = dspBatch.letterDate;
+        view.dispatchLetterSignatureSnapshot = dspBatch.signatureSnapshot || view.dispatchLetterSignatureSnapshot;
+      }
+    }
+    // หนังสือฉบับก่อนหน้าที่มีชื่อนิสิต (เช่น บริษัทเดิมที่ปฏิเสธ) — ยังดาวน์โหลดย้อนหลังได้
+    const currentIds = new Set([wf?.requestLetterBatchId, wf?.dispatchLetterBatchId].filter(Boolean));
+    view.pastLetters = batchesForStudent(state, student.id)
+      .filter((b) => !currentIds.has(b.batchId))
+      .map((b) => ({
+        batchId: b.batchId,
+        type: b.type,
+        companyName: b.companyName,
+        docNo: b.docNo,
+        letterDate: b.letterDate,
+        signatureSnapshot: b.signatureSnapshot,
+        students: b.students,
+      }));
+
+    res.json({ success: true, acceptance: view });
   } catch (err) {
     console.error("GET /api/student/acceptance-form error:", err);
     res.status(500).json({ success: false, message: "ดึงข้อมูลแบบตอบรับไม่สำเร็จ" });

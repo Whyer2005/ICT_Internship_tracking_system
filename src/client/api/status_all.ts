@@ -1246,8 +1246,27 @@ function renderStudentAcceptanceCard() {
   }
 
   const acc = currentAcceptanceData;
+  // หนังสือฉบับก่อนหน้า (เช่น บริษัทเดิมที่ปฏิเสธ / รอบที่ 1) — รายชื่อตามที่ออกจริง ดาวน์โหลดย้อนหลังได้
+  const pastLetters = Array.isArray(acc?.pastLetters) ? acc.pastLetters : [];
+  const pastLettersHtml = pastLetters.length === 0 ? '' : `
+    <div style="margin-top:10px; border-top:1px dashed #CBD5E1; padding-top:10px;">
+      <div style="font-size:12.5px; font-weight:700; color:#475569; margin-bottom:6px;">📚 หนังสือฉบับก่อนหน้า</div>
+      ${pastLetters.map(b => `
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; margin-bottom:4px;">
+          <span style="color:#334155;">${b.type === 'DISPATCH' ? 'หนังสือส่งตัว' : 'หนังสือขอความอนุเคราะห์'} · ${escapeStudentHtml(b.companyName || '-')} · เลขที่ ${escapeStudentHtml(b.docNo || '-')}</span>
+          <button type="button" onclick="downloadStudentOfficialLetter('${b.type}', '${escapeStudentHtml(b.batchId)}')"
+            style="background:#FFFFFF; color:#312E81; border:1px solid #C7D2FE; padding:3px 9px; border-radius:6px; font-size:11.5px; font-weight:700; cursor:pointer;">
+            📥 ดาวน์โหลด
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
   if (!acc || !acc.requestLetterIssued) {
-    container.innerHTML = '';
+    container.innerHTML = pastLettersHtml
+      ? `<div style="border:1px solid #CBD5E1; border-radius:12px; padding:12px 18px; background:#F8FAFC;">${pastLettersHtml}</div>`
+      : '';
     return;
   }
 
@@ -1296,19 +1315,30 @@ function renderStudentAcceptanceCard() {
         </div>
       </div>
       ${statusBanner}
+      ${pastLettersHtml}
     </div>
   `;
 }
 
-window.downloadStudentOfficialLetter = function(type) {
+// batchId: ดาวน์โหลด "ฉบับก่อนหน้า" (เช่น หนังสือของบริษัทเดิมที่ปฏิเสธ) จากรายชื่อ ณ วันที่ออก
+window.downloadStudentOfficialLetter = function(type, batchId) {
   const acc = currentAcceptanceData;
-  if (!acc || !acc.requestLetterIssued) {
+  const past = batchId ? (acc?.pastLetters || []).find(b => b.batchId === batchId) : null;
+  if (batchId && past) {
+    type = past.type;
+  } else if (!acc || !acc.requestLetterIssued) {
     alert('ยังไม่มีการออกหนังสือขอความอนุเคราะห์จากเจ้าหน้าที่คณะ');
     return;
   }
 
-  const students = Array.isArray(acc.letterStudents) && acc.letterStudents.length > 0
-    ? acc.letterStudents
+  // หนังสือส่งตัวใช้รายชื่อของฉบับส่งตัว (นิสิตที่บริษัทตอบรับ) ไม่ใช่รายชื่อของหนังสือขอความอนุเคราะห์
+  const listFromServer = past
+    ? past.students
+    : type === 'DISPATCH' && Array.isArray(acc.dispatchLetterStudents) && acc.dispatchLetterStudents.length > 0
+    ? acc.dispatchLetterStudents
+    : acc.letterStudents;
+  const students = Array.isArray(listFromServer) && listFromServer.length > 0
+    ? listFromServer
     : [{
         studentCode: document.getElementById('prof-studentCode')?.value || '-',
         nameTh: document.getElementById('prof-nameTh')?.value || '-',
@@ -1319,19 +1349,26 @@ window.downloadStudentOfficialLetter = function(type) {
 
   const first = students[0];
   const cfg = acc.academicConfig || {};
-  const docNo = type === 'DISPATCH'
+  const docNo = past
+    ? past.docNo
+    : type === 'DISPATCH'
     ? (acc.dispatchLetterDocNo || 'อว 7316/ว 0512')
     : (acc.requestLetterDocNo || 'อว 7316/ว 0142');
-  const rawDate = type === 'DISPATCH' ? acc.dispatchLetterDate : acc.requestLetterDate;
+  const rawDate = past ? past.letterDate : type === 'DISPATCH' ? acc.dispatchLetterDate : acc.requestLetterDate;
   const dateObj = rawDate ? new Date(rawDate) : new Date();
   const thaiDate = !isNaN(dateObj.getTime())
     ? dateObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     : new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-  const signatureDataUrl = type === 'DISPATCH'
+  const signatureDataUrl = past
+    ? (past.signatureSnapshot || '')
+    : type === 'DISPATCH'
     ? (acc.dispatchLetterSignatureSnapshot || '')
     : (acc.requestLetterSignatureSnapshot || '');
-  const targetCompName = acc.companyName || (currentSubmissionsData[0]?.name) || 'สถานประกอบการ';
-  const targetCompAddress = acc.companyAddress && acc.companyAddress !== '-' ? acc.companyAddress : '';
+  const targetCompName = past?.companyName || acc.companyName || (currentSubmissionsData[0]?.name) || 'สถานประกอบการ';
+  const rawCompAddress = past
+    ? ((past.students || []).find(s => s.companyAddress && s.companyAddress !== '-')?.companyAddress || '')
+    : acc.companyAddress;
+  const targetCompAddress = rawCompAddress && rawCompAddress !== '-' ? rawCompAddress : '';
   const targetMajor = first.major || 'วิศวกรรมซอฟต์แวร์';
   const subjectText = type === 'DISPATCH'
     ? 'ขอส่งตัวนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา'

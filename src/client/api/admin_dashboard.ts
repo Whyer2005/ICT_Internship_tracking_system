@@ -2130,6 +2130,7 @@ let superAdminData = {
   documentQueue: [],
   companyGroups: [],
   archivedApplications: [],
+  letterBatches: [] as any[],
 };
 
 type AdminWorkspace = 'overview' | 'unlock' | 'events' | 'companies' | 'documents' | 'coop' | 'checklist';
@@ -5217,21 +5218,54 @@ window.renderDocumentQueueTable = function() {
     const stages = g.items.map(docStageOf);
     const countOf = (s: string) => stages.filter(x => x === s).length;
     const readyIds = g.items.filter(d => docStageOf(d) === 'READY_FOR_REQ').map(d => d.studentId);
+    const acceptedIds = g.items.filter(d => docStageOf(d) === 'ACCEPTED').map(d => d.studentId);
     const escapedComp = (g.name || '').replace(/'/g, "\\'");
     const gid = docGroupId(key);
+    const groupBatches = g.isNone ? [] : batchesOfCompany(g.name);
 
+    // ปุ่มระดับบริษัท: ออกฉบับใหม่ให้เฉพาะคนที่ "รอออก" (คนที่ออกแล้วอยู่ในฉบับเดิม)
     const groupActions = g.isNone ? '' : `
       <div style="display:flex; gap:6px; flex-wrap:wrap;" onclick="event.stopPropagation()">
         ${readyIds.length > 0 ? `
           <button type="button" onclick='issueGroupRequestLetter(${JSON.stringify(readyIds)}, "${escapedComp}")'
             style="background:#4338CA; color:white; border:none; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
             <span class="material-icons" style="font-size:14px;">description</span>
-            ${readyIds.length > 1 ? `ออกหนังสือรวมกลุ่ม (${readyIds.length} คน)` : 'ออกหนังสือขอความอนุเคราะห์'}
+            ออกหนังสือขอความอนุเคราะห์ (${readyIds.length} คน)
+          </button>
+          <button type="button" onclick='openOfficialLetterPreview("REQUEST", ${JSON.stringify(readyIds)}, "${escapedComp}")'
+            style="background:#EEF2FF; color:#312E81; border:1px solid #C7D2FE; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+            <span class="material-icons" style="font-size:14px;">visibility</span> พรีวิวร่าง
           </button>` : ''}
-        <button type="button" onclick='openOfficialLetterPreview("REQUEST", ${JSON.stringify(g.items.map(d => d.studentId))}, "${escapedComp}")'
-          style="background:#EEF2FF; color:#312E81; border:1px solid #C7D2FE; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
-          <span class="material-icons" style="font-size:14px;">visibility</span> พรีวิว PDF
-        </button>
+        ${acceptedIds.length > 0 ? `
+          <button type="button" onclick='issueGroupDispatchLetter(${JSON.stringify(acceptedIds)}, "${escapedComp}")'
+            style="background:#059669; color:white; border:none; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+            <span class="material-icons" style="font-size:14px;">send</span>
+            ออกหนังสือส่งตัว (${acceptedIds.length} คน)
+          </button>` : ''}
+      </div>
+    `;
+
+    // รายการฉบับหนังสือที่ออกแล้วของบริษัทนี้ (รายชื่อ ณ วันที่ออก)
+    const batchListHtml = groupBatches.length === 0 ? '' : `
+      <div style="padding:10px 16px; background:#FAFBFF; border-top:1px solid #E2E8F0;">
+        <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:6px;">📚 หนังสือที่ออกแล้ว (${groupBatches.length} ฉบับ)</div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          ${groupBatches.map(b => `
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px;">
+              <span style="background:${b.type === 'DISPATCH' ? '#DBEAFE' : '#EEF2FF'}; color:${b.type === 'DISPATCH' ? '#1E40AF' : '#3730A3'}; padding:2px 8px; border-radius:999px; font-weight:700; white-space:nowrap;">
+                ${b.type === 'DISPATCH' ? 'ส่งตัว' : 'ขอความอนุเคราะห์'}
+              </span>
+              <span style="font-weight:700; color:#1E1B4B;">${escapeHtmlText(b.docNo || '-')}</span>
+              <span style="color:#64748B;">${thaiDateOf(b.letterDate)}</span>
+              <span style="color:#334155;">${b.students.length} คน: ${b.students.map(s => escapeHtmlText(s.nameTh)).join(', ')}</span>
+              ${b.legacy ? `<span title="สร้างย้อนหลังจากข้อมูลเดิม" style="color:#94A3B8; font-size:11px;">(ข้อมูลเดิม)</span>` : ''}
+              <button type="button" onclick='openOfficialLetterPreview("${b.type}", [], "${escapedComp}", "${b.batchId}")'
+                style="margin-left:auto; background:#FFFFFF; color:#312E81; border:1px solid #C7D2FE; padding:3px 9px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">
+                👁 พรีวิว
+              </button>
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
 
@@ -5252,12 +5286,14 @@ window.renderDocumentQueueTable = function() {
                 ${stageChip(countOf('WAITING_RESPONSE'), 'รอผลตอบรับ', '#E0F2FE', '#0369A1')}
                 ${stageChip(countOf('ACCEPTED'), 'รอออกหนังสือส่งตัว', '#DCFCE7', '#166534')}
                 ${stageChip(countOf('DISPATCHED'), 'ส่งตัวแล้ว', '#DBEAFE', '#1E40AF')}
+                ${groupBatches.length > 0 ? `<span style="background:#F8FAFC; color:#475569; border:1px solid #E2E8F0; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;">📚 ${groupBatches.length} ฉบับ</span>` : ''}
               </div>
             </div>
           </div>
           ${groupActions}
         </div>
         ${isOpen ? `
+          ${batchListHtml}
           <div class="table-responsive" style="border-top:1px solid #E2E8F0;">
             <table class="data-table" style="margin:0;">
               <thead>
@@ -5313,7 +5349,7 @@ window.issueGroupRequestLetter = async function(studentIds, companyName, intervi
     if (data.success) {
       alert('✅ ' + data.message);
       await window.loadSuperAdminOverview();
-      window.openOfficialLetterPreview('REQUEST', studentIds, companyName);
+      window.openOfficialLetterPreview('REQUEST', studentIds, companyName, data.batchId);
     } else {
       alert('เกิดข้อผิดพลาด: ' + (data.message || 'ไม่สามารถออกหนังสือได้'));
     }
@@ -5374,16 +5410,25 @@ window.recordCompanyResponseAction = async function(studentId, responseStatus) {
 };
 
 window.issueDispatchLetterForStudent = async function(studentId) {
+  const target = (superAdminData.documentQueue || []).find(d => d.studentId === studentId);
+  await window.issueGroupDispatchLetter([studentId], target?.companyName || 'สถานประกอบการ');
+};
+
+/** หนังสือส่งตัว 1 ฉบับต่อบริษัท แนบรายชื่อนิสิตที่บริษัทตอบรับ (ที่ยังไม่ได้ส่งตัว) */
+window.issueGroupDispatchLetter = async function(studentIds, companyName) {
   const defaultPrefix = superAdminData.academicConfig?.defaultDocPrefix || 'อว 7316/';
   const suggestedNo = `${defaultPrefix}ว ${Math.floor(500 + Math.random() * 499)}`;
-  const docNo = prompt('ระบุเลขที่หนังสือส่งตัวนิสิตเข้าฝึกงาน (Dispatch Letter):', suggestedNo);
+  const docNo = prompt(
+    `ระบุเลขที่หนังสือส่งตัวนิสิตเข้าฝึกงาน สำหรับ "${companyName}" (${studentIds.length} คน ที่บริษัทตอบรับแล้ว):`,
+    suggestedNo
+  );
   if (!docNo) return;
 
   try {
     const res = await fetch('/api/admin/super-admin/documents/issue-dispatch-letter', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentIds: [studentId], docNo }),
+      body: JSON.stringify({ studentIds, docNo, companyName }),
     });
     const data = await res.json();
     if (data.success) {
@@ -5391,8 +5436,9 @@ window.issueDispatchLetterForStudent = async function(studentId) {
       await window.loadSuperAdminOverview();
       await loadDashboardSummary();
       await loadStudents();
-      const target = (superAdminData.documentQueue || []).find(d => d.studentId === studentId);
-      window.openOfficialLetterPreview('DISPATCH', [studentId], target?.companyName || 'สถานประกอบการ');
+      window.openOfficialLetterPreview('DISPATCH', studentIds, companyName, data.batchId);
+    } else {
+      alert('เกิดข้อผิดพลาด: ' + (data.message || 'ไม่สามารถออกหนังสือส่งตัวได้'));
     }
   } catch (err) {
     console.error(err);
@@ -5562,49 +5608,67 @@ window.closeStudentArchiveModal = function() {
 };
 
 // พรีวิวและพิมพ์หนังสือราชการ PDF (หนังสือขอความอนุเคราะห์ + แบบฟอร์มใบตอบรับ หรือ หนังสือส่งตัว)
-window.openOfficialLetterPreview = function(type, studentIds, companyName) {
+// ===== "ฉบับหนังสือ": 1 ฉบับ = 1 เลขที่ ต่อ 1 บริษัท พร้อมรายชื่อ ณ วันที่ออก (snapshot จาก server) =====
+function letterBatchById(batchId) {
+  return (superAdminData.letterBatches || []).find(b => b.batchId === batchId) || null;
+}
+
+/** ฉบับหนังสือของบริษัท (เก่า → ใหม่) */
+function batchesOfCompany(companyName) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  return (superAdminData.letterBatches || [])
+    .filter(b => norm(b.companyName) === norm(companyName))
+    .sort((a, b) => String(a.issuedAt || '').localeCompare(String(b.issuedAt || '')));
+}
+
+function thaiDateOf(ymd) {
+  const d = ymd ? new Date(ymd) : new Date();
+  return (isNaN(d.getTime()) ? new Date() : d).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+/** ฉบับที่ควรใช้พรีวิว: ระบุตรง ๆ หรือฉบับเดียวกันของนิสิตที่เลือกทั้งหมด (ปุ่มในแถวนิสิต -> หนังสือทั้งฉบับของคนนั้น) */
+function resolveLetterBatch(type, studentIds, batchId) {
+  if (batchId) return letterBatchById(batchId);
+  const field = type === 'DISPATCH' ? 'dispatchLetterBatchId' : 'requestLetterBatchId';
+  const ids = Array.from(new Set((superAdminData.documentQueue || [])
+    .filter(d => studentIds.includes(d.studentId))
+    .map(d => d[field] || '')));
+  return ids.length === 1 && ids[0] ? letterBatchById(ids[0]) : null;
+}
+
+window.openOfficialLetterPreview = function(type, studentIds, companyName, batchId) {
   const modal = document.getElementById('official-letter-modal');
   const titleEl = document.getElementById('official-letter-modal-title');
   const areaEl = document.getElementById('official-letter-print-area');
   if (!modal || !areaEl) return;
+
+  const cfg = superAdminData.academicConfig || {};
+  // ออกแล้ว -> ใช้ฉบับจริง (เลขที่/วันที่/ลายเซ็น/รายชื่อ ณ วันที่ออก) · ยังไม่ออก -> พรีวิวร่างจากรายชื่อที่เลือก
+  const batch = resolveLetterBatch(type, studentIds, batchId);
+  const isDraft = !batch;
+  const students = batch
+    ? batch.students
+    : (superAdminData.documentQueue || []).filter(d => studentIds.includes(d.studentId));
+  const first = students[0] || { companyName: companyName || '' };
+  companyName = batch?.companyName || companyName;
 
   const cleanCompName = String(companyName || 'สถานประกอบการ').trim();
   window.currentLetterDocTitle = type === 'DISPATCH'
     ? `หนังสือส่งตัวนิสิตฝึกงาน (${cleanCompName})`
     : `ขอความอนุเคราะห์รับนิสิตฝึกงาน มหาวิทยาลัยพะเยา (${cleanCompName})`;
 
-  const students = (superAdminData.documentQueue || []).filter(d => studentIds.includes(d.studentId));
-  const first = students[0] || {
-    studentCode: '67023110',
-    nameTh: 'นายกรวิชญ์ สิทธิศักดิ์',
-    major: 'วิศวกรรมซอฟต์แวร์',
-    position: 'Software Developer Intern',
-    requestLetterDocNo: 'อว 7316/ว 0142',
-    dispatchLetterDocNo: 'อว 7316/ว 0512',
-    interviewDate: '2026-02-15',
-  };
-
-  const cfg = superAdminData.academicConfig || {};
-  const isDocumentIssued = type === 'DISPATCH'
-    ? Boolean(first.dispatchLetterIssued)
-    : Boolean(first.requestLetterIssued);
-  const signatureDataUrl = isDocumentIssued
-    ? (type === 'DISPATCH'
-      ? first.dispatchLetterSignatureSnapshot
-      : first.requestLetterSignatureSnapshot) || ''
-    : cfg.signatureDataUrl || '';
-  const docNo = type === 'DISPATCH'
-    ? (first.dispatchLetterDocNo || `${cfg.defaultDocPrefix || 'อว 7316/'}ว 0512`)
-    : (first.requestLetterDocNo || `${cfg.defaultDocPrefix || 'อว 7316/'}ว 0142`);
-  const thaiDate = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const signatureDataUrl = batch ? (batch.signatureSnapshot || '') : (cfg.signatureDataUrl || '');
+  const docNo = batch ? batch.docNo : `${cfg.defaultDocPrefix || 'อว 7316/'}ว ....... (ร่าง)`;
+  const thaiDate = thaiDateOf(batch?.letterDate);
   const subjectText = type === 'DISPATCH'
     ? 'ขอส่งตัวนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา'
     : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา และนัดหมายสัมภาษณ์';
 
   if (titleEl) {
-    titleEl.textContent = type === 'DISPATCH'
-      ? `พรีวิวหนังสือส่งตัวนิสิตเข้าฝึกงาน (${docNo})`
-      : `พรีวิวหนังสือขอความอนุเคราะห์ฝึกงาน (${docNo})`;
+    const kind = type === 'DISPATCH' ? 'หนังสือส่งตัวนิสิตเข้าฝึกงาน' : 'หนังสือขอความอนุเคราะห์ฝึกงาน';
+    titleEl.textContent = isDraft
+      ? `พรีวิวร่าง${kind} (${students.length} คน — ยังไม่ออกเลขที่)`
+      : `พรีวิว${kind} เลขที่ ${docNo} (${students.length} คน)`;
   }
 
   const studentRowsHtml = students.map((s, idx) => `

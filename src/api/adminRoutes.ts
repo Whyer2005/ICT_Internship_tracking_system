@@ -14,6 +14,13 @@ import {
 } from "../utils/superAdminStore";
 import { analyzeAcceptanceForm, fetchFileBuffer } from "../utils/acceptanceOcr";
 import cohortRouter, { getOpenMajorsSummary } from "./cohortRoutes";
+import {
+  backfillLegacyBatches,
+  findIneligibleForLetter,
+  newBatchId,
+  saveLetterBatch,
+  toBatchStudent,
+} from "../utils/letterBatches";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2174,6 +2181,11 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
       }
     }
 
+    // หนังสือที่ออกก่อนมีระบบ "ฉบับหนังสือ" -> สร้างฉบับย้อนหลังครั้งเดียว เพื่อให้รายชื่อคงที่นับจากนี้
+    if (backfillLegacyBatches(state, new Map(allStudents.map((s) => [s.id, toBatchStudent(s)])))) {
+      stateModified = true;
+    }
+
     if (stateModified) {
       saveSuperAdminState(state);
     }
@@ -2254,6 +2266,7 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         requestLetterDocNo: wf.requestLetterDocNo || "",
         requestLetterDate: wf.requestLetterDate || "",
         requestLetterSignatureSnapshot: wf.requestLetterSignatureSnapshot || "",
+        requestLetterBatchId: state.docWorkflowMap[wfKey]?.requestLetterBatchId || "",
         companyResponseStatus: wf.companyResponseStatus || "NOT_SENT",
         companyResponseFileName: wf.companyResponseFileName || "",
         companyResponseFileUrl: wf.companyResponseFileUrl || "",
@@ -2269,6 +2282,7 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         dispatchLetterDocNo: wf.dispatchLetterDocNo || "",
         dispatchLetterDate: wf.dispatchLetterDate || "",
         dispatchLetterSignatureSnapshot: wf.dispatchLetterSignatureSnapshot || "",
+        dispatchLetterBatchId: state.docWorkflowMap[wfKey]?.dispatchLetterBatchId || "",
         isLocked: Boolean(wf.isLocked),
         unlockedByAdmin: Boolean(wf.unlockedByAdmin),
         archiveCount: studentArchives.length,
@@ -2322,6 +2336,8 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
       documentQueue,
       companyGroups: Object.values(companyGroupsMap),
       archivedApplications: state.archivedApplications,
+      // ฉบับหนังสือราชการที่ออกแล้ว (รายชื่อ snapshot ณ วันที่ออก) — ใช้แสดงรายฉบับและพรีวิวในคิวออกหนังสือ
+      letterBatches: Object.values(state.letterBatches || {}),
     });
   } catch (err) {
     console.error("GET /api/admin/super-admin/overview error:", err);
@@ -3226,16 +3242,31 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
       return res.status(400).json({ success: false, message: "กรุณาเลือกนิสิตอย่างน้อย 1 คน" });
     }
 
-    const students = await prisma.student.findMany({
-      where: { id: { in: ids } },
-      include: { companies: true, placement: true },
-    });
+    const students = (
+      await prisma.student.findMany({
+        where: { id: { in: ids } },
+        include: { companies: true, placement: true },
+      })
+    ).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+
+    // ฉบับใหม่ออกได้เฉพาะนิสิตที่ยังไม่มีหนังสือ (คนที่ออกแล้วอยู่ในฉบับเดิม — กันการล้างสถานะแบบตอบรับโดยไม่ตั้งใจ)
+    const ineligible = findIneligibleForLetter(state, ids, "REQUEST");
+    if (ineligible.length > 0) {
+      const names = ineligible
+        .map((x) => {
+          const s = students.find((st) => st.id === x.studentId);
+          return `${s?.nameTh || x.studentId} — ${x.reason}`;
+        })
+        .join("\n");
+      return res.status(400).json({ success: false, message: `ออกหนังสือฉบับใหม่ให้นิสิตต่อไปนี้ไม่ได้:\n${names}` });
+    }
 
     const finalDocNo =
       docNo ||
       `${state.academicConfig.defaultDocPrefix}ว ${String(Math.floor(100 + Math.random() * 899))}`;
     const finalDate = letterDate || new Date().toISOString().slice(0, 10);
-    const batchId = `REQ-BATCH-${Date.now().toString().slice(-6)}`;
+    const batchId = newBatchId("REQUEST");
+    const signatureSnapshot = state.academicConfig.signatureDataUrl || "";
 
     // ตรวจสอบว่านิสิตทุกคนต้องผ่านการอนุมัติ Checklist จากอาจารย์ที่ปรึกษาก่อน (SCRUM-71)
     for (const s of students) {
@@ -3266,9 +3297,7 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
         requestLetterDocNo: finalDocNo,
         requestLetterDate: finalDate,
         requestLetterBatchId: batchId,
-        requestLetterSignatureSnapshot: existingWf?.requestLetterIssued
-          ? existingWf.requestLetterSignatureSnapshot || ""
-          : state.academicConfig.signatureDataUrl || "",
+        requestLetterSignatureSnapshot: signatureSnapshot,
         companyResponseStatus: "WAITING_RESPONSE",
         companyResponseFileName: "",
         companyResponseFileUrl: "",
@@ -3282,21 +3311,38 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
         dispatchLetterDocNo: "",
         dispatchLetterDate: "",
         dispatchLetterSignatureSnapshot: "",
+        dispatchLetterBatchId: "",
         isLocked: true,
       };
     }
+
+    // บันทึกฉบับหนังสือ: รายชื่อ ณ วันที่ออก (หน้าหลังของหนังสือ) — ไม่เปลี่ยนแม้มีนิสิตถูกปฏิเสธภายหลัง
+    saveLetterBatch(state, {
+      batchId,
+      type: "REQUEST",
+      companyName:
+        companyName || students[0]?.placement?.companyNameTh || students[0]?.companies?.[0]?.name || "สถานประกอบการ",
+      docNo: finalDocNo,
+      letterDate: finalDate,
+      interviewDate: interviewDate || "",
+      signatureSnapshot,
+      students: students.map(toBatchStudent),
+      issuedAt: new Date().toISOString(),
+      issuedBy: req.session.user?.email || "",
+    });
 
     saveSuperAdminStateOrThrow(state);
 
     res.json({
       success: true,
       message:
-        ids.length > 1
-          ? `ออกหนังสือขอความอนุเคราะห์แบบรวมกลุ่ม (${ids.length} คน) เลขที่ ${finalDocNo} พร้อมแบบฟอร์มใบตอบรับเรียบร้อยแล้ว`
+        students.length > 1
+          ? `ออกหนังสือขอความอนุเคราะห์แบบรวมกลุ่ม (${students.length} คน) เลขที่ ${finalDocNo} พร้อมแบบฟอร์มใบตอบรับเรียบร้อยแล้ว`
           : `ออกหนังสือขอความอนุเคราะห์ เลขที่ ${finalDocNo} พร้อมแบบฟอร์มใบตอบรับเรียบร้อยแล้ว`,
       docNo: finalDocNo,
       letterDate: finalDate,
-      studentCount: ids.length,
+      batchId,
+      studentCount: students.length,
     });
   } catch (err) {
     console.error("POST /api/admin/super-admin/documents/issue-request-letter error:", err);
@@ -3353,6 +3399,9 @@ router.post("/super-admin/documents/record-company-response", async (req: Reques
         email: student.placement?.companyEmail || "-",
         reason: "COMPANY_REJECTED",
         note: note || "สถานประกอบการแจ้งปฏิเสธในใบตอบรับ (ปลดล็อกให้ยื่นบริษัทแห่งใหม่แล้ว)",
+        // หนังสือขอความอนุเคราะห์ฉบับเดิมยังอยู่ใน letterBatches (รายชื่อเดิมครบ) และนิสิตดาวน์โหลดย้อนหลังได้
+        requestLetterBatchId: prevWf?.requestLetterBatchId || "",
+        requestLetterDocNo: prevWf?.requestLetterDocNo || "",
         fileName: prevWf?.companyResponseFileName || "",
         fileUrl: prevWf?.companyResponseFileUrl || "",
         ocr: prevWf?.companyResponseOcr || undefined,
@@ -3494,7 +3543,7 @@ router.post("/super-admin/documents/rescan-company-response", async (req: Reques
 router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
-    const { studentIds, docNo, letterDate } = req.body;
+    const { studentIds, docNo, letterDate, companyName } = req.body;
 
     const ids: number[] = Array.isArray(studentIds)
       ? studentIds.map((n) => Number(n)).filter((n) => !isNaN(n))
@@ -3504,15 +3553,31 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
       return res.status(400).json({ success: false, message: "กรุณาเลือกนิสิตอย่างน้อย 1 คน" });
     }
 
-    const students = await prisma.student.findMany({
-      where: { id: { in: ids } },
-      include: { companies: true, placement: true },
-    });
+    const students = (
+      await prisma.student.findMany({
+        where: { id: { in: ids } },
+        include: { companies: true, placement: true },
+      })
+    ).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+
+    // หนังสือส่งตัว: เฉพาะนิสิตที่บริษัทตอบรับแล้ว (ยืนยันผลแบบตอบรับว่า "รับ") และยังไม่ได้ส่งตัว
+    const ineligible = findIneligibleForLetter(state, ids, "DISPATCH");
+    if (ineligible.length > 0) {
+      const names = ineligible
+        .map((x) => {
+          const s = students.find((st) => st.id === x.studentId);
+          return `${s?.nameTh || x.studentId} — ${x.reason}`;
+        })
+        .join("\n");
+      return res.status(400).json({ success: false, message: `ออกหนังสือส่งตัวให้นิสิตต่อไปนี้ไม่ได้:\n${names}` });
+    }
 
     const finalDocNo =
       docNo ||
       `${state.academicConfig.defaultDocPrefix}ว ${String(Math.floor(500 + Math.random() * 499))}`;
     const finalDate = letterDate || new Date().toISOString().slice(0, 10);
+    const batchId = newBatchId("DISPATCH");
+    const signatureSnapshot = state.academicConfig.signatureDataUrl || "";
 
     for (const s of students) {
       const wfKey = String(s.id);
@@ -3536,9 +3601,8 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
         dispatchLetterIssued: true,
         dispatchLetterDocNo: finalDocNo,
         dispatchLetterDate: finalDate,
-        dispatchLetterSignatureSnapshot: existingWf?.dispatchLetterIssued
-          ? existingWf.dispatchLetterSignatureSnapshot || ""
-          : state.academicConfig.signatureDataUrl || "",
+        dispatchLetterSignatureSnapshot: signatureSnapshot,
+        dispatchLetterBatchId: batchId,
         isLocked: true,
       };
 
@@ -3572,13 +3636,28 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
       });
     }
 
+    // บันทึกฉบับหนังสือส่งตัว: รายชื่อนิสิตที่บริษัทตอบรับ ณ วันที่ออก
+    saveLetterBatch(state, {
+      batchId,
+      type: "DISPATCH",
+      companyName:
+        companyName || students[0]?.placement?.companyNameTh || students[0]?.companies?.[0]?.name || "สถานประกอบการ",
+      docNo: finalDocNo,
+      letterDate: finalDate,
+      signatureSnapshot,
+      students: students.map(toBatchStudent),
+      issuedAt: new Date().toISOString(),
+      issuedBy: req.session.user?.email || "",
+    });
+
     saveSuperAdminStateOrThrow(state);
 
     res.json({
       success: true,
-      message: `อนุมัติและออกหนังสือส่งตัวนิสิตเข้าฝึกงาน เลขที่ ${finalDocNo} จำนวน ${ids.length} คน เรียบร้อยแล้ว`,
+      message: `อนุมัติและออกหนังสือส่งตัวนิสิตเข้าฝึกงาน เลขที่ ${finalDocNo} จำนวน ${students.length} คน เรียบร้อยแล้ว`,
       docNo: finalDocNo,
       letterDate: finalDate,
+      batchId,
     });
   } catch (err) {
     console.error("POST /api/admin/super-admin/documents/issue-dispatch-letter error:", err);

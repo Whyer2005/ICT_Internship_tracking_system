@@ -102,8 +102,44 @@ export interface StudentDocWorkflowRecord {
   dispatchLetterDocNo?: string;
   dispatchLetterDate?: string;
   dispatchLetterSignatureSnapshot?: string;
+  /** ฉบับหนังสือส่งตัว (อ้างถึง letterBatches) */
+  dispatchLetterBatchId?: string;
   isLocked: boolean;
   unlockedByAdmin?: boolean;
+}
+
+export type LetterType = "REQUEST" | "DISPATCH";
+
+/** รายชื่อนิสิตที่บันทึกไว้ ณ วันที่ออกหนังสือ (ไม่เปลี่ยนตามข้อมูลภายหลัง) */
+export interface LetterBatchStudent {
+  studentId: number;
+  studentCode: string;
+  nameTh: string;
+  major: string;
+  position: string;
+  phone: string;
+  companyAddress?: string;
+}
+
+/**
+ * "ฉบับหนังสือ" 1 ฉบับ = 1 เลขที่ ต่อ 1 บริษัท
+ * - REQUEST: หนังสือขอความอนุเคราะห์ แนบรายชื่อนิสิตที่ออกพร้อมกัน
+ * - DISPATCH: หนังสือส่งตัว แนบรายชื่อนิสิตที่บริษัทตอบรับ
+ * รายชื่อเป็น snapshot: แม้นิสิตบางคนถูกปฏิเสธภายหลัง หนังสือที่ออกไปแล้วยังคงรายชื่อเดิม
+ */
+export interface LetterBatch {
+  batchId: string;
+  type: LetterType;
+  companyName: string;
+  docNo: string;
+  letterDate: string;
+  interviewDate?: string;
+  signatureSnapshot: string;
+  students: LetterBatchStudent[];
+  issuedAt: string;
+  issuedBy?: string;
+  /** สร้างย้อนหลังจากข้อมูลเดิมที่ออกก่อนมีระบบฉบับหนังสือ */
+  legacy?: boolean;
 }
 
 export interface ArchivedCompanyAttempt {
@@ -125,6 +161,9 @@ export interface ArchivedCompanyAttempt {
   fileUrl?: string;
   ocr?: AcceptanceOcrResult;
   answers?: Array<{ itemId: number; description: string; checked: boolean; detail?: string }>;
+  /** หนังสือขอความอนุเคราะห์ฉบับที่ออกให้บริษัทนี้ (นิสิตยังดาวน์โหลดย้อนหลังได้) */
+  requestLetterBatchId?: string;
+  requestLetterDocNo?: string;
   archivedAt: string;
 }
 
@@ -191,6 +230,8 @@ export interface SuperAdminState {
   docWorkflowMap: Record<string, StudentDocWorkflowRecord>;
   archivedApplications: ArchivedCompanyAttempt[];
   studentRoundsMap?: Record<string, StudentRoundState>;
+  /** ฉบับหนังสือราชการที่ออกแล้ว (key = batchId) */
+  letterBatches?: Record<string, LetterBatch>;
   companyInfoEditUnlocks?: Record<string, CompanyInfoEditUnlock>; // key = companyId
 }
 
