@@ -31,6 +31,7 @@ async function loadProfile() {
       if (data.user) document.getElementById('prof-email').value = data.user.email || '';
       if (data.student) {
         const s = data.student;
+        currentStudentAdvisor = s.advisor || null;
         await loadAdvisorOptions(s.advisorId ?? s.advisor?.id ?? null);
 
         document.getElementById('prof-nameTh').value = s.nameTh || '';
@@ -199,8 +200,10 @@ function applyInternshipLock(lock) {
     banner.id = 'internship-lock-banner';
     banner.className = 'mb-5 bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-xl shadow-sm';
     const main = document.querySelector('.main-content') || document.body;
-    const firstSection = main.querySelector('section') || main.firstChild;
-    main.insertBefore(banner, firstSection);
+    // layout sidebar: section อยู่ใน .status-all-panels → แทรกแบนเนอร์ก่อนกล่อง panel (แสดงทุกแท็บ)
+    const anchor = main.querySelector('.status-all-panels') || main.querySelector('section');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(banner, anchor);
+    else main.prepend(banner);
   }
   banner.innerHTML = `
     <div class="flex items-start gap-3">
@@ -1044,50 +1047,381 @@ document.addEventListener('keydown', (e) => {
 });
 
 // 4. โหลด Checklist บริษัท
+// ข้อมูลเสริมสำหรับการ์ด Checklist (มาจาก API เดิม: /api/student/companies และ /api/student/profile)
+let currentArchivedCompanies = [];
+let currentChecklistPlacement = null;
+let currentStudentAdvisor = null;
+
 async function loadCompanies() {
   try {
     const res = await fetch('/api/student/companies');
     const data = await res.json();
-    const tbody = document.getElementById('companies-table-body');
-    tbody.innerHTML = '';
 
     if (data.success && data.companies) {
       currentCompaniesData = data.companies;
-
-      if (data.companies.length > 0) {
-        data.companies.forEach((c, idx) => {
-          // สถานะ Checklist: รอผล & อาจารย์รีวิวแล้ว / ผ่าน & ไม่ผ่าน / ทำ check list เพิ่ม
-          let statusBadge = '☐ รอผล';
-          let statusClass = 'status-wait';
-          if (c.checklistStatus === 'APPROVED') {
-            statusBadge = '✓ อาจารย์รีวิวแล้ว / ผ่าน';
-            statusClass = 'status-pass';
-          } else if (c.checklistStatus === 'REJECTED') {
-            statusBadge = '✗ ไม่ผ่าน / ทำ check list เพิ่ม';
-            statusClass = 'status-fail';
-          }
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${idx + 1}</td>
-            <td>${c.name}</td>
-            <td class="${statusClass}">${statusBadge}</td>
-            <td>${c.checklistNote || '-'}</td>
-            <td>
-              <a href="/checklist" class="btn btn-tonal btn-xs" style="text-decoration: none;">แก้ไข</a>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-      } else {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #888; padding: 20px;">ยังไม่มีข้อมูลบริษัท (กดปุ่ม "เพิ่มข้อมูล" ด้านล่าง)</td></tr>';
-      }
+      currentArchivedCompanies = Array.isArray(data.archivedCompanies) ? data.archivedCompanies : [];
+      currentChecklistPlacement = data.placement || null;
     }
+    renderChecklistCards();
   } catch (err) {
     console.error('Load companies error:', err);
+    renderChecklistCards();
   } finally {
     checkPlacementUnlock();
   }
+}
+
+// ---------- helpers การ์ด Checklist ----------
+const CKL_STATUS = {
+  PENDING: { tone: 'amber', text: 'รอผลการพิจารณา', spinner: true },
+  APPROVED: { tone: 'green', text: 'อนุมัติ', icon: 'check_circle' },
+  REJECTED: { tone: 'red', text: 'ไม่อนุมัติ', icon: 'cancel' },
+  COMPANY_REJECTED: { tone: 'slate', text: 'บริษัทปฏิเสธ', icon: 'block' },
+  CANCELLED: { tone: 'gray', text: 'ยกเลิกโดยนิสิต', icon: 'do_not_disturb_on' },
+};
+
+function cklStatusPill(key) {
+  const s = CKL_STATUS[key] || CKL_STATUS.PENDING;
+  const icon = s.spinner
+    ? '<span class="ckl-pill-spinner" aria-hidden="true"></span>'
+    : `<span class="material-icons" aria-hidden="true">${s.icon}</span>`;
+  return `<span class="ckl-pill ckl-pill--${s.tone}">${icon}${s.text}</span>`;
+}
+
+function cklText(v) {
+  const s = String(v ?? '').trim();
+  return s && s !== '-' ? escapeStudentHtml(s) : '-';
+}
+
+// "15 พ.ย. 2569"
+function cklDate(value) {
+  return formatThaiDateRange(value) || '-';
+}
+
+// "16 พ.ย. 2569 14:30 น."
+function cklDateTime(value) {
+  const dt = value ? new Date(value) : null;
+  if (!dt || isNaN(dt.getTime())) return '-';
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mm = String(dt.getMinutes()).padStart(2, '0');
+  return `${cklDate(value)} ${hh}:${mm} น.`;
+}
+
+// เลขที่คำขอ (API ไม่มี field นี้ → สร้างจาก id + ปีที่ยื่น)
+function cklRequestNo(id, createdAt) {
+  if (!id) return '-';
+  const d = parseIsoDate(createdAt);
+  return `#CKL-${d ? d.y + 543 : '----'}-${String(id).padStart(4, '0')}`;
+}
+
+// ตัวย่อบริษัทสำหรับโลโก้ (ใช้ตัวย่อภาษาอังกฤษถ้ามี ไม่งั้นใช้ 2 ตัวอักษรแรก)
+function cklInitials(name) {
+  const latin = String(name || '').match(/\b[A-Z][A-Z0-9]{1,5}\b/g);
+  if (latin && latin.length) return latin[latin.length - 1].slice(0, 6);
+  const clean = String(name || '')
+    .replace(/บริษัท|จำกัด|\(มหาชน\)|มหาชน|ห้างหุ้นส่วน|สำนักงาน|Co\.,?|Ltd\.?|Company|Limited/gi, ' ')
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (!words.length) return '-';
+  if (/^[A-Za-z]/.test(words[0])) return words.slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  return Array.from(words[0]).slice(0, 2).join('');
+}
+
+function cklLogo(name, muted = false) {
+  const text = cklInitials(name);
+  const size = text.length > 4 ? ' ckl-logo--long' : '';
+  return `<div class="ckl-logo${muted ? ' ckl-logo--muted' : ''}${size}" aria-hidden="true">${escapeStudentHtml(text)}</div>`;
+}
+
+function cklField(label, valueHtml) {
+  return `<div class="ckl-field"><span class="ckl-field-label">${label}</span><span class="ckl-field-value">${valueHtml}</span></div>`;
+}
+
+function cklWebsite(url) {
+  const s = String(url || '').trim();
+  if (!s) return '-';
+  const href = /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  return `<a class="ckl-link" href="${escapeStudentHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeStudentHtml(s)}<span class="material-icons">open_in_new</span></a>`;
+}
+
+// ช่วงฝึกงาน + จำนวนเดือน (API ยังไม่มี field วันเริ่ม/สิ้นสุด → รองรับไว้ถ้ามีในอนาคต)
+function cklPeriod(start, end) {
+  const range = formatThaiDateRange(start, end);
+  if (!range || !end) return '-';
+  const a = new Date(start);
+  const b = new Date(end);
+  const months = Math.round((b.getTime() - a.getTime()) / 86400000 / 30.44);
+  return months > 0 ? `${range} (${months} เดือน)` : range;
+}
+
+// timeline (ใหม่สุดอยู่บน) — tone: green/red/amber/gray/blue
+function cklTimeline(events) {
+  if (!events.length) return '<p class="ckl-empty-inline">ยังไม่มีประวัติสถานะ</p>';
+  return `<ol class="ckl-timeline">${events.map((e) => `
+      <li class="ckl-tl-item">
+        <span class="ckl-tl-dot ckl-tl-dot--${e.tone}" aria-hidden="true"></span>
+        <div class="ckl-tl-body">
+          <div class="ckl-tl-head">
+            <span class="ckl-tl-action">${escapeStudentHtml(e.action)}</span>
+            ${e.by ? `<span class="ckl-tl-by">โดย ${escapeStudentHtml(e.by)}</span>` : ''}
+            <span class="ckl-tl-time">${cklDateTime(e.time)}</span>
+          </div>
+          ${e.change ? `<p class="ckl-tl-change"><span>${escapeStudentHtml(e.change.from)}</span><span class="material-icons">arrow_forward</span><span>${escapeStudentHtml(e.change.to)}</span></p>` : ''}
+          ${e.note ? `<p class="ckl-tl-note">${escapeStudentHtml(e.note)}</p>` : ''}
+        </div>
+      </li>`).join('')}
+    </ol>`;
+}
+
+function cklSortEvents(events) {
+  return events
+    .filter((e) => e && e.time)
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+}
+
+// API ไม่มี log ประวัติ → สร้าง timeline จาก createdAt / updatedAt / reviewedAt / checklistNote
+function cklCurrentEvents(c, advisorName) {
+  const events = [{ tone: 'amber', action: 'ยื่นคำขอ Checklist', by: 'นิสิต', time: c.createdAt }];
+  const created = new Date(c.createdAt).getTime();
+  const updated = new Date(c.updatedAt).getTime();
+  const reviewed = c.reviewedAt ? new Date(c.reviewedAt).getTime() : 0;
+  // แก้ไขหลังยื่น (ยังไม่ตรวจ) — API ไม่เก็บค่าเก่า จึงแสดงเฉพาะเวลา
+  if (c.checklistStatus === 'PENDING' && updated - created > 60000 && (!reviewed || updated - reviewed > 60000)) {
+    events.push({ tone: 'gray', action: 'แก้ไขข้อมูลคำขอ', by: 'นิสิต', time: c.updatedAt });
+  }
+  if (c.reviewedAt && c.checklistStatus === 'APPROVED') {
+    events.push({ tone: 'green', action: 'อาจารย์ที่ปรึกษาอนุมัติ Checklist', by: advisorName, time: c.reviewedAt, note: c.checklistNote });
+  } else if (c.reviewedAt && c.checklistStatus === 'REJECTED') {
+    events.push({ tone: 'red', action: 'อาจารย์ที่ปรึกษาไม่อนุมัติ Checklist', by: advisorName, time: c.reviewedAt, note: c.checklistNote });
+  }
+  // ความเห็นที่ยังไม่ได้ผูกกับผลการตรวจ (ยังรอผล)
+  if (c.checklistNote && c.checklistStatus === 'PENDING') {
+    events.push({ tone: 'blue', action: 'อาจารย์ที่ปรึกษาให้ความเห็น', by: advisorName, time: c.reviewedAt || c.updatedAt, note: c.checklistNote });
+  }
+  return cklSortEvents(events);
+}
+
+// อักษรย่อใน avatar อาจารย์ (ตัดคำนำหน้าทางวิชาการ)
+function cklAvatarText(name) {
+  const clean = String(name || '').replace(/^((ผศ|รศ|ศ|อ|ดร|ผศ\.ดร|รศ\.ดร)\.?\s*)+/g, '').trim();
+  return clean ? Array.from(clean).slice(0, 2).join('') : 'อ.';
+}
+
+let cklHistoryExpanded = false;
+const cklHistoryOpenRows = new Set();
+let cklTimelineExpanded = false;
+
+// ---------- การ์ด 1: คำขอปัจจุบัน ----------
+function renderChecklistCurrentCard() {
+  const box = document.getElementById('ckl-current-card');
+  if (!box) return;
+  const list = currentCompaniesData || [];
+  const c = list.length ? list[list.length - 1] : null;
+
+  if (!c) {
+    box.innerHTML = `
+      <div class="ckl-empty">
+        <span class="ckl-empty-icon"><span class="material-icons">fact_check</span></span>
+        <p class="ckl-empty-title">ยังไม่ได้ยื่น Checklist</p>
+        <p class="ckl-empty-desc">กดปุ่ม "เพิ่มข้อมูล" ด้านบนเพื่อกรอก Checklist สถานประกอบการ</p>
+      </div>`;
+    return;
+  }
+
+  // ข้อมูลบริษัท/ผู้ติดต่อเก็บใน placement (ใช้เมื่อชื่อบริษัทตรงกันหรือยังไม่ได้ตั้งชื่อ)
+  const p = currentChecklistPlacement;
+  const info = p && (!p.companyNameTh || p.companyNameTh === c.name) ? p : {};
+  const advisorName = currentStudentAdvisor?.name || '';
+  const statusKey = CKL_STATUS[c.checklistStatus] ? c.checklistStatus : 'PENDING';
+  const isPending = statusKey === 'PENDING';
+  const events = cklCurrentEvents(c, advisorName || 'อาจารย์ที่ปรึกษา');
+
+  const meta = [
+    `<span>ตำแหน่ง: <strong>${cklText(info.position)}</strong></span>`,
+    `<span>จังหวัด: ${cklText(info.province)}</span>`,
+    `<span>วันที่ยื่น: ${cklDate(c.createdAt)}</span>`,
+  ].join('<span class="ckl-dot-sep" aria-hidden="true">·</span>');
+
+  const hr = [info.contactPersonName, info.contactPersonPosition ? `(${info.contactPersonPosition})` : ''].filter(Boolean).join(' ');
+  const phones = [info.companyPhone1, info.companyPhone2].filter(Boolean).join(', ');
+
+  const comment = c.checklistNote
+    ? `
+        <div class="ckl-advisor">
+          <span class="ckl-avatar" aria-hidden="true">${escapeStudentHtml(cklAvatarText(advisorName))}</span>
+          <div class="ckl-advisor-main">
+            <p class="ckl-advisor-name">${cklText(advisorName)} <span class="ckl-advisor-role">(อาจารย์ที่ปรึกษา)</span></p>
+            <div class="ckl-quote">"${escapeStudentHtml(c.checklistNote)}"</div>
+          </div>
+        </div>`
+    : '<p class="ckl-empty-inline">ยังไม่มีความเห็นจากอาจารย์ที่ปรึกษา</p>';
+
+  box.innerHTML = `
+    <div class="ckl-head">
+      ${cklLogo(c.name)}
+      <div class="ckl-head-main">
+        <div class="ckl-head-tags">
+          <span class="ckl-tag">บริษัทปัจจุบันที่กำลังยื่น</span>
+        </div>
+        <h3 class="ckl-company">${cklText(c.name)}</h3>
+        <p class="ckl-meta">${meta}</p>
+      </div>
+      <div class="ckl-head-status">
+        <span class="ckl-head-status-label">สถานะคำขอ</span>
+        ${cklStatusPill(statusKey)}
+      </div>
+    </div>
+
+    <div class="ckl-section">
+      <p class="ckl-section-title">ข้อมูลสถานประกอบการและผู้ประสานงาน</p>
+      <div class="ckl-info-grid">
+        <div class="ckl-info-box">
+          ${cklField('ที่อยู่บริษัท:', cklText(info.companyAddress))}
+          ${cklField('เว็บไซต์บริษัท:', cklWebsite(info.website))}
+          ${cklField('ช่วงเวลาฝึกงาน:', cklPeriod(info.startDate, info.endDate))}
+        </div>
+        <div class="ckl-info-box">
+          ${cklField('ผู้ประสานงาน/HR:', cklText(hr))}
+          ${cklField('เบอร์โทรศัพท์:', cklText(phones))}
+          ${cklField('อีเมลติดต่อ:', info.companyEmail ? `<a class="ckl-link" href="mailto:${escapeStudentHtml(info.companyEmail)}">${escapeStudentHtml(info.companyEmail)}</a>` : '-')}
+        </div>
+      </div>
+    </div>
+
+    <div class="ckl-panel">
+      <div class="ckl-panel-head">
+        <p class="ckl-panel-title"><span class="ckl-bullet" aria-hidden="true"></span>ความเห็นอาจารย์ที่ปรึกษา</p>
+        ${c.reviewedAt ? `<span class="ckl-panel-sub">ตรวจล่าสุด: ${cklDateTime(c.reviewedAt)}</span>` : ''}
+      </div>
+      ${comment}
+    </div>
+
+    <div class="ckl-panel ckl-collapse${cklTimelineExpanded ? ' is-open' : ''}">
+      <button type="button" class="ckl-collapse-btn" aria-expanded="${cklTimelineExpanded}" onclick="toggleChecklistTimeline()">
+        <span class="ckl-panel-title"><span class="material-icons ckl-panel-icon">schedule</span>ประวัติสถานะคำขอนี้</span>
+        <span class="ckl-collapse-meta">แสดงประวัติ (${events.length})<span class="material-icons ckl-chevron">expand_more</span></span>
+      </button>
+      <div class="ckl-collapse-body"${cklTimelineExpanded ? '' : ' hidden'}>${cklTimeline(events)}</div>
+    </div>
+
+    <div class="ckl-foot">
+      <p class="ckl-foot-info"><span class="material-icons">info</span>หากต้องการแก้ไขข้อมูล กรุณาดำเนินการก่อนอาจารย์ที่ปรึกษาลงความอนุมัติ</p>
+      <div class="ckl-foot-actions">
+        <a class="ckl-btn ckl-btn-text" href="/checklist">ดูรายละเอียดคำขอ</a>
+        ${isPending ? '<a class="ckl-btn ckl-btn-outline" href="/checklist"><span class="material-icons">edit_square</span>แก้ไขข้อมูล</a>' : ''}
+      </div>
+    </div>`;
+}
+
+window.toggleChecklistTimeline = function () {
+  cklTimelineExpanded = !cklTimelineExpanded;
+  renderChecklistCurrentCard();
+};
+
+// ---------- การ์ด 2: ประวัติการยื่นบริษัท ----------
+function getChecklistHistoryItems() {
+  const advisorName = currentStudentAdvisor?.name || 'อาจารย์ที่ปรึกษา';
+  const items = (currentArchivedCompanies || []).map((a) => {
+    // id รูปแบบ ARCH-xxxxxx-<companyId>
+    const companyId = String(a.id || '').split('-').pop();
+    const statusKey = a.reason === 'COMPANY_REJECTED' ? 'COMPANY_REJECTED' : a.reason === 'CANCELLED' ? 'CANCELLED' : 'REJECTED';
+    const reviewer = statusKey === 'REJECTED' ? advisorName : statusKey === 'COMPANY_REJECTED' ? 'สถานประกอบการ' : 'นิสิต';
+    const submittedAt = a.createdAt || a.submittedAt || '';
+    return {
+      key: `a-${a.id}`,
+      name: a.companyName,
+      position: a.position,
+      requestNo: /^\d+$/.test(companyId) ? cklRequestNo(companyId, submittedAt || a.archivedAt) : '-',
+      submittedAt,
+      statusKey,
+      reason: a.note,
+      reviewer,
+      closedAt: a.archivedAt,
+      events: cklSortEvents([
+        { tone: 'amber', action: 'ยื่นคำขอ Checklist', by: 'นิสิต', time: submittedAt },
+        { tone: statusKey === 'REJECTED' ? 'red' : 'gray', action: `${CKL_STATUS[statusKey].text} · ปิดคำขอ`, by: reviewer, time: a.archivedAt, note: a.note },
+      ]),
+    };
+  });
+  // บริษัทเก่าที่ยังอยู่ในรายการ (ไม่ใช่คำขอปัจจุบัน) และไม่อนุมัติแล้ว
+  const list = currentCompaniesData || [];
+  list.slice(0, -1).filter((c) => c.checklistStatus === 'REJECTED').forEach((c) => {
+    items.push({
+      key: `c-${c.id}`,
+      name: c.name,
+      position: '',
+      requestNo: cklRequestNo(c.id, c.createdAt),
+      submittedAt: c.createdAt,
+      statusKey: 'REJECTED',
+      reason: c.checklistNote,
+      reviewer: advisorName,
+      closedAt: c.reviewedAt,
+      events: cklCurrentEvents(c, advisorName),
+    });
+  });
+  return items.sort((x, y) => new Date(y.closedAt || 0).getTime() - new Date(x.closedAt || 0).getTime());
+}
+
+function renderChecklistHistoryCard() {
+  const box = document.getElementById('ckl-history-card');
+  if (!box) return;
+  const items = getChecklistHistoryItems();
+
+  const rows = items.length
+    ? items.map((it) => {
+        const open = cklHistoryOpenRows.has(it.key);
+        return `
+        <div class="ckl-hrow${open ? ' is-open' : ''}">
+          <button type="button" class="ckl-hrow-btn" aria-expanded="${open}" data-key="${escapeStudentHtml(it.key)}" onclick="toggleChecklistHistoryRow(this.dataset.key)">
+            ${cklLogo(it.name, true)}
+            <span class="ckl-hrow-company">
+              <span class="ckl-hrow-name">${cklText(it.name)}</span>
+              <span class="ckl-hrow-pos">ตำแหน่ง: ${cklText(it.position)}</span>
+            </span>
+            <span class="ckl-hrow-cell"><span class="ckl-hrow-label">เลขที่คำขอ</span>${it.requestNo}</span>
+            <span class="ckl-hrow-cell"><span class="ckl-hrow-label">วันที่ยื่น</span>${cklDate(it.submittedAt)}</span>
+            <span class="ckl-hrow-status">${cklStatusPill(it.statusKey)}</span>
+            <span class="material-icons ckl-chevron" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="ckl-hrow-detail"${open ? '' : ' hidden'}>
+            <div class="ckl-hrow-grid">
+              ${cklField('เหตุผล:', cklText(it.reason))}
+              ${cklField('ผู้พิจารณา:', cklText(it.reviewer))}
+              ${cklField('วันที่ปิดคำขอ:', cklDate(it.closedAt))}
+            </div>
+            ${cklTimeline(it.events)}
+          </div>
+        </div>`;
+      }).join('')
+    : '<p class="ckl-empty-inline ckl-empty-inline--center">ยังไม่มีประวัติการยื่นก่อนหน้า</p>';
+
+  box.innerHTML = `
+    <button type="button" class="ckl-acc-btn" aria-expanded="${cklHistoryExpanded}" onclick="toggleChecklistHistory()">
+      <span class="ckl-acc-icon" aria-hidden="true"><span class="material-icons">schedule</span></span>
+      <span class="ckl-acc-text">
+        <span class="ckl-acc-title">ประวัติการยื่นบริษัท</span>
+        <span class="ckl-acc-sub">รายการสถานประกอบการที่เคยยื่นและสรุปผลแล้วในภาคการศึกษานี้</span>
+      </span>
+      <span class="ckl-count">${items.length} รายการ</span>
+      <span class="material-icons ckl-chevron" aria-hidden="true">expand_more</span>
+    </button>
+    <div class="ckl-acc-body"${cklHistoryExpanded ? '' : ' hidden'}>${rows}</div>`;
+}
+
+window.toggleChecklistHistory = function () {
+  cklHistoryExpanded = !cklHistoryExpanded;
+  renderChecklistHistoryCard();
+};
+
+window.toggleChecklistHistoryRow = function (key) {
+  if (cklHistoryOpenRows.has(key)) cklHistoryOpenRows.delete(key);
+  else cklHistoryOpenRows.add(key);
+  renderChecklistHistoryCard();
+};
+
+function renderChecklistCards() {
+  renderChecklistCurrentCard();
+  renderChecklistHistoryCard();
 }
 
 // 5. โหลดสถานะการยื่น (เฉพาะบริษัทที่ผ่านการอนุมัติ Checklist) + อัปโหลดแบบตอบรับจากบริษัท
@@ -1122,8 +1456,28 @@ const SUBMISSION_STATUS_OPTIONS = [
   { value: 'INTERVIEW_FAILED_REAPPLIED', label: 'สัมภาษณ์ไม่ผ่าน ยื่นเพิ่มแล้ว', tone: 'red' },
 ];
 
-function getSubmissionStatus(comp) {
+function getRawSubmissionStatus(comp) {
   return (comp.submission && comp.submission.status) ? comp.submission.status : 'NOT_SUBMITTED';
+}
+
+// เจ้าหน้าที่ยืนยันใบตอบรับแล้ว (ACCEPTED) → บริษัทที่ออกหนังสือถือว่า "สัมภาษณ์ผ่านแล้ว" และล็อกสถานะ/วันเวลา
+// ผูกกับบริษัทตามชื่อใน acceptance-form (ไม่พบให้ใช้แถวแรกที่ยังดำเนินการ เหมือน dropdown เอกสารราชการ)
+function getAcceptanceLockedCompanyId() {
+  if (currentAcceptanceData?.status !== 'ACCEPTED') return null;
+  const active = (currentSubmissionsData || []).filter((c) => getRawSubmissionStatus(c) !== 'INTERVIEW_FAILED_REAPPLIED');
+  if (!active.length) return null;
+  const accCompany = String(currentAcceptanceData?.companyName || '').trim();
+  const match = accCompany ? active.find((c) => String(c.name || '').trim() === accCompany) : null;
+  return (match || active[0]).id;
+}
+
+function isSubmissionLocked(comp) {
+  const id = getAcceptanceLockedCompanyId();
+  return id !== null && comp.id === id;
+}
+
+function getSubmissionStatus(comp) {
+  return isSubmissionLocked(comp) ? 'INTERVIEW_PASSED' : getRawSubmissionStatus(comp);
 }
 
 function getSubmissionTone(status) {
@@ -1150,6 +1504,17 @@ function toDateInputValue(value) {
 function renderSubmissionStatusPill(comp) {
   const status = getSubmissionStatus(comp);
   const opt = SUBMISSION_STATUS_OPTIONS.find((o) => o.value === status) || SUBMISSION_STATUS_OPTIONS[0];
+  if (isSubmissionLocked(comp)) {
+    return `
+    <span class="sub-status-wrap">
+      <button type="button" class="sub-status sub-status--locked" disabled title="เจ้าหน้าที่ยืนยันผลแล้ว ไม่สามารถเปลี่ยนสถานะได้"
+        aria-label="สถานะการยื่น ${escapeStudentHtml(comp.name)}: ${opt.label} (ล็อก)">
+        <span class="sub-status-dot"></span>
+        <span class="sub-status-label">${opt.label}</span>
+        <span class="material-icons sub-status-caret">lock</span>
+      </button>
+    </span>`;
+  }
   return `
     <span class="sub-status-wrap">
       <button type="button" class="sub-status sub-status--${opt.tone}" title="คลิกเพื่อเปลี่ยนสถานะ"
@@ -1298,6 +1663,15 @@ function renderSubmissionDateCell(comp) {
   }
   const d = new Date(updatedAt);
   const timeText = isNaN(d.getTime()) ? '' : ` · ${pad2(d.getHours())}:${pad2(d.getMinutes())} น.`;
+  if (isSubmissionLocked(comp)) {
+    return `
+    <span class="sub-date-picker">
+      <button type="button" class="sub-date sub-date--locked" disabled title="เจ้าหน้าที่ยืนยันผลแล้ว ไม่สามารถเปลี่ยนวันเวลาได้">
+        <span class="material-icons">event</span>${formatSubmissionDate(updatedAt)}${timeText}
+        <span class="material-icons sub-date-edit">lock</span>
+      </button>
+    </span>`;
+  }
   // คลิกเพื่อเปิดปฏิทินนัดหมายวันสัมภาษณ์
   return `
     <span class="sub-date-picker">
@@ -1748,10 +2122,6 @@ function renderStudentAcceptanceCard() {
         <span class="acc-info-text">คณะออกหนังสือขอความอนุเคราะห์แล้ว</span>
         <span class="acc-docno">${escapeStudentHtml(acc.requestLetterDocNo || '-')}</span>
         <span class="acc-info-right">
-          ${acc.dispatchLetterIssued ? `
-            <button type="button" class="acc-btn-outline acc-btn-outline--sm" onclick="downloadStudentOfficialLetter('DISPATCH')">
-              <span class="material-icons">download</span>หนังสือส่งตัว (${escapeStudentHtml(acc.dispatchLetterDocNo || '-')})
-            </button>` : ''}
           <span class="acc-chip acc-chip--green"><span class="material-icons">check_circle</span>พร้อมดาวน์โหลด</span>
         </span>
       </div>`
@@ -1764,6 +2134,12 @@ function renderStudentAcceptanceCard() {
       </div>`;
 
   // ---- การ์ด 3 ขั้น ----
+  // ปุ่มดาวน์โหลดหนังสือส่งตัว (แสดงในขั้นตอนที่ 3 เมื่อคณะออกหนังสือแล้ว)
+  const dispatchBtn = acc.dispatchLetterIssued
+    ? `<button type="button" class="acc-btn-outline acc-dispatch-btn" onclick="downloadStudentOfficialLetter('DISPATCH')">
+        <span class="material-icons">download</span><span>หนังสือส่งตัว <span class="acc-dispatch-docno">(${escapeStudentHtml(acc.dispatchLetterDocNo || '-')})</span></span>
+      </button>`
+    : '';
   const uploadArea = isFinalized
     ? `<div class="acc-finalized"><span class="material-icons">verified</span>เจ้าหน้าที่ยืนยันผลแล้ว ไม่สามารถเปลี่ยนไฟล์ได้</div>`
     : `
@@ -1814,6 +2190,7 @@ function renderStudentAcceptanceCard() {
         <div class="acc-step-head">${circle(3, stepStates[2])}${stepLabel(3, stepStates[2])}</div>
         <div class="acc-step-title acc-step-title--solo">อัปโหลดใบตอบรับจากบริษัท</div>
         ${uploadArea}
+        ${dispatchBtn}
       </div>
     </div>
   `;
@@ -2197,8 +2574,9 @@ function checkPlacementUnlock() {
   // สถานะ Checklist / การยื่น (ส่งต่อให้ sidebar)
   const isChecklistApproved = currentCompaniesData.some(c => c.checklistStatus === 'APPROVED');
   const isInterviewPassed = currentSubmissionsData.some(
-    comp => comp.submission && comp.submission.status === 'INTERVIEW_PASSED'
+    comp => getSubmissionStatus(comp) === 'INTERVIEW_PASSED'
   );
+  const isAcceptanceFinalized = currentAcceptanceData?.status === 'ACCEPTED';
 
   // อัปเดต UI ใน Card ปลดล็อกส่วนที่ 4 & 5 (checklist-locked-card)
   updateRequirementCard(
@@ -2254,6 +2632,7 @@ function checkPlacementUnlock() {
       hasPendingChecklist: currentCompaniesData.some(c => c.checklistStatus !== 'APPROVED' && c.checklistStatus !== 'REJECTED'),
       submissionCount: currentSubmissionsData.length,
       isInterviewPassed,
+      isAcceptanceFinalized,
     },
   }));
 }

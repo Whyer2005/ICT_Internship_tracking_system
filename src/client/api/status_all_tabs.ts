@@ -29,6 +29,7 @@ interface UnlockState {
   hasPendingChecklist: boolean;
   submissionCount: number;
   isInterviewPassed: boolean;
+  isAcceptanceFinalized?: boolean;
 }
 
 interface TabInfo {
@@ -113,6 +114,8 @@ type UrlMode = "push" | "replace" | null;
       }
       case "submission": {
         if (!s.isChecklistUnlocked) return { done: false, locked: true, badge: "ล็อก", tone: "locked", reasons: [] };
+        // เจ้าหน้าที่ยืนยันใบตอบรับแล้ว → ผ่านแล้ว
+        if (s.isAcceptanceFinalized) return { done: true, locked: false, badge: "ผ่านแล้ว", tone: "done", reasons: [] };
         if (s.isInterviewPassed) return { done: true, locked: false, badge: "ผ่านสัมภาษณ์", tone: "done", reasons: [] };
         return { done: false, locked: false, badge: "ยังไม่ครบ", tone: "todo", reasons: [] };
       }

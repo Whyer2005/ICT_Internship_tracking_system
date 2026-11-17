@@ -968,7 +968,35 @@ window.openSetStatusModal = function() {
 };
 
 window.closeSetStatusModal = function() {
-  document.getElementById('modal-set-status').classList.add('hidden');
+  document.getElementById('modal-set-status')?.classList.add('hidden');
+  const batchModal = document.getElementById('batch-status-modal');
+  if (batchModal) batchModal.style.display = 'none';
+};
+
+// ปุ่ม "ตั้งสถานะนิสิต" ในหน้า Advisor Dashboard ใช้ modal #batch-status-modal
+window.openBatchStatusModal = function() {
+  if (selectedStudentIds.size === 0) {
+    alert('กรุณาเลือกนิสิตอย่างน้อย 1 คนโดยการติ๊กถูกที่ช่องสี่เหลี่ยมด้านหน้า');
+    return;
+  }
+  const typeSelect = document.getElementById('batch-status-type');
+  if (typeSelect) {
+    typeSelect.value = 'checklist';
+    onBatchTypeChange();
+  }
+  const noteInput = document.getElementById('batch-status-note');
+  if (noteInput) noteInput.value = '';
+
+  const modal = document.getElementById('batch-status-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window.closeBatchStatusModal = function() {
+  window.closeSetStatusModal();
+};
+
+window.submitAdvisorBatchStatus = function() {
+  return window.submitBatchStatus();
 };
 
 window.submitBatchStatus = async function() {
