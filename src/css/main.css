@@ -1434,3 +1434,138 @@ select.input-field {
   .sub-panel-head { padding: 16px; }
   .sub-table th, .sub-table td { padding: 12px; }
 }
+
+/* =========================================================
+   หน้า "สถานะการยื่น" — การ์ดเอกสารราชการ & อัปโหลดแบบตอบรับ (acc-*)
+   ========================================================= */
+.acc-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 16px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04); padding: 20px 24px; }
+.acc-card .material-icons { line-height: 1; }
+
+.acc-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.acc-header-text { border-left: 4px solid #2563eb; padding-left: 12px; min-width: 0; flex: 1 1 320px; }
+.acc-title { font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1.4; }
+.acc-subtitle { font-size: 12.5px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+.acc-step-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.acc-step-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #2563eb; }
+
+.acc-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border-radius: 10px; border-left: 3px solid; margin-bottom: 16px; font-size: 13px; }
+.acc-info--ready { background: #eff6ff; border-left-color: #2563eb; color: #1e3a8a; }
+.acc-info--waiting { background: #f8fafc; border-left-color: #f59e0b; color: #475569; }
+.acc-info-icon { font-size: 18px; }
+.acc-info--ready .acc-info-icon { color: #2563eb; }
+.acc-info--waiting .acc-info-icon { color: #d97706; }
+.acc-info-text { font-weight: 600; }
+.acc-docno { display: inline-flex; padding: 2px 10px; border-radius: 999px; background: #ffffff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 12px; font-weight: 600; }
+.acc-info-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.acc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.acc-chip .material-icons { font-size: 13px; }
+.acc-chip--green { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.acc-chip--amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+
+/* ---- 3 ขั้นตอน ---- */
+.acc-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.acc-step { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 12px; background: #ffffff; }
+.acc-step--current:last-child { border-color: #3b82f6; background: #f5f9ff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08); }
+.acc-step-head { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
+.acc-step-circle { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.acc-step-circle .material-icons { font-size: 16px; }
+.acc-step-circle--done { background: #059669; color: #ffffff; }
+.acc-step-circle--current { background: #2563eb; color: #ffffff; }
+.acc-step-circle--pending { background: #ffffff; color: #94a3b8; border: 1.5px solid #cbd5e1; }
+.acc-step-label { font-size: 12px; font-weight: 600; }
+.acc-step-label--done { color: #047857; }
+.acc-step-label--current { color: #1d4ed8; }
+.acc-step-label--pending { color: #94a3b8; }
+/* เส้นประเชื่อมวงกลมตัวเลขระหว่างการ์ด */
+.acc-step-link { position: absolute; top: 28px; left: -18px; width: 32px; border-top: 2px dashed #cbd5e1; }
+.acc-step-link--done { border-top-color: #34d399; }
+
+.acc-step-main { display: flex; align-items: flex-start; gap: 12px; flex: 1; }
+.acc-step-icon { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.acc-step-icon .material-icons { font-size: 20px; }
+.acc-step-icon--indigo { background: #eef2ff; color: #4f46e5; }
+.acc-step-icon--emerald { background: #ecfdf5; color: #059669; }
+.acc-step-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+.acc-step-title--solo { margin-top: -2px; }
+.acc-step-caption { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+.acc-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #ffffff; color: #334155; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.acc-btn-outline .material-icons { font-size: 17px; }
+.acc-btn-outline:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.acc-btn-outline:disabled { color: #94a3b8; background: #f8fafc; cursor: not-allowed; }
+.acc-btn-outline--sm { padding: 4px 10px; font-size: 12px; }
+.acc-btn-outline--sm .material-icons { font-size: 15px; }
+
+.acc-btn-primary { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; border: none; border-radius: 8px; background: linear-gradient(90deg, #1e40af, #2563eb); color: #ffffff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25); }
+/* ไอคอน "+" ใส่ผ่าน ::before เพื่อไม่ให้ textContent ของปุ่ม (ที่ handler อัปโหลดเดิมเขียนทับ) มีชื่อไอคอนปน */
+.acc-btn-primary::before { content: 'add'; font-family: 'Material Icons'; font-size: 17px; line-height: 1; font-feature-settings: 'liga'; }
+.acc-btn-primary:hover:not(:disabled) { background: linear-gradient(90deg, #1e3a8a, #1d4ed8); }
+.acc-btn-primary:disabled { background: #93c5fd; box-shadow: none; cursor: not-allowed; }
+
+.acc-dropzone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px; border: 1.5px dashed #93c5fd; border-radius: 10px; background: #ffffff; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.acc-dropzone:hover, .acc-dropzone--over { background: #eff6ff; border-color: #2563eb; }
+.acc-dropzone--over { border-style: solid; }
+.acc-dropzone--error { border-color: #f87171; }
+.acc-dropzone--disabled { border-color: #cbd5e1; background: #f8fafc; cursor: not-allowed; }
+.acc-dropzone-icon { width: 32px; height: 32px; border-radius: 50%; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.acc-dropzone-icon .material-icons { font-size: 18px; }
+.acc-dropzone--disabled .acc-dropzone-icon { background: #f1f5f9; color: #94a3b8; }
+.acc-dropzone-text { flex: 1 1 auto; min-width: 120px; font-size: 12.5px; color: #475569; }
+.acc-dropzone-error { align-items: center; gap: 6px; margin-top: -4px; font-size: 12px; color: #dc2626; }
+.acc-dropzone-error .material-icons { font-size: 15px; }
+.acc-dropzone-help { font-size: 11.5px; color: #64748b; text-align: right; margin-top: -4px; }
+.acc-finalized { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 10px; background: #ecfdf5; color: #047857; font-size: 12.5px; font-weight: 600; }
+.acc-finalized .material-icons { font-size: 18px; }
+
+/* ---- เอกสารที่อัปโหลดแล้ว ---- */
+.acc-uploaded { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+.acc-uploaded-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.acc-uploaded-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #0f172a; }
+.acc-uploaded-title .material-icons { font-size: 17px; color: #059669; }
+.acc-uploaded-time { font-size: 12px; color: #64748b; }
+.acc-file { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f8fafc; }
+.acc-file-icon { width: 38px; height: 38px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.acc-file-icon--pdf { background: #fee2e2; color: #dc2626; }
+.acc-file-icon--img { background: #e0f2fe; color: #0284c7; }
+.acc-file-info { flex: 1; min-width: 0; }
+.acc-file-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acc-file-name { font-size: 13.5px; font-weight: 700; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.acc-file-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; color: #64748b; }
+.acc-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.acc-dot--amber { background: #f59e0b; }
+.acc-dot--blue { background: #2563eb; }
+.acc-dot--green { background: #059669; }
+.acc-dot--red { background: #dc2626; }
+.acc-file-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.acc-icon-btn { width: 32px; height: 32px; border-radius: 8px; border: none; background: transparent; color: #64748b; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; text-decoration: none; }
+.acc-icon-btn .material-icons { font-size: 19px; }
+.acc-icon-btn:hover { background: #e2e8f0; color: #0f172a; }
+
+.acc-past { margin-top: 16px; padding-top: 12px; border-top: 1px dashed #cbd5e1; }
+.acc-past-title { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #475569; margin-bottom: 6px; }
+.acc-past-title .material-icons { font-size: 16px; }
+.acc-past-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #334155; margin-bottom: 4px; }
+
+@media (max-width: 767px) {
+  .acc-card { padding: 16px; }
+  .acc-steps { grid-template-columns: 1fr; }
+  .acc-step-link { display: none; }
+  .acc-info-right { margin-left: 0; }
+}
+
+/* ---- dropdown การ์ดเอกสารราชการในตารางรายการสถานประกอบการ ---- */
+.sub-col-toggle { width: 56px; text-align: center; padding-left: 8px !important; padding-right: 16px !important; }
+.sub-expand-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.sub-expand-btn .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+.sub-expand-btn:hover { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+.sub-expand-btn[aria-expanded="true"] { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
+.sub-expand-btn[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
+.sub-table tbody tr.sub-row--expanded td { border-bottom-color: transparent; }
+.sub-table tbody tr.sub-expand-row, .sub-table tbody tr.sub-expand-row:hover { background: #f8fafc; }
+.sub-table tbody tr.sub-expand-row > td { padding: 4px 20px 20px; }
+.sub-expand-row .acc-card { animation: acc-expand-in 0.18s ease-out; }
+@keyframes acc-expand-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 640px) {
+  .sub-table tbody tr.sub-expand-row > td { padding: 4px 8px 12px; }
+}

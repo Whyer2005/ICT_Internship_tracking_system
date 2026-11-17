@@ -7,6 +7,8 @@ let currentTrainingsData = [];
 let currentCompaniesData = [];
 let currentSubmissionsData = [];
 let currentAcceptanceData = null;
+// dropdown การ์ดเอกสารราชการในตาราง "รายการสถานประกอบการที่ยื่นสมัคร" (ค่าเริ่มต้น: ปิด)
+let acceptanceCardExpanded = false;
 // true เมื่อโหลดข้อมูลรอบแรกครบทุกส่วนแล้ว (ใช้โดย sidebar ใน status_all_tabs.js)
 let statusAllDataReady = false;
 
@@ -1151,20 +1153,42 @@ function renderSubmissionTables() {
   setText('sub-count-text', `แสดงผล ${active.length} จากทั้งหมด ${companies.length} รายการ`);
 
   if (active.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="sub-empty">${companies.length === 0
+    tbody.innerHTML = `<tr><td colspan="6" class="sub-empty">${companies.length === 0
       ? 'ยังไม่มีบริษัทที่ผ่านการอนุมัติ Checklist (จะแสดงรายชื่อเมื่ออาจารย์ตรวจให้ผ่าน)'
       : 'ไม่มีบริษัทที่กำลังดำเนินการ'}</td></tr>`;
   } else {
     const note = renderStudentAcceptanceCell();
-    tbody.innerHTML = active.map((comp, idx) => `
-      <tr class="${getSubmissionStatus(comp) === 'SUBMITTED_WAITING' ? 'sub-row--highlight' : ''}">
+    // การ์ดเอกสารราชการเป็นข้อมูลระดับนิสิต (ไม่ใช่ต่อบริษัท) → ผูก dropdown ไว้กับแถวบริษัทที่ออกหนังสือ (ไม่พบให้ใช้แถวแรก)
+    const accCompany = String(currentAcceptanceData?.companyName || '').trim();
+    const matchIdx = accCompany ? active.findIndex((c) => String(c.name || '').trim() === accCompany) : -1;
+    const toggleIdx = matchIdx >= 0 ? matchIdx : 0;
+    tbody.innerHTML = active.map((comp, idx) => {
+      const hasToggle = idx === toggleIdx;
+      const rowClass = [
+        getSubmissionStatus(comp) === 'SUBMITTED_WAITING' ? 'sub-row--highlight' : '',
+        hasToggle && acceptanceCardExpanded ? 'sub-row--expanded' : '',
+      ].filter(Boolean).join(' ');
+      return `
+      <tr class="${rowClass}">
         <td class="sub-col-no">${idx + 1}</td>
         <td>${renderSubmissionCompanyCell(comp)}</td>
         <td>${renderSubmissionStatusPill(comp)}</td>
         <td>${renderSubmissionDateCell(comp)}</td>
         <td>${note}</td>
-      </tr>`).join('');
+        <td class="sub-col-toggle">${hasToggle ? `
+          <button type="button" class="sub-expand-btn" id="student-acceptance-toggle" onclick="toggleStudentAcceptanceCard()"
+            aria-expanded="${acceptanceCardExpanded}" aria-controls="student-acceptance-expand-row"
+            title="${acceptanceCardExpanded ? 'ซ่อนเอกสารราชการ' : 'ดูเอกสารราชการและอัปโหลดใบตอบรับ'}">
+            <span class="material-icons">expand_more</span>
+          </button>` : ''}</td>
+      </tr>${hasToggle ? `
+      <tr class="sub-expand-row" id="student-acceptance-expand-row"${acceptanceCardExpanded ? '' : ' hidden'}>
+        <td colspan="6"><div id="student-acceptance-upload-box"></div></td>
+      </tr>` : ''}`;
+    }).join('');
   }
+  // tbody ถูก render ใหม่ → วาดการ์ดเอกสารราชการลงในแถวที่กางออกอีกครั้ง
+  renderStudentAcceptanceCard();
 
   const failedPanel = document.getElementById('sub-failed-panel');
   const failedBody = document.getElementById('sub-failed-body');
@@ -1237,88 +1261,258 @@ function renderStudentAcceptanceCard() {
   const body = section.querySelector('.card-body');
   if (!body) return;
 
-  let container = document.getElementById('student-acceptance-upload-box');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'student-acceptance-upload-box';
-    container.style.marginTop = '16px';
-    body.appendChild(container);
+  // ปกติการ์ดอยู่ในแถว dropdown ใต้แถวบริษัท (สร้างโดย renderSubmissionTables)
+  // ถ้าตารางไม่มีแถวบริษัท → แสดงการ์ดต่อท้าย card-body แบบเดิม
+  const fallbackId = 'student-acceptance-upload-box-fallback';
+  const inRow = document.querySelector('#student-acceptance-expand-row #student-acceptance-upload-box');
+  let container = inRow as HTMLElement | null;
+  if (container) {
+    document.getElementById(fallbackId)?.remove();
+  } else {
+    container = document.getElementById(fallbackId);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = fallbackId;
+      container.style.marginTop = '16px';
+      body.appendChild(container);
+    }
   }
 
   const acc = currentAcceptanceData;
   // หนังสือฉบับก่อนหน้า (เช่น บริษัทเดิมที่ปฏิเสธ / รอบที่ 1) — รายชื่อตามที่ออกจริง ดาวน์โหลดย้อนหลังได้
   const pastLetters = Array.isArray(acc?.pastLetters) ? acc.pastLetters : [];
   const pastLettersHtml = pastLetters.length === 0 ? '' : `
-    <div style="margin-top:10px; border-top:1px dashed #CBD5E1; padding-top:10px;">
-      <div style="font-size:12.5px; font-weight:700; color:#475569; margin-bottom:6px;">📚 หนังสือฉบับก่อนหน้า</div>
+    <div class="acc-past">
+      <div class="acc-past-title"><span class="material-icons">history</span>หนังสือฉบับก่อนหน้า</div>
       ${pastLetters.map(b => `
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; margin-bottom:4px;">
-          <span style="color:#334155;">${b.type === 'DISPATCH' ? 'หนังสือส่งตัว' : 'หนังสือขอความอนุเคราะห์'} · ${escapeStudentHtml(b.companyName || '-')} · เลขที่ ${escapeStudentHtml(b.docNo || '-')}</span>
-          <button type="button" onclick="downloadStudentOfficialLetter('${b.type}', '${escapeStudentHtml(b.batchId)}')"
-            style="background:#FFFFFF; color:#312E81; border:1px solid #C7D2FE; padding:3px 9px; border-radius:6px; font-size:11.5px; font-weight:700; cursor:pointer;">
-            📥 ดาวน์โหลด
+        <div class="acc-past-row">
+          <span>${b.type === 'DISPATCH' ? 'หนังสือส่งตัว' : 'หนังสือขอความอนุเคราะห์'} · ${escapeStudentHtml(b.companyName || '-')} · เลขที่ ${escapeStudentHtml(b.docNo || '-')}</span>
+          <button type="button" class="acc-btn-outline acc-btn-outline--sm" onclick="downloadStudentOfficialLetter('${b.type}', '${escapeStudentHtml(b.batchId)}')">
+            <span class="material-icons">download</span>ดาวน์โหลด
           </button>
         </div>
       `).join('')}
     </div>
   `;
 
-  if (!acc || !acc.requestLetterIssued) {
-    container.innerHTML = pastLettersHtml
-      ? `<div style="border:1px solid #CBD5E1; border-radius:12px; padding:12px 18px; background:#F8FAFC;">${pastLettersHtml}</div>`
-      : '';
-    return;
-  }
+  // ---- สถานะแต่ละขั้น (derive จากข้อมูลจริง) ----
+  // ไม่มีข้อมูลการกดดาวน์โหลด → ถือว่าขั้น 1–2 เสร็จเมื่อคณะออกหนังสือแล้ว
+  const issued = Boolean(acc && acc.requestLetterIssued);
+  const status = acc?.status || 'NOT_SENT';
+  const isFinalized = status === 'ACCEPTED';
+  const hasFile = Boolean(acc?.fileUrl);
+  const step3Done = hasFile && status !== 'REJECTED';
+  const stepStates = [
+    issued ? 'done' : 'current',
+    issued ? 'done' : 'pending',
+    !issued ? 'pending' : step3Done ? 'done' : 'current',
+  ];
+  const currentStep = issued ? 3 : 1;
 
-  const isFinalized = acc.status === 'ACCEPTED';
-  const statusBanner = acc.status === 'ACCEPTED'
-    ? `<div style="background:#DCFCE7; color:#166534; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:700;">✅ เจ้าหน้าที่คณะตรวจสอบและยืนยันผล "บริษัทตอบรับเข้าฝึกงาน" เรียบร้อยแล้ว ${acc.dispatchLetterIssued ? `(ออกหนังสือส่งตัวเลขที่ ${escapeStudentHtml(acc.dispatchLetterDocNo || '-')} แล้ว)` : '(รอออกหนังสือส่งตัว)'}</div>`
-    : acc.status === 'WAITING_ADVISOR_APPROVAL'
-    ? `<div style="background:#FEF3C7; color:#92400E; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:700;">⏳ อัปโหลดไฟล์ "${escapeStudentHtml(acc.fileName || 'ใบตอบรับ')}" แล้ว — อยู่ระหว่างรออาจารย์ที่ปรึกษา (${escapeStudentHtml(acc.advisorName || 'ที่ปรึกษา')}) ตรวจสอบและอนุมัติแบบตอบรับ</div>`
-    : acc.status === 'ADVISOR_APPROVED'
-    ? `<div style="background:#EFF6FF; color:#1E40AF; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:700;">✓ อาจารย์ที่ปรึกษาอนุมัติแบบตอบรับแล้ว — อยู่ระหว่างรอเจ้าหน้าที่คณะ (Super Admin) ยืนยันผลรับเข้าฝึกงานขั้นสุดท้าย</div>`
-    : acc.status === 'REJECTED'
-    ? `<div style="background:#FEE2E2; color:#991B1B; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:700;">✗ บันทึกผล "บริษัทปฏิเสธ" (${escapeStudentHtml(acc.note || '-')}) — หากได้รับหนังสือขอความอนุเคราะห์ฉบับใหม่แล้ว สามารถอัปโหลดใบตอบรับใหม่ได้ทันที</div>`
-    : acc.fileUrl
-    ? `<div style="background:#FEF3C7; color:#92400E; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600;">⏳ อัปโหลดไฟล์ "${escapeStudentHtml(acc.fileName || 'ใบตอบรับ')}" แล้ว — ระบบกำลังส่งให้อาจารย์ที่ปรึกษาตรวจสอบ</div>`
-    : `<div style="background:#EFF6FF; color:#1E40AF; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600;">📄 คณะออกหนังสือขอความอนุเคราะห์ (${escapeStudentHtml(acc.requestLetterDocNo || '-')}) แล้ว กดดาวน์โหลดหนังสือขอความอนุเคราะห์และแบบตอบรับเปล่าด้านขวาเพื่อนำไปยื่นให้บริษัท และเมื่อบริษัทกรอกแบบตอบรับกลับมา กรุณาอัปโหลดไฟล์ที่นี่</div>`;
+  const circle = (n, state) => state === 'done'
+    ? `<span class="acc-step-circle acc-step-circle--done"><span class="material-icons">check</span></span>`
+    : `<span class="acc-step-circle acc-step-circle--${state}">${n}</span>`;
+  const stepLabel = (n, state) =>
+    `<span class="acc-step-label acc-step-label--${state}">ขั้นตอนที่ ${n}${state === 'current' ? ' · ปัจจุบัน' : ''}</span>`;
+  const link = (prevState) =>
+    `<span class="acc-step-link${prevState === 'done' ? ' acc-step-link--done' : ''}" aria-hidden="true"></span>`;
 
-  container.innerHTML = `
-    <div style="border:1px solid #CBD5E1; border-radius:12px; padding:16px 18px; background:#F8FAFC;">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
-        <div>
-          <div style="font-size:15px; font-weight:700; color:#1E293B;">เอกสารราชการ &amp; อัปโหลดแบบตอบรับ/ปฏิเสธ การรับนิสิตฝึกงาน</div>
-          <div style="font-size:12.5px; color:#64748B;">ดาวน์โหลดหนังสือขอความอนุเคราะห์และแบบตอบรับเปล่าไปยื่นสถานประกอบการ และอัปโหลดใบตอบรับที่บริษัทกรอกกลับมา (PDF, JPG, PNG ไม่เกิน 10MB)</div>
-        </div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button type="button" onclick="downloadStudentOfficialLetter('REQUEST')"
-            style="background:#EEF2FF; color:#312E81; border:1px solid #C7D2FE; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
-            📥 ดาวน์โหลดหนังสือขอความอนุเคราะห์ (PDF)
-          </button>
-          <a href="/documents/acceptance_form_se.pdf" download="แบบตอบรับนิสิตฝึกงาน_SE.pdf" target="_blank" rel="noopener"
-            style="background:#F0FDF4; color:#166534; border:1px solid #BBF7D0; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
-            📄 ดาวน์โหลดแบบตอบรับเปล่า (PDF)
-          </a>
+  // ---- Info strip ----
+  const infoStrip = issued
+    ? `<div class="acc-info acc-info--ready">
+        <span class="material-icons acc-info-icon">description</span>
+        <span class="acc-info-text">คณะออกหนังสือขอความอนุเคราะห์แล้ว</span>
+        <span class="acc-docno">${escapeStudentHtml(acc.requestLetterDocNo || '-')}</span>
+        <span class="acc-info-right">
           ${acc.dispatchLetterIssued ? `
-            <button type="button" onclick="downloadStudentOfficialLetter('DISPATCH')"
-              style="background:#DBEAFE; color:#1E40AF; border:1px solid #93C5FD; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
-              📥 ดาวน์โหลดหนังสือส่งตัวเข้าฝึกงาน (PDF)
-            </button>
-          ` : ''}
-          ${acc.fileUrl ? `<a href="${acc.fileUrl}" target="_blank" rel="noopener" class="btn btn-tonal btn-sm" style="text-decoration:none;">ดูไฟล์ที่อัปโหลด</a>` : ''}
-          ${!isFinalized ? `
-            <input type="file" id="student-acceptance-file-input" accept=".pdf,image/jpeg,image/png,image/webp" style="display:none;" onchange="uploadStudentAcceptanceForm(this)" />
-            <button type="button" id="student-acceptance-upload-btn" class="btn btn-primary btn-sm" onclick="document.getElementById('student-acceptance-file-input').click()">
-              ${acc.fileUrl ? 'อัปโหลดไฟล์ใหม่' : 'เลือกไฟล์ใบตอบรับ (PDF / รูปภาพ)'}
-            </button>
-          ` : ''}
+            <button type="button" class="acc-btn-outline acc-btn-outline--sm" onclick="downloadStudentOfficialLetter('DISPATCH')">
+              <span class="material-icons">download</span>หนังสือส่งตัว (${escapeStudentHtml(acc.dispatchLetterDocNo || '-')})
+            </button>` : ''}
+          <span class="acc-chip acc-chip--green"><span class="material-icons">check_circle</span>พร้อมดาวน์โหลด</span>
+        </span>
+      </div>`
+    : `<div class="acc-info acc-info--waiting">
+        <span class="material-icons acc-info-icon">hourglass_empty</span>
+        <span class="acc-info-text">รอเจ้าหน้าที่คณะออกหนังสือขอความอนุเคราะห์</span>
+        <span class="acc-info-right">
+          <span class="acc-chip acc-chip--amber"><span class="material-icons">schedule</span>รอดำเนินการ</span>
+        </span>
+      </div>`;
+
+  // ---- การ์ด 3 ขั้น ----
+  const uploadArea = isFinalized
+    ? `<div class="acc-finalized"><span class="material-icons">verified</span>เจ้าหน้าที่ยืนยันผลแล้ว ไม่สามารถเปลี่ยนไฟล์ได้</div>`
+    : `
+      <input type="file" id="student-acceptance-file-input" accept=".pdf,image/jpeg,image/png,image/webp" style="display:none;" onchange="studentAcceptancePickFile(this)" />
+      <div class="acc-dropzone${issued ? '' : ' acc-dropzone--disabled'}" id="student-acceptance-dropzone"
+        ${issued ? `onclick="if (event.target.tagName !== 'BUTTON') document.getElementById('student-acceptance-file-input').click()"
+        ondragover="studentAcceptanceDragOver(event)" ondragleave="studentAcceptanceDragLeave(event)" ondrop="studentAcceptanceDrop(event)"` : ''}>
+        <span class="acc-dropzone-icon"><span class="material-icons">cloud_upload</span></span>
+        <span class="acc-dropzone-text">${issued ? 'ลากไฟล์มาวางที่นี่ หรือ' : 'อัปโหลดได้หลังคณะออกหนังสือ'}</span>
+        <button type="button" id="student-acceptance-upload-btn" class="acc-btn-primary" ${issued ? '' : 'disabled'}
+          onclick="document.getElementById('student-acceptance-file-input').click()">เลือกไฟล์</button>
+      </div>
+      <div class="acc-dropzone-error" id="student-acceptance-error" role="alert" style="display:none;"></div>
+      <div class="acc-dropzone-help">PDF, JPG, PNG • ไม่เกิน 10MB</div>
+    `;
+
+  const stepsHtml = `
+    <div class="acc-steps">
+      <div class="acc-step acc-step--${stepStates[0]}">
+        <div class="acc-step-head">${circle(1, stepStates[0])}${stepLabel(1, stepStates[0])}</div>
+        <div class="acc-step-main">
+          <span class="acc-step-icon acc-step-icon--indigo"><span class="material-icons">article</span></span>
+          <div>
+            <div class="acc-step-title">หนังสือขอความอนุเคราะห์</div>
+            <div class="acc-step-caption">PDF • ${issued ? 'ลงนามโดยคณะเรียบร้อยแล้ว' : 'รอคณะออกหนังสือ'}</div>
+          </div>
+        </div>
+        <button type="button" class="acc-btn-outline" ${issued ? '' : 'disabled'} onclick="downloadStudentOfficialLetter('REQUEST')">
+          <span class="material-icons">download</span>ดาวน์โหลด PDF
+        </button>
+      </div>
+      <div class="acc-step acc-step--${stepStates[1]}">
+        ${link(stepStates[0])}
+        <div class="acc-step-head">${circle(2, stepStates[1])}${stepLabel(2, stepStates[1])}</div>
+        <div class="acc-step-main">
+          <span class="acc-step-icon acc-step-icon--emerald"><span class="material-icons">edit_note</span></span>
+          <div>
+            <div class="acc-step-title">แบบตอบรับเปล่า</div>
+            <div class="acc-step-caption">ให้บริษัทกรอกรายละเอียดและลงนาม</div>
+          </div>
+        </div>
+        <a class="acc-btn-outline" href="/documents/acceptance_form_se.pdf" download="แบบตอบรับนิสิตฝึกงาน_SE.pdf" target="_blank" rel="noopener">
+          <span class="material-icons">download</span>ดาวน์โหลด PDF
+        </a>
+      </div>
+      <div class="acc-step acc-step--${stepStates[2]}">
+        ${link(stepStates[1])}
+        <div class="acc-step-head">${circle(3, stepStates[2])}${stepLabel(3, stepStates[2])}</div>
+        <div class="acc-step-title acc-step-title--solo">อัปโหลดใบตอบรับจากบริษัท</div>
+        ${uploadArea}
+      </div>
+    </div>
+  `;
+
+  // ---- เอกสารที่อัปโหลดแล้ว ----
+  const reviewStatus = status === 'ACCEPTED'
+    ? { tone: 'green', text: `เจ้าหน้าที่ยืนยัน: บริษัทตอบรับแล้ว ${acc.dispatchLetterIssued ? `(ออกหนังสือส่งตัวเลขที่ ${escapeStudentHtml(acc.dispatchLetterDocNo || '-')} แล้ว)` : '(รอออกหนังสือส่งตัว)'}` }
+    : status === 'ADVISOR_APPROVED'
+    ? { tone: 'blue', text: 'อาจารย์ที่ปรึกษาอนุมัติแล้ว • รอเจ้าหน้าที่คณะยืนยันผล' }
+    : status === 'REJECTED'
+    ? { tone: 'red', text: `บริษัทปฏิเสธ (${escapeStudentHtml(acc.note || '-')}) • อัปโหลดใบตอบรับใหม่ได้เมื่อได้รับหนังสือฉบับใหม่` }
+    : status === 'WAITING_ADVISOR_APPROVAL'
+    ? { tone: 'amber', text: `รออาจารย์ตรวจสอบ (${escapeStudentHtml(acc.advisorName || 'ที่ปรึกษา')})` }
+    : { tone: 'amber', text: 'กำลังส่งให้อาจารย์ที่ปรึกษาตรวจสอบ' };
+  const fileName = acc?.fileName || 'ใบตอบรับ';
+  const isPdf = /\.pdf$/i.test(fileName);
+  // หมายเหตุ: API ยังไม่ส่งขนาดไฟล์ และยังไม่มี endpoint ลบไฟล์ → ไม่แสดงขนาด/ปุ่มลบ
+  const uploadedHtml = !hasFile ? '' : `
+    <div class="acc-uploaded">
+      <div class="acc-uploaded-head">
+        <span class="acc-uploaded-title"><span class="material-icons">task_alt</span>เอกสารที่อัปโหลดแล้ว</span>
+        ${acc.uploadedAt ? `<span class="acc-uploaded-time">อัปเดตล่าสุด: ${formatThaiDateTime(acc.uploadedAt)}</span>` : ''}
+      </div>
+      <div class="acc-file">
+        <span class="acc-file-icon acc-file-icon--${isPdf ? 'pdf' : 'img'}"><span class="material-icons">${isPdf ? 'picture_as_pdf' : 'image'}</span></span>
+        <div class="acc-file-info">
+          <div class="acc-file-name-row">
+            <span class="acc-file-name" title="${escapeStudentHtml(fileName)}">${escapeStudentHtml(fileName)}</span>
+            <span class="acc-chip acc-chip--green"><span class="material-icons">check</span>อัปโหลดแล้ว</span>
+          </div>
+          <div class="acc-file-meta"><span class="acc-dot acc-dot--${reviewStatus.tone}"></span>${reviewStatus.text}</div>
+        </div>
+        <div class="acc-file-actions">
+          <a class="acc-icon-btn" href="${escapeStudentHtml(acc.fileUrl)}" target="_blank" rel="noopener" title="ดูไฟล์" aria-label="ดูไฟล์"><span class="material-icons">visibility</span></a>
+          ${!isFinalized ? `<button type="button" class="acc-icon-btn" title="เปลี่ยนไฟล์" aria-label="เปลี่ยนไฟล์" onclick="document.getElementById('student-acceptance-file-input').click()"><span class="material-icons">sync</span></button>` : ''}
         </div>
       </div>
-      ${statusBanner}
+    </div>
+  `;
+
+  container.innerHTML = `
+    <div class="acc-card">
+      <div class="acc-header">
+        <div class="acc-header-text">
+          <div class="acc-title">เอกสารราชการ &amp; อัปโหลดแบบตอบรับ/ปฏิเสธ การรับนิสิตฝึกงาน</div>
+          <div class="acc-subtitle">ดาวน์โหลดหนังสือขอความอนุเคราะห์และแบบตอบรับเปล่าไปยื่นสถานประกอบการ และอัปโหลดใบตอบรับที่บริษัทกรอกกลับมา (PDF, JPG, PNG ไม่เกิน 10MB)</div>
+        </div>
+        <span class="acc-step-pill"><span class="acc-step-pill-dot"></span>ขั้นตอนที่ ${currentStep} จาก 3</span>
+      </div>
+      ${infoStrip}
+      ${stepsHtml}
+      ${uploadedHtml}
       ${pastLettersHtml}
     </div>
   `;
 }
+
+// เปิด/ปิด dropdown การ์ดเอกสารราชการใต้แถวบริษัท (ไม่ render ตารางใหม่)
+window.toggleStudentAcceptanceCard = function() {
+  acceptanceCardExpanded = !acceptanceCardExpanded;
+  const row = document.getElementById('student-acceptance-expand-row');
+  const btn = document.getElementById('student-acceptance-toggle');
+  if (row) row.hidden = !acceptanceCardExpanded;
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(acceptanceCardExpanded));
+    btn.title = acceptanceCardExpanded ? 'ซ่อนเอกสารราชการ' : 'ดูเอกสารราชการและอัปโหลดใบตอบรับ';
+    btn.closest('tr')?.classList.toggle('sub-row--expanded', acceptanceCardExpanded);
+  }
+};
+
+// ตรวจไฟล์ฝั่ง client ให้ตรงกับกติกาเดิมของ server (multer: .pdf/.jpg/.jpeg/.png/.webp, ไม่เกิน 10MB)
+function validateStudentAcceptanceFile(file) {
+  const allowedExts = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+  const name = String(file?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+  if (!allowedExts.includes(ext)) return 'รองรับเฉพาะไฟล์ PDF หรือรูปภาพ (JPG, PNG, WebP) เท่านั้น';
+  if (file.size > 10 * 1024 * 1024) return 'ไฟล์มีขนาดเกิน 10MB กรุณาเลือกไฟล์ที่เล็กลง';
+  return '';
+}
+
+function showStudentAcceptanceError(message) {
+  const el = document.getElementById('student-acceptance-error');
+  const zone = document.getElementById('student-acceptance-dropzone');
+  if (zone) zone.classList.toggle('acc-dropzone--error', Boolean(message));
+  if (!el) return;
+  el.innerHTML = message ? `<span class="material-icons">error_outline</span>${escapeStudentHtml(message)}` : '';
+  el.style.display = message ? 'flex' : 'none';
+}
+
+window.studentAcceptancePickFile = function(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  const error = validateStudentAcceptanceFile(file);
+  if (error) {
+    showStudentAcceptanceError(error);
+    inputEl.value = '';
+    return;
+  }
+  showStudentAcceptanceError('');
+  return window.uploadStudentAcceptanceForm(inputEl);
+};
+
+window.studentAcceptanceDragOver = function(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('acc-dropzone--over');
+};
+
+window.studentAcceptanceDragLeave = function(e) {
+  if (e.currentTarget.contains(e.relatedTarget)) return;
+  e.currentTarget.classList.remove('acc-dropzone--over');
+};
+
+window.studentAcceptanceDrop = function(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('acc-dropzone--over');
+  const files = e.dataTransfer?.files;
+  const input = document.getElementById('student-acceptance-file-input');
+  if (!files || files.length === 0 || !input) return;
+  const dt = new DataTransfer();
+  dt.items.add(files[0]);
+  input.files = dt.files;
+  window.studentAcceptancePickFile(input);
+};
 
 // batchId: ดาวน์โหลด "ฉบับก่อนหน้า" (เช่น หนังสือของบริษัทเดิมที่ปฏิเสธ) จากรายชื่อ ณ วันที่ออก
 window.downloadStudentOfficialLetter = function(type, batchId) {
