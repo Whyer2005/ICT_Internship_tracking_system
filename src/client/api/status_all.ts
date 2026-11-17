@@ -229,111 +229,259 @@ async function loadTrainings() {
   }
 }
 
+// เกณฑ์ชั่วโมงอบรม (จุดเดียว) — ตรงกับเงื่อนไขฝั่ง server (adminRoutes: soft >= 12 && hard >= 18)
+const TRAINING_CRITERIA = { soft: 12, hard: 18 };
+const TRAINING_CRITERIA_TOTAL = TRAINING_CRITERIA.soft + TRAINING_CRITERIA.hard;
+
 // แบ่งหน้าตารางชั่วโมงการอบรม (หน้าละ 9 รายการ)
 const TRAININGS_PAGE_SIZE = 9;
 let trainingsPage = 1;
 
+const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+function parseIsoDate(value) {
+  const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+  const dt = value ? new Date(value) : null;
+  if (!dt || isNaN(dt.getTime())) return null;
+  return { y: dt.getFullYear(), m: dt.getMonth() + 1, d: dt.getDate() };
+}
+
+// "13 พ.ย. 2569" / ช่วงวัน "7–8 พ.ย. 2569", "30 ต.ค. – 2 พ.ย. 2569"
+function formatThaiDateRange(startValue, endValue) {
+  const a = parseIsoDate(startValue);
+  if (!a) return '';
+  const b = parseIsoDate(endValue);
+  const fmt = (x, withYear = true) => `${x.d} ${THAI_MONTHS_SHORT[x.m - 1]}${withYear ? ' ' + (x.y + 543) : ''}`;
+  if (!b || (a.y === b.y && a.m === b.m && a.d === b.d)) return fmt(a);
+  if (a.y === b.y && a.m === b.m) return `${a.d}–${fmt(b)}`;
+  if (a.y === b.y) return `${fmt(a, false)} – ${fmt(b)}`;
+  return `${fmt(a)} – ${fmt(b)}`;
+}
+
+// แยกข้อมูลแสดงผลจาก record เดิม (API ไม่มี field วันที่/ช่วงเวลา → อ่านจาก title/note ที่ระบบ Check-in เขียนไว้)
+// title:  "[Check-in กิจกรรมคณะ] <ชื่อกิจกรรม> - <ช่วงที่ 1 (2026-11-13) | ทั้งกิจกรรม>"
+// note:   "บันทึก Check-in หน้างาน (...) โดยพี่จอม เมื่อวันที่ 2026-11-07 ถึง 2026-11-08 (09:00-16:00 น.)"
+function getTrainingView(t) {
+  const rawTitle = String(t.title || '');
+  const note = String(t.note || '');
+  const isCheckIn = t.source === 'STAFF_IMPORT' && /^\[Check-in[^\]]*\]/.test(rawTitle);
+  const isStudentUpload = !t.source || t.source === 'STUDENT_UPLOAD';
+
+  let title = rawTitle;
+  let session = '';
+  if (isCheckIn) {
+    title = rawTitle.replace(/^\[Check-in[^\]]*\]\s*/, '');
+    const sep = title.lastIndexOf(' - ');
+    if (sep > 0) {
+      session = title.slice(sep + 3).replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim();
+      title = title.slice(0, sep).trim();
+    }
+  }
+
+  let dateText = '';
+  let timeText = '';
+  const noteDate = note.match(/เมื่อวันที่\s+(\d{4}-\d{2}-\d{2})(?:\s*ถึง\s*(\d{4}-\d{2}-\d{2}))?(?:\s*\((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*น\.\))?/);
+  if (noteDate) {
+    dateText = formatThaiDateRange(noteDate[1], noteDate[2]);
+    if (noteDate[3]) timeText = `${noteDate[3]}–${noteDate[4]} น.`;
+  }
+  if (!dateText) dateText = formatThaiDateRange(t.createdAt);
+
+  const subParts = [];
+  if (isCheckIn) {
+    if (session) subParts.push(session);
+    if (timeText) subParts.push(timeText);
+  } else if (isStudentUpload) {
+    subParts.push(t.status === 'APPROVED' ? 'อัปโหลดโดยนิสิต · อาจารย์อนุมัติแล้ว' : t.status === 'REJECTED' ? 'อัปโหลดโดยนิสิต · ไม่ผ่านการตรวจ' : 'อัปโหลดโดยนิสิต · รออาจารย์ตรวจ');
+  } else {
+    subParts.push(t.source === 'ADMIN_IMPORT' ? 'อาจารย์ประจำวิชาเพิ่มให้' : 'นำเข้าโดยเจ้าหน้าที่คณะ');
+  }
+
+  // หมายเหตุที่ระบบเขียนเอง (Check-in) ถูกแยกเป็นวันที่/เวลาแล้ว → แสดงเฉพาะหมายเหตุที่มีความหมายเพิ่ม
+  const extraNote = isCheckIn ? '' : note.trim();
+  const sourceKey = isCheckIn ? 'CHECKIN' : isStudentUpload ? 'UPLOAD' : 'IMPORT';
+  const statusKey = t.status === 'APPROVED' ? 'APPROVED' : t.status === 'REJECTED' ? 'REJECTED' : 'PENDING';
+  return { title: title || '-', sub: subParts.join(' · '), dateText: dateText || '-', extraNote, sourceKey, statusKey, isStudentUpload };
+}
+
+function getTrainingFilters() {
+  const val = (id) => (document.getElementById(id)?.value || '').trim();
+  return {
+    q: val('trn-search').toLowerCase(),
+    type: val('trn-filter-type'),
+    source: val('trn-filter-source'),
+    status: val('trn-filter-status'),
+  };
+}
+
+window.onTrainingFilterChange = function() {
+  trainingsPage = 1;
+  renderTrainingsPage();
+};
+
+function renderTrainingSummary(list) {
+  const box = document.getElementById('trn-summary');
+  if (!box) return;
+  const approved = list.filter((t) => t.status === 'APPROVED');
+  const sum = (arr) => arr.reduce((s, t) => s + (Number(t.hours) || 0), 0);
+  const soft = sum(approved.filter((t) => t.skillType !== 'HARD'));
+  const hard = sum(approved.filter((t) => t.skillType === 'HARD'));
+  const total = soft + hard;
+  const pendingHours = sum(list.filter((t) => t.status !== 'APPROVED' && t.status !== 'REJECTED'));
+  const passed = soft >= TRAINING_CRITERIA.soft && hard >= TRAINING_CRITERIA.hard;
+  const pct = (v, max) => (max > 0 ? Math.round((v / max) * 100) : 0);
+  const bar = (v, max, tone) => `<div class="trn-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${v}"><span class="trn-bar-fill trn-bar-fill--${tone}" style="width:${Math.min(100, pct(v, max))}%"></span></div>`;
+  const skillCard = (label, tone, value, max, hint) => `
+    <div class="trn-stat">
+      <div class="trn-stat-head">
+        <span class="trn-stat-label"><span class="trn-dot trn-dot--${tone}"></span>${label}</span>
+        <span class="trn-badge trn-badge--${value >= max ? 'pass' : 'muted'}">${value >= max ? '<span class="material-icons">check</span>ครบเกณฑ์' : `ขาดอีก ${max - value} ชม.`}</span>
+      </div>
+      <div class="trn-stat-value">${value}<span class="trn-stat-unit">/ เกณฑ์ ${max} ชม.</span></div>
+      <div class="trn-stat-row"><span>ความคืบหน้า</span><span class="trn-stat-pct trn-stat-pct--${tone}">${pct(value, max)}%</span></div>
+      ${bar(value, max, tone)}
+      <div class="trn-stat-hint">${hint}</div>
+    </div>`;
+
+  box.innerHTML = `
+    <div class="trn-stat trn-stat--total">
+      <div class="trn-stat-head">
+        <span class="trn-stat-label"><span class="trn-dot trn-dot--green"></span>ชั่วโมงรวมสะสม</span>
+        <span class="trn-badge trn-badge--${passed ? 'pass' : 'warn'}">${passed ? '<span class="material-icons">check</span>ผ่านเกณฑ์' : 'ยังไม่ผ่านเกณฑ์'}</span>
+      </div>
+      <div class="trn-stat-value">${total}<span class="trn-stat-unit">/ เกณฑ์ ${TRAINING_CRITERIA_TOTAL} ชม.</span></div>
+      <div class="trn-stat-row"><span>ความคืบหน้าภาพรวม</span><span class="trn-stat-pct trn-stat-pct--green">${pct(total, TRAINING_CRITERIA_TOTAL)}%</span></div>
+      ${bar(total, TRAINING_CRITERIA_TOTAL, 'green')}
+      <div class="trn-stat-hint">${pendingHours > 0 ? `มีอีก ${pendingHours} ชม. รออาจารย์ตรวจ (ยังไม่นับรวม)` : `ต้องผ่าน Soft ${TRAINING_CRITERIA.soft} และ Hard ${TRAINING_CRITERIA.hard} ชม. ก่อนยื่นฝึกงาน`}</div>
+    </div>
+    ${skillCard('ทักษะด้านอารมณ์และสังคม (Soft Skill)', 'indigo', soft, TRAINING_CRITERIA.soft, 'การสื่อสาร การทำงานเป็นทีม เทคนิคการสัมภาษณ์')}
+    ${skillCard('ทักษะด้านวิชาชีพและเทคนิค (Hard Skill)', 'sky', hard, TRAINING_CRITERIA.hard, 'การวิเคราะห์ข้อมูล เครื่องมือเฉพาะทาง ความปลอดภัยไซเบอร์')}
+  `;
+}
+
 function renderTrainingsPage() {
   const tbody = document.getElementById('trainings-table-body');
   if (!tbody) return;
-  tbody.innerHTML = '';
 
-  const list = currentTrainingsData || [];
-  const totalPages = Math.max(1, Math.ceil(list.length / TRAININGS_PAGE_SIZE));
+  const all = currentTrainingsData || [];
+  renderTrainingSummary(all);
+  const addBtn = document.getElementById('trn-add-btn');
+  if (addBtn) {
+    addBtn.disabled = isInternshipLocked;
+    addBtn.title = isInternshipLocked ? 'ล็อกระหว่างฝึกงาน เพิ่มข้อมูลไม่ได้' : 'สำหรับคอร์สออนไลน์/ภายนอก พร้อมแนบ Certificate';
+  }
+
+  const f = getTrainingFilters();
+  const rows = all
+    .map((t, i) => ({ t, v: getTrainingView(t), order: i + 1 }))
+    .filter(({ t, v }) =>
+      (!f.q || `${v.title} ${v.sub} ${t.title || ''}`.toLowerCase().includes(f.q)) &&
+      (!f.type || (f.type === 'HARD' ? t.skillType === 'HARD' : t.skillType !== 'HARD')) &&
+      (!f.source || v.sourceKey === f.source) &&
+      (!f.status || v.statusKey === f.status));
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / TRAININGS_PAGE_SIZE));
   if (trainingsPage > totalPages) trainingsPage = totalPages;
   if (trainingsPage < 1) trainingsPage = 1;
   const start = (trainingsPage - 1) * TRAININGS_PAGE_SIZE;
-  const pageItems = list.slice(start, start + TRAININGS_PAGE_SIZE);
+  const pageItems = rows.slice(start, start + TRAININGS_PAGE_SIZE);
 
-  if (list.length > 0) {
-    pageItems.forEach((t, i) => {
-      const idx = start + i;
-      let statusText = '☐ รอผล';
-      let statusClass = 'status-wait';
-      if (t.status === 'APPROVED') {
-        statusText = '✓ ผ่าน';
-        statusClass = 'status-pass';
-      } else if (t.status === 'REJECTED') {
-        statusText = '✗ ไม่ผ่าน';
-        statusClass = 'status-fail';
-      }
-
-      const tr = document.createElement('tr');
-      const certUrl = t.certificateFileUrl || '';
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${t.title}</td>
-        <td>${t.skillType === 'HARD' ? 'Hard skill' : 'Soft skill'}</td>
-        <td>${t.hours}</td>
-        <td class="${statusClass}">${statusText}</td>
-        <td>${t.note || '-'}</td>
-        <td style="text-align:center;">
-          ${certUrl
-            ? `<a href="${certUrl}" target="_blank" style="color:#2563eb; font-size:16px; text-decoration:none; white-space:nowrap;">ดูตัวอย่าง</a>`
-            : '<span style="color:#94a3b8; font-size:16px;">-</span>'
-          }
-        </td>
-        <td>${isInternshipLocked
-          ? '<span class="material-icons" style="font-size:16px; color:#94a3b8;" title="ล็อกระหว่างฝึกงาน">lock</span>'
-          : `<button type="button" class="btn btn-tonal btn-xs" onclick="deleteTraining(${t.id})">ลบ</button>`}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+  if (all.length === 0) {
+    tbody.innerHTML = `<tr class="trn-empty-row"><td colspan="7"><div class="trn-empty">
+      <span class="material-icons">school</span>
+      <div class="trn-empty-title">ยังไม่มีชั่วโมงอบรม</div>
+      <div class="trn-empty-sub">ชั่วโมงจาก Check-in หน้างานจะแสดงอัตโนมัติ</div>
+    </div></td></tr>`;
+  } else if (rows.length === 0) {
+    tbody.innerHTML = `<tr class="trn-empty-row"><td colspan="7"><div class="trn-empty">
+      <span class="material-icons">filter_alt_off</span>
+      <div class="trn-empty-title">ไม่พบรายการที่ตรงกับตัวกรอง</div>
+    </div></td></tr>`;
   } else {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888; padding: 20px;">ยังไม่มีข้อมูลการอบรม</td></tr>';
+    tbody.innerHTML = pageItems.map(({ t, v, order }) => {
+      const typeBadge = t.skillType === 'HARD'
+        ? '<span class="trn-pill trn-pill--hard">Hard skill</span>'
+        : '<span class="trn-pill trn-pill--soft">Soft skill</span>';
+      // ไฟล์ Certificate ดูได้ในหน้าต่าง "ดูรายละเอียด" (แสดงตัวอย่างไฟล์ใต้หัวข้อ Certificate)
+      const sourceChip = v.sourceKey === 'CHECKIN'
+        ? '<span class="trn-chip trn-chip--blue"><span class="material-icons">verified_user</span>Check-in</span>'
+        : v.sourceKey === 'UPLOAD'
+        ? '<span class="trn-chip trn-chip--amber"><span class="material-icons">upload_file</span>อัปโหลด Cert</span>'
+        : `<span class="trn-chip trn-chip--slate"><span class="material-icons">domain</span>${t.source === 'ADMIN_IMPORT' ? 'อาจารย์เพิ่มให้' : 'นำเข้าโดยคณะ'}</span>`;
+      const statusBadge = v.statusKey === 'APPROVED'
+        ? '<span class="trn-status trn-status--pass"><span class="material-icons">check</span>ผ่าน</span>'
+        : v.statusKey === 'REJECTED'
+        ? '<span class="trn-status trn-status--fail"><span class="material-icons">close</span>ไม่ผ่าน</span>'
+        : '<span class="trn-status trn-status--wait"><span class="material-icons">schedule</span>รอตรวจ</span>';
+
+      // ลบได้เฉพาะรายการที่นิสิตอัปโหลดเองและยังรอตรวจ
+      const lockReason = isInternshipLocked
+        ? 'ล็อกระหว่างฝึกงาน แก้ไขไม่ได้'
+        : !v.isStudentUpload
+        ? 'บันทึกโดยเจ้าหน้าที่ แก้ไขไม่ได้'
+        : v.statusKey !== 'PENDING'
+        ? 'ตรวจแล้ว แก้ไขไม่ได้'
+        : '';
+      const actionBtn = lockReason
+        ? `<span class="trn-icon-btn trn-icon-btn--lock" tabindex="0" title="${lockReason}" aria-label="${lockReason}"><span class="material-icons">lock</span></span>`
+        : `<button type="button" class="trn-icon-btn trn-icon-btn--danger" title="ลบรายการ" aria-label="ลบรายการ" onclick="deleteTraining(${t.id})"><span class="material-icons">delete_outline</span></button>`;
+
+      const noteTip = v.extraNote ? ` title="หมายเหตุ: ${escapeStudentHtml(v.extraNote)}"` : '';
+      return `
+        <tr class="trn-row trn-row--${v.statusKey.toLowerCase()}">
+          <td class="trn-col-no" data-label="ลำดับ">${order}</td>
+          <td class="trn-col-title" data-label="ชื่อกิจกรรม">
+            <div class="trn-title"${noteTip}>${escapeStudentHtml(v.title)}</div>
+            <div class="trn-sub">${escapeStudentHtml(v.sub)}${v.extraNote ? `<span class="trn-note-flag"${noteTip}><span class="material-icons">sticky_note_2</span>มีหมายเหตุ</span>` : ''}</div>
+          </td>
+          <td class="trn-col-type" data-label="ประเภท">${typeBadge}</td>
+          <td class="trn-col-hours" data-label="ชั่วโมง"><b>${Number(t.hours) || 0}</b> ชม.</td>
+          <td class="trn-col-source" data-label="แหล่งที่มา"><div class="trn-source">${sourceChip}</div></td>
+          <td class="trn-col-status" data-label="สถานะ">${statusBadge}</td>
+          <td class="trn-col-actions" data-label="จัดการ">
+            <div class="trn-actions">
+              <button type="button" class="trn-icon-btn" title="ดูรายละเอียด" aria-label="ดูรายละเอียด" onclick="viewTraining(${t.id})"><span class="material-icons">visibility</span></button>
+              ${actionBtn}
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
   }
 
-  renderTrainingsPagination(list.length, totalPages, start, pageItems.length);
+  renderTrainingsPagination(rows.length, totalPages, start, pageItems.length);
 }
 
 function renderTrainingsPagination(total, totalPages, start, shown) {
-  const tbody = document.getElementById('trainings-table-body');
-  const table = tbody ? tbody.closest('table') : null;
-  if (!table) return;
-
-  let bar = document.getElementById('trainings-pagination');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'trainings-pagination';
-    table.insertAdjacentElement('afterend', bar);
-  }
-
-  // แสดงแถบเปลี่ยนหน้าเฉพาะเมื่อเกิน 9 รายการ
-  if (total <= TRAININGS_PAGE_SIZE) {
+  const bar = document.getElementById('trainings-pagination');
+  if (!bar) return;
+  if (total === 0) {
     bar.innerHTML = '';
     bar.style.display = 'none';
     return;
   }
-  bar.style.cssText = 'display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:14px 4px 0;';
+  bar.style.display = '';
 
-  const btnBase = 'min-width:36px; height:36px; padding:0 12px; border-radius:8px; font-size:14px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:4px; font-family:inherit;';
   const navBtn = (label, target, disabled, iconFirst) => {
-    const icon = `<span class="material-icons" style="font-size:18px;">${iconFirst ? 'chevron_left' : 'chevron_right'}</span>`;
-    const style = disabled
-      ? `${btnBase} background:#F1F5F9; color:#94A3B8; border:1px solid #E2E8F0; cursor:not-allowed;`
-      : `${btnBase} background:#FFFFFF; color:#1E293B; border:1px solid #CBD5E1; cursor:pointer;`;
-    return `<button type="button" ${disabled ? 'disabled' : `onclick="goTrainingsPage(${target})"`} style="${style}">${iconFirst ? icon + label : label + icon}</button>`;
+    const icon = `<span class="material-icons">${iconFirst ? 'chevron_left' : 'chevron_right'}</span>`;
+    return `<button type="button" class="trn-page-btn trn-page-nav" ${disabled ? 'disabled' : `onclick="goTrainingsPage(${target})"`}>${iconFirst ? icon + label : label + icon}</button>`;
   };
-
   let pages = '';
   for (let p = 1; p <= totalPages; p++) {
     const active = p === trainingsPage;
-    const style = active
-      ? `${btnBase} background:#1D4ED8; color:#FFFFFF; border:1px solid #1D4ED8; box-shadow:0 0 0 3px #BFDBFE; cursor:default;`
-      : `${btnBase} background:transparent; color:#1E293B; border:1px solid transparent; cursor:pointer;`;
-    pages += `<button type="button" ${active ? '' : `onclick="goTrainingsPage(${p})"`} style="${style}">${p}</button>`;
+    pages += `<button type="button" class="trn-page-btn${active ? ' is-active' : ''}" ${active ? 'aria-current="page"' : `onclick="goTrainingsPage(${p})"`}>${p}</button>`;
   }
 
   bar.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; font-size:14px; color:#475569; font-weight:500;">
-      <span style="width:8px; height:8px; border-radius:50%; background:#10B981; display:inline-block;"></span>
-      แสดงผล <b style="color:#1E293B;">${start + 1} - ${start + shown}</b> จากทั้งหมด <b style="color:#1E293B;">${total}</b> รายการ
+    <div class="trn-foot-count">
+      <span class="trn-dot trn-dot--green"></span>
+      แสดงผล <b>${start + 1}–${start + shown}</b> จากทั้งหมด <b>${total}</b> รายการ
     </div>
-    <div style="display:flex; align-items:center; gap:6px;">
+    ${totalPages > 1 ? `<div class="trn-pages">
       ${navBtn('ก่อนหน้า', trainingsPage - 1, trainingsPage <= 1, true)}
       ${pages}
       ${navBtn('ถัดไป', trainingsPage + 1, trainingsPage >= totalPages, false)}
-    </div>
+    </div>` : ''}
   `;
 }
 
@@ -354,6 +502,282 @@ window.deleteTraining = async function(id) {
       }
     } catch (err) {
       console.error(err);
+    }
+  }
+};
+
+// ---- Modal กลาง (สร้างครั้งเดียว ต่อท้าย body เพื่อไม่ให้ถูก overflow/transform ของ panel ตัด) ----
+function getTrainingModalRoot() {
+  let root = document.getElementById('trn-modal-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'trn-modal-root';
+    root.className = 'trn-modal-backdrop';
+    root.hidden = true;
+    root.addEventListener('click', (e) => { if (e.target === root) closeTrainingModal(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const lightbox = document.getElementById('trn-lightbox');
+      if (lightbox && !lightbox.hidden) { closeCertificateLightbox(); return; }
+      if (!root.hidden) closeTrainingModal();
+    });
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+function closeTrainingModal() {
+  closeCertificateLightbox();
+  const root = document.getElementById('trn-modal-root');
+  if (root) {
+    root.hidden = true;
+    root.innerHTML = '';
+  }
+  document.body.classList.remove('trn-modal-open');
+}
+window.closeTrainingModal = closeTrainingModal;
+
+function showTrainingModal(title, bodyHtml, footHtml) {
+  const root = getTrainingModalRoot();
+  root.innerHTML = `
+    <div class="trn-modal" role="dialog" aria-modal="true" aria-labelledby="trn-modal-title">
+      <div class="trn-modal-head">
+        <h3 id="trn-modal-title">${title}</h3>
+        <button type="button" class="trn-icon-btn" aria-label="ปิด" onclick="closeTrainingModal()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="trn-modal-body">${bodyHtml}</div>
+      <div class="trn-modal-foot">${footHtml}</div>
+    </div>`;
+  root.hidden = false;
+  document.body.classList.add('trn-modal-open');
+}
+
+// URL รูปของ Certificate: รูปภาพใช้ตรง ๆ, PDF บน Cloudinary → .jpg (หน้าแรก), อื่น ๆ → '' (ใช้ PDF viewer)
+function getCertificateImageUrl(url) {
+  const u = String(url || '');
+  if (!u) return '';
+  if (/.pdf($|[?#])/i.test(u)) return u.includes('cloudinary.com') ? u.replace(/.pdf($|[?#])/i, '.jpg$1') : '';
+  return u;
+}
+
+// รูปโหลดไม่ขึ้น → เปลี่ยนเป็น PDF viewer (ถ้าเป็น PDF) หรือซ่อนกรอบ
+window.certificatePreviewFallback = function(imgEl) {
+  const box = imgEl.closest('.trn-cert-preview');
+  if (!box) return;
+  const src = box.getAttribute('data-src') || '';
+  if (/.pdf($|[?#])/i.test(src)) {
+    box.innerHTML = '';
+    const frame = document.createElement('iframe');
+    frame.src = src;
+    frame.title = 'ตัวอย่างไฟล์ Certificate';
+    box.appendChild(frame);
+  } else {
+    box.style.display = 'none';
+  }
+};
+
+// Lightbox: รูปใหญ่บนพื้นหลังสีเทาเข้ม กดพื้นหลัง / ปุ่มปิด / Esc เพื่อปิด
+window.openCertificateLightbox = function(src) {
+  if (!src) return;
+  let box = document.getElementById('trn-lightbox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'trn-lightbox';
+    box.className = 'trn-lightbox';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', 'รูป Certificate ขนาดใหญ่');
+    box.innerHTML = '<button type="button" class="trn-lightbox-close" aria-label="ปิด"><span class="material-icons">close</span></button><img alt="Certificate" />';
+    box.addEventListener('click', (e) => {
+      if (e.target === box || (e.target as HTMLElement).closest('.trn-lightbox-close')) closeCertificateLightbox();
+    });
+    document.body.appendChild(box);
+  }
+  box.querySelector('img').src = src;
+  box.hidden = false;
+};
+
+function closeCertificateLightbox() {
+  const box = document.getElementById('trn-lightbox');
+  if (box) box.hidden = true;
+}
+window.closeCertificateLightbox = closeCertificateLightbox;
+
+// ดูรายละเอียดรายการ (รวมหมายเหตุยาว ๆ ที่ย้ายออกจากตาราง)
+window.viewTraining = function(id) {
+  const t = (currentTrainingsData || []).find((x) => x.id === id);
+  if (!t) return;
+  const v = getTrainingView(t);
+  const row = (label, value) => `<div class="trn-detail-row"><div class="trn-detail-label">${label}</div><div class="trn-detail-value">${value}</div></div>`;
+  const statusText = v.statusKey === 'APPROVED' ? 'ผ่าน' : v.statusKey === 'REJECTED' ? 'ไม่ผ่าน' : 'รอตรวจ';
+  const sourceText = v.sourceKey === 'CHECKIN' ? 'Check-in หน้างาน' : v.sourceKey === 'UPLOAD' ? 'นิสิตอัปโหลด Certificate' : (t.source === 'ADMIN_IMPORT' ? 'อาจารย์ประจำวิชาเพิ่มให้' : 'นำเข้าโดยเจ้าหน้าที่คณะ');
+  const certUrl = t.certificateFileUrl || '';
+  const safeUrl = escapeStudentHtml(certUrl);
+  // แสดงเป็นรูป: PDF บน Cloudinary แปลงหน้าแรกเป็น .jpg (วิธีเดียวกับตัวอย่าง CV) → กดรูปเพื่อดูภาพใหญ่
+  // ถ้าแปลงเป็นรูปไม่ได้ (ไม่ใช่ Cloudinary / โหลดรูปไม่ขึ้น) → แสดง PDF viewer แทน
+  const certImg = getCertificateImageUrl(certUrl);
+  const certPreview = !certUrl ? '' : `
+    <div class="trn-cert">
+      <div class="trn-cert-head">
+        <span class="trn-detail-label">Certificate</span>
+        <a class="trn-file-link" href="${safeUrl}" target="_blank" rel="noopener">เปิดไฟล์ Certificate<span class="material-icons">open_in_new</span></a>
+      </div>
+      <div class="trn-cert-preview" data-src="${safeUrl}">
+        ${certImg
+          ? `<button type="button" class="trn-cert-thumb" onclick="openCertificateLightbox(this.querySelector('img').src)" aria-label="ดูรูป Certificate ขนาดใหญ่">
+              <img src="${escapeStudentHtml(certImg)}" alt="ตัวอย่างไฟล์ Certificate" onerror="certificatePreviewFallback(this)" />
+              <span class="trn-cert-zoom"><span class="material-icons">zoom_in</span>คลิกเพื่อดูภาพใหญ่</span>
+            </button>`
+          : `<iframe src="${safeUrl}" title="ตัวอย่างไฟล์ Certificate" loading="lazy"></iframe>`}
+      </div>
+    </div>`;
+  showTrainingModal('รายละเอียดการอบรม', `
+    ${row('ชื่อกิจกรรม', escapeStudentHtml(v.title))}
+    ${v.sub ? row('ช่วง / เวลา', escapeStudentHtml(v.sub)) : ''}
+    ${row('ประเภท', t.skillType === 'HARD' ? 'Hard skill' : 'Soft skill')}
+    ${row('ชั่วโมง', `${Number(t.hours) || 0} ชม.`)}
+    ${row('วันที่', escapeStudentHtml(v.dateText))}
+    ${row('แหล่งที่มา', sourceText)}
+    ${row('สถานะ', statusText)}
+    ${t.note ? row('หมายเหตุ', escapeStudentHtml(t.note)) : ''}
+    ${certPreview}
+  `, '<button type="button" class="trn-btn trn-btn--ghost" onclick="closeTrainingModal()">ปิด</button>');
+};
+
+// ---- Modal "เพิ่มข้อมูลการอบรม" (ใช้ POST /api/student/trainings เดิม: title, skillType, hours, certificate) ----
+const TRAINING_CERT_EXTS = ['.pdf', '.jpg', '.jpeg', '.png'];
+const TRAINING_CERT_MAX = 10 * 1024 * 1024;
+let trainingModalFile = null;
+const trainingModalTouched = new Set();
+
+window.openTrainingModal = function() {
+  if (isInternshipLocked) return;
+  trainingModalFile = null;
+  trainingModalTouched.clear();
+  showTrainingModal('เพิ่มข้อมูลการอบรม', `
+    <p class="trn-modal-intro">สำหรับคอร์สออนไลน์/ภายนอก ชั่วโมงจาก Check-in หน้างานไม่ต้องเพิ่มเอง รายการใหม่จะมีสถานะ "รอตรวจ" จนกว่าอาจารย์จะอนุมัติ</p>
+    <div class="trn-field">
+      <label for="trn-f-title">ชื่อคอร์ส / กิจกรรม <span class="trn-req">*</span></label>
+      <input id="trn-f-title" class="trn-input" type="text" maxlength="200" placeholder="เช่น Google Cybersecurity Professional Certificate" data-field="title" />
+      <div class="trn-field-error" data-error="title"></div>
+    </div>
+    <div class="trn-field-grid">
+      <div class="trn-field">
+        <label for="trn-f-type">ประเภท <span class="trn-req">*</span></label>
+        <select id="trn-f-type" class="trn-input" data-field="type">
+          <option value="">เลือกประเภท</option>
+          <option value="soft">Soft skill</option>
+          <option value="hard">Hard skill</option>
+        </select>
+        <div class="trn-field-error" data-error="type"></div>
+      </div>
+      <div class="trn-field">
+        <label for="trn-f-hours">จำนวนชั่วโมง <span class="trn-req">*</span></label>
+        <input id="trn-f-hours" class="trn-input" type="number" min="1" step="1" inputmode="numeric" placeholder="เช่น 6" data-field="hours" />
+        <div class="trn-field-error" data-error="hours"></div>
+      </div>
+    </div>
+    <div class="trn-field">
+      <label>แนบ Certificate <span class="trn-req">*</span></label>
+      <input id="trn-f-file" type="file" accept=".pdf,.jpg,.jpeg,.png" hidden />
+      <div class="trn-drop" id="trn-f-drop" tabindex="0" role="button" aria-label="เลือกไฟล์ Certificate">
+        <span class="material-icons">cloud_upload</span>
+        <span class="trn-drop-text" id="trn-f-file-name">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</span>
+        <span class="trn-drop-help">PDF, JPG, PNG • ไม่เกิน 10MB</span>
+      </div>
+      <div class="trn-field-error" data-error="file"></div>
+    </div>
+  `, `
+    <button type="button" class="trn-btn trn-btn--ghost" onclick="closeTrainingModal()">ยกเลิก</button>
+    <button type="button" class="trn-btn trn-btn--primary" id="trn-f-submit" disabled onclick="submitTrainingModal()">บันทึก</button>
+  `);
+
+  const root = document.getElementById('trn-modal-root');
+  root.querySelectorAll('[data-field]').forEach((el) => {
+    const mark = () => { trainingModalTouched.add(el.getAttribute('data-field')); validateTrainingModal(); };
+    el.addEventListener('input', mark);
+    el.addEventListener('change', mark);
+    el.addEventListener('blur', mark);
+  });
+  const fileInput = document.getElementById('trn-f-file') as HTMLInputElement;
+  const drop = document.getElementById('trn-f-drop');
+  const pick = (file) => {
+    trainingModalFile = file || null;
+    trainingModalTouched.add('file');
+    const nameEl = document.getElementById('trn-f-file-name');
+    if (nameEl) nameEl.textContent = file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)` : 'ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์';
+    drop.classList.toggle('has-file', Boolean(file));
+    validateTrainingModal();
+  };
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+  fileInput.addEventListener('change', () => pick(fileInput.files?.[0]));
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('is-over'); pick(e.dataTransfer?.files?.[0]); });
+  (document.getElementById('trn-f-title') as HTMLInputElement)?.focus();
+};
+
+function validateTrainingModal() {
+  const title = (document.getElementById('trn-f-title') as HTMLInputElement)?.value.trim() || '';
+  const type = (document.getElementById('trn-f-type') as HTMLSelectElement)?.value || '';
+  const hoursRaw = (document.getElementById('trn-f-hours') as HTMLInputElement)?.value.trim() || '';
+  const hours = Number(hoursRaw);
+  const errors = { title: '', type: '', hours: '', file: '' };
+  if (!title) errors.title = 'กรุณากรอกชื่อคอร์ส';
+  if (!type) errors.type = 'กรุณาเลือกประเภท';
+  if (!hoursRaw) errors.hours = 'กรุณากรอกจำนวนชั่วโมง';
+  else if (!Number.isInteger(hours) || hours <= 0) errors.hours = 'จำนวนชั่วโมงต้องเป็นจำนวนเต็มมากกว่า 0';
+  if (!trainingModalFile) errors.file = 'กรุณาแนบไฟล์ Certificate';
+  else {
+    const name = trainingModalFile.name.toLowerCase();
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    if (!TRAINING_CERT_EXTS.includes(ext)) errors.file = 'รองรับเฉพาะไฟล์ PDF, JPG หรือ PNG';
+    else if (trainingModalFile.size > TRAINING_CERT_MAX) errors.file = 'ไฟล์มีขนาดเกิน 10MB';
+  }
+  const root = document.getElementById('trn-modal-root');
+  Object.entries(errors).forEach(([key, msg]) => {
+    const show = trainingModalTouched.has(key) ? msg : '';
+    const el = root?.querySelector(`[data-error="${key}"]`);
+    if (el) el.textContent = show;
+    const input = key === 'file' ? document.getElementById('trn-f-drop') : root?.querySelector(`[data-field="${key}"]`);
+    if (input) input.classList.toggle('is-invalid', Boolean(show));
+  });
+  const ok = Object.values(errors).every((m) => !m);
+  const submit = document.getElementById('trn-f-submit') as HTMLButtonElement;
+  if (submit && !submit.dataset.busy) submit.disabled = !ok;
+  return ok;
+}
+
+window.submitTrainingModal = async function() {
+  ['title', 'type', 'hours', 'file'].forEach((k) => trainingModalTouched.add(k));
+  if (!validateTrainingModal()) return;
+  const submit = document.getElementById('trn-f-submit') as HTMLButtonElement;
+  submit.dataset.busy = '1';
+  submit.disabled = true;
+  submit.textContent = 'กำลังบันทึก...';
+  try {
+    const formData = new FormData();
+    formData.append('hours', (document.getElementById('trn-f-hours') as HTMLInputElement).value.trim());
+    formData.append('skillType', (document.getElementById('trn-f-type') as HTMLSelectElement).value);
+    formData.append('title', (document.getElementById('trn-f-title') as HTMLInputElement).value.trim());
+    formData.append('certificate', trainingModalFile);
+    const res = await fetch('/api/student/trainings', { method: 'POST', body: formData });
+    const data = await res.json().catch(() => null);
+    if (data && data.success) {
+      closeTrainingModal();
+      await loadTrainings();
+    } else {
+      alert('บันทึกไม่สำเร็จ: ' + ((data && data.message) || 'เกิดข้อผิดพลาด'));
+    }
+  } catch (err) {
+    console.error(err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  } finally {
+    if (document.body.contains(submit)) {
+      delete submit.dataset.busy;
+      submit.textContent = 'บันทึก';
+      validateTrainingModal();
     }
   }
 };
@@ -1763,7 +2187,7 @@ function checkPlacementUnlock() {
     .filter(t => t.status === 'APPROVED' && t.skillType === 'HARD')
     .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
-  const isTrainingComplete = approvedSoftHours >= 12 && approvedHardHours >= 18;
+  const isTrainingComplete = approvedSoftHours >= TRAINING_CRITERIA.soft && approvedHardHours >= TRAINING_CRITERIA.hard;
 
   // -----------------------------------------------------------------------
   // 🔒 1. ตรวจสอบการปลดล็อก ส่วนที่ 4 (Checklist) และ ส่วนที่ 5 (สถานะการยื่น)
@@ -1781,7 +2205,7 @@ function checkPlacementUnlock() {
     'step-req-training',
     isTrainingComplete,
     '1. ชั่วโมงการอบรม',
-    `Soft ${approvedSoftHours}/12 ชม. | Hard ${approvedHardHours}/18 ชม.` + (isTrainingComplete ? ' (ผ่านครบ)' : '')
+    `Soft ${approvedSoftHours}/${TRAINING_CRITERIA.soft} ชม. | Hard ${approvedHardHours}/${TRAINING_CRITERIA.hard} ชม.` + (isTrainingComplete ? ' (ผ่านครบ)' : '')
   );
 
   let cvStatusDesc = 'รออาจารย์ตรวจผ่าน';
