@@ -1,6 +1,6 @@
 // @ts-nocheck
 // ===== รายชื่อสาขากลาง: อ่านจาก <script id="ict-majors-data"> ที่หน้าเพจฝังมา (ต้นทาง: src/utils/majors.ts) =====
-let ictMajorsCache: Array<{ code: string; name: string; keywords: string[] }> | null = null;
+let ictMajorsCache: Array<{ code: string; name: string; fullName: string; degreeCode: string; degreeName: string; keywords: string[] }> | null = null;
 function getIctMajors() {
   if (ictMajorsCache) return ictMajorsCache;
   try {
@@ -28,7 +28,13 @@ function normalizeMajorName(raw?: string | null): string {
 }
 
 function ictMajorOptionsHtml(): string {
-  return getIctMajors().map(m => `<option value="${m.name}">สาขา${m.name} (${m.code})</option>`).join('');
+  return getIctMajors().map(m => `<option value="${m.name}">${m.fullName}</option>`).join('');
+}
+
+// ชื่อเต็ม "หลักสูตร... สาขาวิชา..." (จับคู่ไม่ได้ → คืนค่าเดิม)
+function fullMajorName(major?: string | null): string {
+  const found = findIctMajor(major);
+  return found ? found.fullName : (major || '-');
 }
 
 function formatMajorName(major?: string | null): string {
@@ -369,7 +375,7 @@ function renderStudentTable(students, total, page, totalPages) {
           </div>
         </td>
         <td>${s.nameTh}</td>
-        <td><span class="text-xs font-medium text-slate-700" title="${s.major || '-'}">${formatMajorName(s.major)}</span></td>
+        <td><span class="text-xs font-medium text-slate-700" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
         <td>${s.advisorName || '<span class="text-gray-400">-</span>'}</td>
         <td>
           <span class="inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">
@@ -439,7 +445,7 @@ function renderStudentTable(students, total, page, totalPages) {
           </div>
         </td>
         <td>${s.nameTh}</td>
-        <td><span class="text-xs font-medium text-slate-700" title="${s.major || '-'}">${formatMajorName(s.major)}</span></td>
+        <td><span class="text-xs font-medium text-slate-700" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
         <td>${s.advisorName || '<span class="text-gray-400">-</span>'}</td>
         <td>
           <div class="flex flex-col items-start gap-1 py-0.5">
@@ -568,6 +574,8 @@ function getDepartmentGroupTitle(department?: string | null): string {
   if (!department || department === '-' || department === 'OTHER') {
     return 'สาขาวิชาอื่นๆ / ยังไม่ระบุสาขา';
   }
+  const found = findIctMajor(department);
+  if (found) return found.fullName;
   const formatted = formatMajorName(department);
   if (formatted === '-') return 'สาขาวิชาอื่นๆ / ยังไม่ระบุสาขา';
   if (formatted.startsWith('สาขา')) return formatted;
@@ -1865,7 +1873,7 @@ function renderStaffRolesRows(list: StaffRoleRecord[]) {
 
   tbody.innerHTML = list.map(st => {
     const deptOptions = `<option value="">ส่วนกลางทั้งคณะ ICT (8 สาขา)</option>` +
-      getIctMajors().map(m => `<option value="${m.name}" ${st.department === m.name ? 'selected' : ''}>สาขา${m.name} (${m.code})</option>`).join('');
+      getIctMajors().map(m => `<option value="${m.name}" ${st.department === m.name ? 'selected' : ''}>${m.fullName}</option>`).join('');
 
     return `
       <tr id="staff-row-${st.id}">
@@ -2497,7 +2505,7 @@ function renderCohortMajorRow(cohort: any, m: any, readOnly: boolean) {
         <div onclick="window.toggleCohortMajor('${key}')" style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px; cursor:pointer;">
           <span class="material-icons" style="font-size:20px; color:#64748B; transform:rotate(${isOpen ? 90 : 0}deg); transition:transform .15s;">chevron_right</span>
           <div style="min-width:0;">
-            <div style="font-weight:800; color:#1E1B4B; font-size:13.5px;">สาขา${escapeHtmlText(m.name)} (${m.code})
+            <div style="font-weight:800; color:#1E1B4B; font-size:13.5px;">${escapeHtmlText(m.fullName || m.name)} (${m.code})
               <span style="font-weight:600; font-size:11.5px; color:#64748B;">· นิสิต ${m.studentCount} คน</span>
             </div>
             <div style="font-size:11.5px; color:#64748B; margin-top:2px;">เตรียมความพร้อม: ${escapeHtmlText(m.prepSchedule)} • ออกฝึก: ${escapeHtmlText(m.internSchedule)}</div>

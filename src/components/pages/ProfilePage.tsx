@@ -2,6 +2,7 @@
 
 import React from "react";
 import PageShell from "./PageShell";
+import { ictMajorsDataScript } from "../../utils/majors";
 
 const PAGE_TITLE = "Profile ข้อมูลส่วนตัวนิสิต - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [];
@@ -10,6 +11,7 @@ const PAGE_SCRIPTS: string[] = [
   "../api/profile_view.js"
 ];
 const PAGE_BODY_HTML = `
+${ictMajorsDataScript()}
   <!-- Header Bar -->
   <div id="header-placeholder"></div>
 

@@ -1,15 +1,36 @@
 // @ts-nocheck
+// ===== รายชื่อสาขากลาง: อ่านจาก <script id="ict-majors-data"> ที่หน้าเพจฝังมา (ต้นทาง: src/utils/majors.ts) =====
+let ictMajorsCache = null;
+function getIctMajors() {
+  if (ictMajorsCache) return ictMajorsCache;
+  try {
+    const el = document.getElementById('ict-majors-data');
+    ictMajorsCache = el ? JSON.parse(el.textContent || '[]') : [];
+  } catch (e) {
+    ictMajorsCache = [];
+  }
+  return ictMajorsCache;
+}
+
+function findIctMajor(raw?: string | null) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return null;
+  const majors = getIctMajors();
+  return majors.find(m => m.code.toLowerCase() === v)
+    || majors.find(m => m.keywords.some(k => v.includes(k.toLowerCase())))
+    || null;
+}
+
 function formatMajorName(major?: string | null): string {
   if (!major) return '-';
-  if (major.includes('วิศวกรรมซอฟต์แวร์')) return 'วิศวกรรมซอฟต์แวร์ (SE)';
-  if (major.includes('ธุรกิจดิจิทัล')) return 'ธุรกิจดิจิทัล (DB)';
-  if (major.includes('วิทยาการคอมพิวเตอร์')) return 'วิทยาการคอมพิวเตอร์ (CS)';
-  if (major.includes('เทคโนโลยีสารสนเทศ')) return 'เทคโนโลยีสารสนเทศ (IT)';
-  if (major.includes('วิศวกรรมคอมพิวเตอร์')) return 'วิศวกรรมคอมพิวเตอร์ (CPE)';
-  if (major.includes('คอมพิวเตอร์กราฟิก')) return 'คอมพิวเตอร์กราฟิกฯ (CGM)';
-  if (major.includes('ภูมิสารสนเทศ')) return 'ภูมิสารสนเทศศาสตร์ (GIS)';
-  if (major.includes('วิทยาการข้อมูล')) return 'วิทยาการข้อมูลฯ (DSA)';
-  return major.replace(/^(สาขาวิชาวิศวกรรม|สาขาวิชา|สาขา)/, '').trim() || major;
+  const found = findIctMajor(major);
+  if (found) return `${found.name} (${found.code})`;
+  return major.replace(/^(สาขาวิชา|สาขา)/, '').trim() || major;
+}
+
+function fullMajorName(major?: string | null): string {
+  const found = findIctMajor(major);
+  return found ? found.fullName : (major || '-');
 }
 
 let currentFilter = null;
@@ -383,7 +404,7 @@ function renderStudentTable(students, total, page, totalPages) {
         </div>
       </td>
       <td>${s.nameTh}</td>
-      <td><span class="text-xs font-medium text-slate-700" title="${s.major || '-'}">${formatMajorName(s.major)}</span></td>
+      <td><span class="text-xs font-medium text-slate-700" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
       <td>${s.advisorName || '<span class="text-gray-400">-</span>'}</td>
       <td>
         <div class="flex flex-col items-start gap-1 py-0.5">

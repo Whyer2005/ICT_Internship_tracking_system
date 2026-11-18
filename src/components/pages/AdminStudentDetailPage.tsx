@@ -2,6 +2,7 @@
 
 import React from "react";
 import PageShell from "./PageShell";
+import { ictMajorsDataScript } from "../../utils/majors";
 
 const PAGE_TITLE = "ตรวจสอบข้อมูลและสถานะนิสิตรายบุคคล - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [];
@@ -11,6 +12,7 @@ const PAGE_SCRIPTS: string[] = [
   "../api/cv_previews.js"
 ];
 const PAGE_BODY_HTML = `
+${ictMajorsDataScript()}
   <div id="header-placeholder"></div>
 
   <main class="main-content">

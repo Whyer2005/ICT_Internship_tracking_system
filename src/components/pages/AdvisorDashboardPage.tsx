@@ -2,6 +2,7 @@
 
 import React from "react";
 import PageShell from "./PageShell";
+import { ictMajorsDataScript } from "../../utils/majors";
 
 const PAGE_TITLE = "Dashboard อาจารย์ที่ปรึกษา / อาจารย์นิเทศก์ - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [];
@@ -10,6 +11,7 @@ const PAGE_SCRIPTS: string[] = [
   "../api/advisor_dashboard.js"
 ];
 const PAGE_BODY_HTML = `
+${ictMajorsDataScript()}
   <!-- Header Bar -->
   <div id="header-placeholder"></div>
 

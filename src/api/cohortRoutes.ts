@@ -126,6 +126,7 @@ router.get("/super-admin/cohorts", async (_req: Request, res: Response) => {
         majors: ICT_MAJORS.map((m) => ({
           code: m.code,
           name: m.name,
+          fullName: m.fullName,
           prepSchedule: m.prepSchedule,
           internSchedule: m.internSchedule,
           studentCount: counts[m.code] || 0,

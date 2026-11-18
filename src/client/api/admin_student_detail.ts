@@ -2,6 +2,22 @@
 // admin_student_detail.js — หน้าดูข้อมูลนิสิตรายบุคคลสำหรับ Admin
 // ดึงข้อมูลจาก /api/admin/students/:studentId แล้ว render ทั้ง 7 section
 
+// ชื่อเต็ม "หลักสูตร... สาขาวิชา..." จาก <script id="ict-majors-data"> (ต้นทาง: src/utils/majors.ts)
+function ictMajorFullName(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return '-';
+  let majors = [];
+  try {
+    const el = document.getElementById('ict-majors-data');
+    majors = el ? JSON.parse(el.textContent || '[]') : [];
+  } catch (e) {
+    majors = [];
+  }
+  const found = majors.find((m) => m.code.toLowerCase() === v)
+    || majors.find((m) => m.keywords.some((k) => v.includes(k.toLowerCase())));
+  return found ? found.fullName : raw;
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 const studentId = urlParams.get('id');
 
@@ -256,7 +272,7 @@ function renderProfile(s) {
   document.getElementById('d-studentCode').value = s.studentCode || '';
   document.getElementById('d-year').value = s.year || '';
   document.getElementById('d-gpa').value = s.gpa ? Number(s.gpa).toFixed(2) : '';
-  document.getElementById('d-major').value = s.major || '';
+  document.getElementById('d-major').value = s.major ? ictMajorFullName(s.major) : '';
   document.getElementById('student-detail-email').value = s.email || '';
   document.getElementById('d-phone').value = s.phone || '';
   const elLine = document.getElementById('d-lineId'); if (elLine) elLine.value = s.lineId || '';

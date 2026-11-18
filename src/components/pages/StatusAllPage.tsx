@@ -2,6 +2,7 @@
 
 import React from "react";
 import PageShell from "./PageShell";
+import { ictMajorsDataScript } from "../../utils/majors";
 
 const PAGE_TITLE = "จัดการข้อมูลและติดตามสถานะการฝึกงาน - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [];
@@ -224,7 +225,7 @@ const STATUS_ALL_PAGE_BODY_HTML = (() => {
   // โครงแบบเดียวกับ admin-dashboard: sidebar เต็มความสูงชิดซ้าย + <main> อยู่ด้านขวา
   const mainOpenEnd = html.indexOf(">", mainStart) + 1;
   const mainOpenTag = html.slice(mainStart, mainOpenEnd).replace('class="', 'class="status-all-main ');
-  return `${html.slice(0, mainStart)}<div class="status-all-shell">${STATUS_ALL_SIDEBAR_HTML}
+  return `${ictMajorsDataScript()}${html.slice(0, mainStart)}<div class="status-all-shell">${STATUS_ALL_SIDEBAR_HTML}
     ${mainOpenTag}${html.slice(mainOpenEnd, starts[0])}
       <div class="status-all-panels">${panels}
       </div>

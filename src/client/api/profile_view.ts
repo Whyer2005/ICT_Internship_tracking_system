@@ -1,6 +1,22 @@
 // @ts-nocheck
 // profile_view.js - แสดงข้อมูลโปรไฟล์นิสิต (Proflie.html)
 
+// ชื่อเต็ม "หลักสูตร... สาขาวิชา..." จาก <script id="ict-majors-data"> (ต้นทาง: src/utils/majors.ts)
+function ictMajorFullName(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return '-';
+  let majors = [];
+  try {
+    const el = document.getElementById('ict-majors-data');
+    majors = el ? JSON.parse(el.textContent || '[]') : [];
+  } catch (e) {
+    majors = [];
+  }
+  const found = majors.find((m) => m.code.toLowerCase() === v)
+    || majors.find((m) => m.keywords.some((k) => v.includes(k.toLowerCase())));
+  return found ? found.fullName : raw;
+}
+
 fetch('/api/student/profile')
     .then(res => res.json())
     .then(data => {
@@ -14,7 +30,7 @@ fetch('/api/student/profile')
                 document.getElementById('p-studentCode').value = s.studentCode || '-';
                 document.getElementById('p-year').value = s.year || '-';
                 document.getElementById('p-gpa').value = s.gpa ? Number(s.gpa).toFixed(2) : '-';
-                document.getElementById('p-major').value = s.major || 'วิศวกรรมซอฟต์แวร์';
+                document.getElementById('p-major').value = ictMajorFullName(s.major || 'วิศวกรรมซอฟต์แวร์');
                 document.getElementById('p-phone').value = s.phone || '-';
                 const elLine = document.getElementById('p-lineId'); if (elLine) elLine.value = s.lineId || '-';
                 const elFb = document.getElementById('p-facebook'); if (elFb) elFb.value = s.facebook || '-';

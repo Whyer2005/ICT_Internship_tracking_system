@@ -1,39 +1,68 @@
 // =====================================================================
-// รายชื่อสาขาวิชาของคณะ ICT ม.พะเยา (แหล่งข้อมูลกลางที่เดียว)
+// รายชื่อหลักสูตร/สาขาวิชาของคณะ ICT ม.พะเยา (แหล่งข้อมูลกลางที่เดียว)
 // - ฝั่ง Server / หน้า TSX import ไฟล์นี้ได้โดยตรง
 // - ฝั่ง client script (src/client/*) ถูก compile แยกไฟล์ import ไม่ได้
 //   จึงอ่านจาก <script type="application/json" id="ict-majors-data"> ที่หน้าเพจฝังไว้ (ดู ictMajorsDataScript)
+// - ค่าที่เก็บใน DB (Student.major, Staff.department, majorName ใน state) = name (ชื่อสาขาแบบสั้น)
+//   ส่วนการแสดงผลใช้ fullName เช่น "หลักสูตรวิศวกรรมศาสตรบัณฑิต สาขาวิชาวิศวกรรมซอฟต์แวร์"
 // =====================================================================
+
+export interface IctDegree {
+  code: string; // บธ.บ. / วศ.บ. / วท.บ. / ศป.บ.
+  name: string; // เช่น "หลักสูตรวิศวกรรมศาสตรบัณฑิต"
+}
 
 export interface IctMajor {
   code: string;
   name: string;       // ชื่อมาตรฐานที่ใช้เก็บใน DB เช่น "วิศวกรรมซอฟต์แวร์"
+  fullName: string;   // ชื่อเต็มสำหรับแสดงผล "หลักสูตร... สาขาวิชา..."
+  degreeCode: string; // หลักสูตรที่สังกัด (ดู ICT_DEGREES)
   keywords: string[]; // คำที่ใช้จับคู่ค่าดิบ เช่น "221 วิศวกรรมซอฟต์แวร์", "สาขาวิชาภูมิสารสนเทศ"
   prepSchedule: string;   // ช่วงเรียนเตรียมความพร้อม (ตามหลักสูตร)
   internSchedule: string; // ช่วงออกฝึกงาน (ตามหลักสูตร)
 }
 
-// ลำดับตามที่แสดงใน dropdown ของระบบ / โครงสร้างรอบเป็นข้อมูลจริงตามหลักสูตรคณะ ICT
-export const ICT_MAJORS: IctMajor[] = [
-  { code: "SE", name: "วิศวกรรมซอฟต์แวร์", keywords: ["วิศวกรรมซอฟต์แวร์", "software engineering"],
-    prepSchedule: "ปี 3 เทอม 1", internSchedule: "ปี 3 เทอม 2 (ออกฝึกเทอมถัดไปทันที)" },
-  { code: "DB", name: "ธุรกิจดิจิทัล", keywords: ["ธุรกิจดิจิทัล", "digital business"],
-    prepSchedule: "ปี 3 เทอม 2", internSchedule: "ปี 4 เทอม 1" },
-  { code: "CS", name: "วิทยาการคอมพิวเตอร์", keywords: ["วิทยาการคอมพิวเตอร์", "computer science"],
-    prepSchedule: "ปี 3 เทอม 1-2", internSchedule: "ปี 4 เทอม 1 หรือ เทอม 2" },
-  { code: "IT", name: "เทคโนโลยีสารสนเทศ", keywords: ["เทคโนโลยีสารสนเทศ", "information technology"],
-    prepSchedule: "ปี 3 เทอม 2", internSchedule: "ปี 4 เทอม 1" },
-  { code: "CPE", name: "วิศวกรรมคอมพิวเตอร์", keywords: ["วิศวกรรมคอมพิวเตอร์", "computer engineering"],
-    prepSchedule: "ปี 3 เทอม 1-2", internSchedule: "ปี 4 เทอม 1 หรือ เทอม 2" },
-  { code: "CGM", name: "คอมพิวเตอร์กราฟิกและมัลติมีเดีย", keywords: ["คอมพิวเตอร์กราฟิก", "computer graphic"],
-    prepSchedule: "ปี 3 เทอม 2", internSchedule: "ปี 4 เทอม 1" },
-  { code: "GIS", name: "ภูมิสารสนเทศศาสตร์", keywords: ["ภูมิสารสนเทศ", "geographic information"],
-    prepSchedule: "ปี 3 เทอม 2", internSchedule: "ปี 4 เทอม 1" },
-  { code: "DSA", name: "วิทยาการข้อมูลและการประยุกต์", keywords: ["วิทยาการข้อมูล", "data science"],
-    prepSchedule: "ปี 3 เทอม 1-2", internSchedule: "ปี 4 เทอม 1" },
+// หลักสูตร (ระดับปริญญา) → ใช้กับหน้าที่แสดง หลักสูตร → สาขา แยกกัน
+export const ICT_DEGREES: IctDegree[] = [
+  { code: "บธ.บ.", name: "หลักสูตรบริหารธุรกิจบัณฑิต" },
+  { code: "วศ.บ.", name: "หลักสูตรวิศวกรรมศาสตรบัณฑิต" },
+  { code: "วท.บ.", name: "หลักสูตรวิทยาศาสตรบัณฑิต" },
+  { code: "ศป.บ.", name: "หลักสูตรศิลปกรรมศาสตรบัณฑิต" },
 ];
 
-/** หาสาขาจากค่าดิบ (รองรับเลขนำหน้า เช่น "221 วิศวกรรมซอฟต์แวร์", คำนำหน้า "สาขาวิชา", ชื่ออังกฤษ, หรือรหัสย่อ) */
+function major(
+  code: string,
+  degreeCode: string,
+  name: string,
+  keywords: string[],
+  prepSchedule: string,
+  internSchedule: string
+): IctMajor {
+  const degree = ICT_DEGREES.find((d) => d.code === degreeCode)!;
+  return { code, name, fullName: `${degree.name} สาขาวิชา${name}`, degreeCode, keywords, prepSchedule, internSchedule };
+}
+
+// ลำดับตามที่แสดงใน dropdown ของระบบ (8 หลักสูตร) / โครงสร้างรอบเป็นข้อมูลจริงตามหลักสูตรคณะ ICT
+export const ICT_MAJORS: IctMajor[] = [
+  major("DB", "บธ.บ.", "ธุรกิจดิจิทัล", ["ธุรกิจดิจิทัล", "digital business"],
+    "ปี 3 เทอม 2", "ปี 4 เทอม 1"),
+  major("CPE", "วศ.บ.", "วิศวกรรมคอมพิวเตอร์", ["วิศวกรรมคอมพิวเตอร์", "computer engineering"],
+    "ปี 3 เทอม 1-2", "ปี 4 เทอม 1 หรือ เทอม 2"),
+  major("SE", "วศ.บ.", "วิศวกรรมซอฟต์แวร์", ["วิศวกรรมซอฟต์แวร์", "software engineering"],
+    "ปี 3 เทอม 1", "ปี 3 เทอม 2 (ออกฝึกเทอมถัดไปทันที)"),
+  major("CS", "วท.บ.", "วิทยาการคอมพิวเตอร์", ["วิทยาการคอมพิวเตอร์", "computer science"],
+    "ปี 3 เทอม 1-2", "ปี 4 เทอม 1 หรือ เทอม 2"),
+  major("DSA", "วท.บ.", "วิทยาการข้อมูลและการประยุกต์", ["วิทยาการข้อมูล", "data science"],
+    "ปี 3 เทอม 1-2", "ปี 4 เทอม 1"),
+  major("IT", "วท.บ.", "เทคโนโลยีสารสนเทศ", ["เทคโนโลยีสารสนเทศ", "information technology"],
+    "ปี 3 เทอม 2", "ปี 4 เทอม 1"),
+  major("GIS", "วท.บ.", "ภูมิสารสนเทศศาสตร์", ["ภูมิสารสนเทศ", "geographic information"],
+    "ปี 3 เทอม 2", "ปี 4 เทอม 1"),
+  major("CGM", "ศป.บ.", "คอมพิวเตอร์กราฟิกและมัลติมีเดีย", ["คอมพิวเตอร์กราฟิก", "computer graphic"],
+    "ปี 3 เทอม 2", "ปี 4 เทอม 1"),
+];
+
+/** หาสาขาจากค่าดิบ (รองรับเลขนำหน้า เช่น "221 วิศวกรรมซอฟต์แวร์", คำนำหน้า "สาขาวิชา", ชื่อเต็ม, ชื่ออังกฤษ, หรือรหัสย่อ) */
 export function findMajor(raw?: string | null): IctMajor | null {
   const v = String(raw || "").trim().toLowerCase();
   if (!v) return null;
@@ -53,9 +82,14 @@ export function normalizeMajor(raw?: string | null): string {
     .trim();
 }
 
-/** ป้ายแสดงผล เช่น "สาขาคอมพิวเตอร์กราฟิกและมัลติมีเดีย (CGM)" */
+/** หลักสูตรของสาขา เช่น "หลักสูตรวิศวกรรมศาสตรบัณฑิต" */
+export function degreeOfMajor(m: IctMajor): IctDegree {
+  return ICT_DEGREES.find((d) => d.code === m.degreeCode)!;
+}
+
+/** ป้ายแสดงผล = ชื่อเต็ม เช่น "หลักสูตรวิศวกรรมศาสตรบัณฑิต สาขาวิชาวิศวกรรมซอฟต์แวร์" */
 export function majorLabel(m: IctMajor): string {
-  return `สาขา${m.name} (${m.code})`;
+  return m.fullName;
 }
 
 /** <option> ของทุกสาขา (value = ชื่อมาตรฐาน) สำหรับฝังใน HTML string */
@@ -65,5 +99,6 @@ export function majorOptionsHtml(indent = ""): string {
 
 /** ข้อมูลสาขาแบบ JSON ให้ client script อ่าน (type="application/json" ไม่ถูก execute) */
 export function ictMajorsDataScript(): string {
-  return `<script type="application/json" id="ict-majors-data">${JSON.stringify(ICT_MAJORS)}</script>`;
+  const data = ICT_MAJORS.map((m) => ({ ...m, degreeName: degreeOfMajor(m).name }));
+  return `<script type="application/json" id="ict-majors-data">${JSON.stringify(data)}</script>`;
 }

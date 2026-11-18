@@ -12,6 +12,22 @@ let acceptanceCardExpanded = false;
 // true เมื่อโหลดข้อมูลรอบแรกครบทุกส่วนแล้ว (ใช้โดย sidebar ใน status_all_tabs.js)
 let statusAllDataReady = false;
 
+// ===== รายชื่อหลักสูตร/สาขากลาง: อ่านจาก <script id="ict-majors-data"> (ต้นทาง: src/utils/majors.ts) =====
+function findIctMajorInfo(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return null;
+  let majors = [];
+  try {
+    const el = document.getElementById('ict-majors-data');
+    majors = el ? JSON.parse(el.textContent || '[]') : [];
+  } catch (e) {
+    majors = [];
+  }
+  return majors.find((m) => m.code.toLowerCase() === v)
+    || majors.find((m) => m.keywords.some((k) => v.includes(k.toLowerCase())))
+    || null;
+}
+
 // โหลดข้อมูลทั้งหมดเข้าสู่ทั้ง 6 Section
 async function initPage() {
   // โหลด 3 ส่วนแรกพร้อมกัน (ไม่ขึ้นต่อกัน) → การ์ด CV แสดงเร็วขึ้นตอนรีเฟรช ไม่ต้องรอ profile/trainings
@@ -39,8 +55,13 @@ async function loadProfile() {
         document.getElementById('prof-studentCode').value = s.studentCode || '';
         document.getElementById('prof-year').value = s.year || '3';
         document.getElementById('prof-gpa').value = s.gpa || '';
-        document.getElementById('prof-major').value = s.major || 'วิศวกรรมซอฟต์แวร์';
-        document.getElementById('prof-curriculum').value = s.curriculum || '';
+        // แสดงชื่อ หลักสูตร → สาขาวิชา จากรายชื่อกลาง (ค่าที่บันทึกยังเป็นชื่อสาขาเดิมใน data-value)
+        const rawMajor = s.major || 'วิศวกรรมซอฟต์แวร์';
+        const majorInfo = findIctMajorInfo(rawMajor);
+        const majorEl = document.getElementById('prof-major');
+        majorEl.dataset.value = rawMajor;
+        majorEl.value = majorInfo ? `สาขาวิชา${majorInfo.name}` : rawMajor;
+        document.getElementById('prof-curriculum').value = s.curriculum || (majorInfo ? majorInfo.degreeName : '');
         document.getElementById('prof-faculty').value = s.faculty || 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร';
         document.getElementById('prof-phone').value = s.phone || '';
         document.getElementById('prof-lineId').value = s.lineId || '';
@@ -155,7 +176,7 @@ if (saveProfileBtn) {
       studentCode: document.getElementById('prof-studentCode').value,
       year: document.getElementById('prof-year').value,
       gpa: document.getElementById('prof-gpa').value,
-      major: document.getElementById('prof-major').value,
+      major: document.getElementById('prof-major').dataset.value || document.getElementById('prof-major').value,
       phone: document.getElementById('prof-phone').value,
       lineId: document.getElementById('prof-lineId').value,
       facebook: document.getElementById('prof-facebook').value,
@@ -2337,7 +2358,7 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
     : [{
         studentCode: document.getElementById('prof-studentCode')?.value || '-',
         nameTh: document.getElementById('prof-nameTh')?.value || '-',
-        major: document.getElementById('prof-major')?.value || 'วิศวกรรมซอฟต์แวร์',
+        major: document.getElementById('prof-major')?.dataset.value || document.getElementById('prof-major')?.value || 'วิศวกรรมซอฟต์แวร์',
         position: document.getElementById('plc-position')?.value || 'นิสิตฝึกงาน',
         phone: document.getElementById('prof-phone')?.value || '-',
       }];
