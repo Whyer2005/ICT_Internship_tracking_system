@@ -358,6 +358,8 @@ model InternshipPlacement {
   companyPhone2         String?  // เบอร์โทรติดต่อสถานประกอบการ/แหล่งฝึก (ช่องที่ 2)
   companyEmail          String?
   province               String?
+  latitude              Float?   // พิกัดที่นิสิตปักหมุดจากแผนที่ (ค้นหาสถานที่ใน Checklist)
+  longitude             Float?
 
   status                ApprovalStatus @default(PENDING) // อนุมัติ/ไม่อนุมัติ ที่ฝึกงาน (อาจารย์รายวิชาตั้ง)
   note                  String?        // หมายเหตุจากอาจารย์ กรณีไม่อนุมัติ

@@ -135,6 +135,24 @@ function lockedResponse(res: Response, message: string) {
   return res.status(403).json({ success: false, lockedDuringInternship: true, message });
 }
 
+/**
+ * พิกัดที่นิสิตปักหมุดจากแผนที่
+ * - ไม่ได้ส่งทั้ง latitude/longitude มาเลย → {} (ไม่แตะค่าเดิมใน DB)
+ * - ส่ง null / ค่าไม่ถูกต้อง → null ทั้งคู่ (ล้างหมุด)
+ */
+function parseCoords(
+  latitude: unknown,
+  longitude: unknown
+): { latitude?: number | null; longitude?: number | null } {
+  if (latitude === undefined && longitude === undefined) return {};
+  const lat = latitude === null || latitude === undefined || latitude === "" ? NaN : Number(latitude);
+  const lng = longitude === null || longitude === undefined || longitude === "" ? NaN : Number(longitude);
+  if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+    return { latitude: lat, longitude: lng };
+  }
+  return { latitude: null, longitude: null };
+}
+
 // ==========================================
 // 2. ข้อมูลส่วนตัวนิสิต (Student Profile)
 // ==========================================
@@ -1006,6 +1024,8 @@ router.post("/companies", async (req: Request, res: Response) => {
       companyPhone1,
       companyPhone2,
       companyEmail,
+      latitude,
+      longitude,
     } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: "กรุณาระบุชื่อบริษัท" });
@@ -1059,6 +1079,7 @@ router.post("/companies", async (req: Request, res: Response) => {
           companyPhone1: finalPhone,
           companyPhone2: finalPhone2,
           companyEmail: finalEmail,
+          ...parseCoords(latitude, longitude),
           status: "PENDING",
         },
       });
@@ -1075,6 +1096,7 @@ router.post("/companies", async (req: Request, res: Response) => {
           companyPhone1: finalPhone,
           companyPhone2: finalPhone2,
           companyEmail: finalEmail,
+          ...parseCoords(latitude, longitude),
           status: "PENDING",
         },
       });
@@ -1175,6 +1197,8 @@ router.put("/companies/:id", async (req: Request, res: Response) => {
       companyPhone1,
       companyPhone2,
       companyEmail,
+      latitude,
+      longitude,
     } = req.body;
 
     const company = await prisma.company.findFirst({
@@ -1205,6 +1229,7 @@ router.put("/companies/:id", async (req: Request, res: Response) => {
         companyPhone1: clean(companyPhone1),
         companyPhone2: clean(companyPhone2),
         companyEmail: clean(companyEmail),
+        ...parseCoords(latitude, longitude),
       };
       if (!infoData.position || !infoData.companyAddress || !infoData.province) {
         return res.status(400).json({ success: false, message: "กรุณากรอกตำแหน่ง ที่อยู่ และจังหวัดให้ครบ" });
@@ -1253,6 +1278,7 @@ router.put("/companies/:id", async (req: Request, res: Response) => {
       if (companyPhone1) placementData.companyPhone1 = companyPhone1;
       if (companyPhone2) placementData.companyPhone2 = companyPhone2;
       if (companyEmail) placementData.companyEmail = companyEmail;
+      Object.assign(placementData, parseCoords(latitude, longitude));
 
       if (student.placement) {
         await prisma.internshipPlacement.update({
@@ -1272,6 +1298,7 @@ router.put("/companies/:id", async (req: Request, res: Response) => {
             companyPhone1: companyPhone1 || "-",
             companyPhone2: companyPhone2 || "-",
             companyEmail: companyEmail || "-",
+            ...parseCoords(latitude, longitude),
             status: "PENDING",
           },
         });

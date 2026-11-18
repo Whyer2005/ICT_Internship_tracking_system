@@ -1927,3 +1927,111 @@ body.trn-modal-open { overflow: hidden; }
   .ckl-hrow-detail { padding: 4px 16px 16px; }
   .ckl-hrow-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== ช่องที่อยู่สถานประกอบการ + ปุ่ม "ดูแผนที่" (checklist.ts) ===== */
+.addr-map-row { display: flex; gap: 8px; align-items: stretch; }
+.addr-map-row > .input-field { flex: 1; min-width: 0; }
+.addr-map-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 14px; border: 1px solid #1541D2; border-radius: 8px; background: #1541D2; color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; text-decoration: none; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+.addr-map-btn .material-icons { font-size: 18px; }
+.addr-map-btn:hover { background: #0B2268; border-color: #0B2268; }
+.addr-map-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(21, 65, 210, 0.3); }
+.addr-map-btn[aria-disabled="true"] { background: #E2E8F0; border-color: #CBD5E1; color: #94A3B8; cursor: not-allowed; box-shadow: none; }
+@media (max-width: 479px) {
+  .addr-map-btn { padding: 0 10px; }
+  .addr-map-btn-text { display: none; }
+}
+
+/* สถานะหมุดใต้ช่องที่อยู่ */
+.addr-map-pin { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: #047857; }
+.addr-map-pin:empty { display: none; }
+.addr-map-pin .material-icons { font-size: 16px; }
+.addr-map-pin a { color: #1541D2; font-weight: 600; text-decoration: underline; }
+.addr-map-pin button { border: 0; background: none; padding: 0; color: #DC2626; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+.addr-map-btn:disabled { background: #E2E8F0; border-color: #CBD5E1; color: #94A3B8; cursor: not-allowed; }
+
+/* ===== หน้าต่างค้นหาและปักหมุดสถานประกอบการ (checklist.ts) ===== */
+.map-picker-overlay { position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 23, 42, 0.55); }
+.map-picker-overlay.is-open { display: flex; }
+.map-picker { position: relative; width: 100%; max-width: 760px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; overflow-y: auto; background: #fff; border-radius: 16px; box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.35); }
+.map-picker-head { display: flex; align-items: center; gap: 8px; color: #1541D2; }
+.map-picker-head h3 { flex: 1; margin: 0; font-size: 16px; font-weight: 800; color: #0F172A; }
+.map-picker-close { display: inline-flex; padding: 4px; border: 0; border-radius: 8px; background: none; color: #64748B; cursor: pointer; }
+.map-picker-close:hover { background: #F1F5F9; color: #0F172A; }
+.map-picker-search { display: flex; gap: 8px; align-items: stretch; }
+.map-picker-search .input-field { flex: 1; min-width: 0; font-size: 13.5px; }
+.map-picker-results { display: flex; flex-direction: column; max-height: 210px; overflow-y: auto; border: 1px solid #E2E8F0; border-radius: 10px; }
+.map-picker-results[hidden] { display: none; }
+.map-picker-result { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 9px 12px; border: 0; border-bottom: 1px solid #F1F5F9; background: #fff; text-align: left; font-family: inherit; cursor: pointer; }
+.map-picker-result:last-child { border-bottom: 0; }
+.map-picker-result:hover, .map-picker-result:focus-visible { background: #EFF6FF; outline: none; }
+.map-picker-result .material-icons { font-size: 18px; color: #1541D2; margin-top: 1px; }
+.map-picker-result-text { display: flex; flex-direction: column; min-width: 0; }
+.map-picker-result-text b { font-size: 13px; color: #0F172A; }
+.map-picker-result-text small { font-size: 12px; color: #64748B; }
+.map-picker-empty { padding: 12px; font-size: 12.5px; color: #64748B; }
+.map-picker-map { height: 340px; min-height: 240px; border: 1px solid #CBD5E1; border-radius: 10px; background: #F1F5F9; }
+.map-picker-hint { font-size: 12px; color: #64748B; }
+.map-picker-selected { padding: 10px 12px; font-size: 12.5px; line-height: 1.6; color: #334155; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; }
+.map-picker-spin { font-size: 16px; vertical-align: middle; animation: map-picker-spin 1s linear infinite; }
+@keyframes map-picker-spin { to { transform: rotate(360deg); } }
+.map-picker-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.map-picker-foot .addr-map-btn { min-height: 40px; }
+.map-picker-cancel { min-height: 40px; padding: 0 16px; border: 1px solid #CBD5E1; border-radius: 8px; background: #fff; color: #334155; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.map-picker-cancel:hover { background: #F1F5F9; }
+
+@media (max-width: 479px) {
+  .map-picker { padding: 14px; }
+  .map-picker-map { height: 280px; }
+  .map-picker-foot { flex-direction: column-reverse; }
+  .map-picker-foot .addr-map-btn .addr-map-btn-text { display: inline; }
+}
+
+/* ===== Student Dashboard: แถบ "ข้อมูลบริษัทที่สมัครผ่าน" (แนวนอน) ===== */
+.dash-company { display: flex; align-items: center; gap: 16px 18px; flex-wrap: wrap; padding: 18px 22px; background: #fff; border: 1px solid #E2E8F0; border-radius: 18px; box-shadow: 0 6px 20px -12px rgba(15, 23, 42, 0.18); }
+.dash-company-main { flex: 1 1 220px; min-width: 0; }
+.dash-company-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.dash-company-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; background: #EEF2FF; color: #3730A3; font-size: 11px; font-weight: 700; }
+.dash-company-badge .material-icons { font-size: 13px; }
+.dash-company-name { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.35; color: #0F172A; overflow-wrap: anywhere; }
+.dash-company-addr { display: flex; align-items: flex-start; gap: 4px; margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: #475569; }
+.dash-company-addr--warn { align-self: flex-start; display: inline-flex; padding: 3px 10px; border-radius: 999px; background: #FEF9C3; border: 1px solid #FDE68A; color: #854D0E; font-weight: 600; }
+.dash-company--empty .dash-company-addr { color: #64748B; }
+.dash-company--empty .dash-company-name { font-size: 15px; color: #334155; }
+.dash-company-chips { flex: 0 1 auto; max-width: 300px; min-width: 0; display: flex; flex-wrap: wrap; align-content: center; gap: 8px; }
+.dash-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 5px 11px; border-radius: 999px; background: #F1F5F9; color: #334155; font-size: 12px; font-weight: 600; }
+.dash-chip b { font-weight: 700; color: #0F172A; }
+.dash-chip .material-icons { font-size: 14px; color: #64748B; flex: 0 0 auto; }
+.dash-chip > span:not(.material-icons) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-company-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border: 1.5px solid #6D28D9; border-radius: 999px; background: #fff; color: #5B21B6; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; transition: background 0.15s ease, box-shadow 0.15s ease; }
+.dash-company-btn .material-icons { font-size: 16px; }
+.dash-company-btn:hover { background: #F5F3FF; }
+.dash-company-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.25); }
+.dash-company-btn[aria-disabled="true"] { border-color: #CBD5E1; color: #94A3B8; background: #F8FAFC; cursor: not-allowed; }
+
+@media (max-width: 767px) {
+  .dash-company { padding: 16px; align-items: flex-start; gap: 14px 12px; }
+  .dash-company-main { flex-basis: 100%; }
+  .dash-company-chips { flex-basis: 100%; }
+  .dash-company-btn { width: 100%; justify-content: center; }
+  .dash-company .dash-ckl { flex-basis: 100%; }
+  .dash-company-divider { display: none; }
+}
+
+/* ===== Student Dashboard: การ์ด Checklist (คอลัมน์ขวาของการอบรม) ===== */
+.dash-ckl { position: relative; flex: 0 0 290px; display: flex; align-items: center; gap: 14px; padding: 16px 12px 16px 16px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; color: inherit; text-decoration: none; transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
+.dash-ckl:hover { background: #fff; border-color: #C7D2FE; box-shadow: 0 8px 20px -12px rgba(37, 99, 235, 0.35); }
+.dash-ckl:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25); }
+.dash-ckl-icon { flex: 0 0 auto; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; border-radius: 14px; background: #F1F5F9; color: #64748B; }
+.dash-ckl-icon .material-icons { font-size: 28px; }
+.dash-ckl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dash-ckl-caption { font-size: 13px; font-weight: 700; line-height: 1.4; color: #334155; }
+.dash-ckl-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 20px; font-weight: 800; line-height: 1.25; color: #0F172A; letter-spacing: -0.01em; }
+.dash-ckl-pill { padding: 2px 11px; border-radius: 999px; background: #F1F5F9; color: #475569; border: 1px solid #E2E8F0; font-size: 12px; font-weight: 800; line-height: 1.5; letter-spacing: 0; }
+.dash-ckl-chevron { flex: 0 0 auto; font-size: 24px; color: #94A3B8; }
+.dash-company-divider { flex: 0 0 1px; align-self: stretch; min-height: 48px; background: #E2E8F0; }
+.dash-ckl--wait .dash-ckl-icon { background: #FEF3C7; color: #B45309; }
+.dash-ckl--wait .dash-ckl-pill { background: #FEF3C7; color: #92400E; border-color: #FDE68A; }
+.dash-ckl--ok .dash-ckl-icon { background: #DCFCE7; color: #15803D; }
+.dash-ckl--ok .dash-ckl-pill { background: #DCFCE7; color: #166534; border-color: #BBF7D0; }
+.dash-ckl--bad .dash-ckl-icon { background: #FEE2E2; color: #B91C1C; }
+.dash-ckl--bad .dash-ckl-pill { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }

@@ -86,6 +86,380 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ===== ปุ่ม "ดูแผนที่" ข้างช่องที่อยู่สถานประกอบการ =====
+// ตรรกะที่อยู่/ลิงก์แผนที่อยู่ที่ src/client/components/company_map.ts (ใช้ร่วมกับ Dashboard)
+function hasRealAddress(address) {
+  return window.IctCompanyMap.hasRealAddress(address);
+}
+
+// มีพิกัด → ใช้ lat,lng / ไม่มีพิกัดแต่มีที่อยู่ → ค้นหาด้วยที่อยู่ / ไม่มีทั้งคู่ → ''
+function buildCompanyMapUrl(address, lat, lng) {
+  return window.IctCompanyMap.mapUrl(address, lat, lng);
+}
+
+// หมุดของ placement ใช้กับการ์ดนี้ได้เฉพาะเมื่อเป็นบริษัทเดียวกัน (การ์ดบริษัทใหม่ต้องไม่ได้หมุดของบริษัทเดิม)
+function placementPinFor(comp, plc) {
+  const norm = (v) => String(v || '').replace(/\s+/g, '').toLowerCase();
+  const same = comp && comp.name && plc && norm(comp.name) === norm(plc.companyNameTh);
+  return same ? { latitude: plc.latitude, longitude: plc.longitude } : { latitude: null, longitude: null };
+}
+
+// ฟอร์มแก้ไขได้ → ปุ่ม "ค้นหาบนแผนที่" (เปิดหน้าต่างค้นหา/ปักหมุด) / ฟอร์มล็อก → ปุ่ม "ดูแผนที่" (เปิด Google Maps)
+// plc = { companyAddress, latitude, longitude }
+function companyMapBtnHtml(index, plc, editable = false) {
+  const lat = plc.latitude ?? plc.lat ?? '';
+  const lng = plc.longitude ?? plc.lng ?? '';
+  if (editable) {
+    return `<button type="button" id="company-map-btn-${index}" class="addr-map-btn" data-mode="pick"
+                aria-label="ค้นหาและปักหมุดบนแผนที่" title="ค้นหาสถานที่และปักหมุดบนแผนที่"
+                data-lat="${escapeHtml(lat)}" data-lng="${escapeHtml(lng)}"
+                onclick="window.openCompanyMapPicker(${index})">
+                <span class="material-icons" aria-hidden="true">travel_explore</span><span class="addr-map-btn-text">ค้นหาบนแผนที่</span>
+              </button>`;
+  }
+  // มีพิกัด → เปิดที่หมุดได้แม้ที่อยู่ยังเป็นค่ารอตรวจสอบ
+  const url = buildCompanyMapUrl(plc.companyAddress, lat, lng);
+  const state = url
+    ? `href="${escapeHtml(url)}" title="เปิดแผนที่ในแท็บใหม่"`
+    : 'aria-disabled="true" tabindex="-1" title="ยังไม่มีที่อยู่"';
+  return `<a id="company-map-btn-${index}" class="addr-map-btn" target="_blank" rel="noopener noreferrer"
+                aria-label="เปิดแผนที่" data-lat="${escapeHtml(lat)}" data-lng="${escapeHtml(lng)}" ${state}
+                onclick="if (this.getAttribute('aria-disabled') === 'true') { event.preventDefault(); }">
+                <span class="material-icons" aria-hidden="true">location_on</span><span class="addr-map-btn-text">ดูแผนที่</span>
+              </a>`;
+}
+
+// บรรทัดสถานะหมุดใต้ช่องที่อยู่ (เฉพาะฟอร์มที่แก้ไขได้)
+function companyMapPinHtml(index, plc) {
+  return `<div id="company-map-pin-${index}" class="addr-map-pin">${pinStatusInner(index, plc.latitude, plc.longitude)}</div>`;
+}
+
+function pinStatusInner(index, lat, lng) {
+  const la = parseFloat(lat), ln = parseFloat(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) return '';
+  return `<span class="material-icons" aria-hidden="true">push_pin</span>
+    <span>ปักหมุดแล้ว (${la.toFixed(5)}, ${ln.toFixed(5)})</span>
+    <a href="${escapeHtml(buildCompanyMapUrl('', la, ln))}" target="_blank" rel="noopener noreferrer">ดูใน Google Maps</a>
+    <button type="button" onclick="window.clearCompanyPin(${index})">ล้างหมุด</button>`;
+}
+
+function setCompanyPin(index, lat, lng) {
+  const btn = document.getElementById(`company-map-btn-${index}`);
+  if (btn) {
+    btn.dataset.lat = lat === null ? '' : String(lat);
+    btn.dataset.lng = lng === null ? '' : String(lng);
+  }
+  const pin = document.getElementById(`company-map-pin-${index}`);
+  if (pin) pin.innerHTML = pinStatusInner(index, lat, lng);
+}
+
+window.clearCompanyPin = function(index) {
+  setCompanyPin(index, null, null);
+};
+
+// ที่อยู่/ชื่อบริษัทถูกแก้เอง → หมุดเดิมอาจไม่ตรงแล้ว ล้างหมุด (เฉพาะฟอร์มที่แก้ไขได้) ให้ปักใหม่จากแผนที่
+function invalidateCompanyPin(index) {
+  const btn = document.getElementById(`company-map-btn-${index}`);
+  if (btn?.dataset.mode === 'pick' && getCompanyPin(index).latitude !== null) setCompanyPin(index, null, null);
+}
+
+window.onCompanyAddressInput = function(index) {
+  invalidateCompanyPin(index);
+  window.updateCompanyMapBtn(index);
+};
+
+// พิกัดที่ส่งไปบันทึก (null = ไม่ได้ปักหมุด)
+function getCompanyPin(index) {
+  const btn = document.getElementById(`company-map-btn-${index}`);
+  const la = parseFloat(btn?.dataset.lat), ln = parseFloat(btn?.dataset.lng);
+  return Number.isFinite(la) && Number.isFinite(ln) ? { latitude: la, longitude: ln } : { latitude: null, longitude: null };
+}
+
+window.updateCompanyMapBtn = function(index) {
+  const btn = document.getElementById(`company-map-btn-${index}`);
+  const input = document.getElementById(`company-address-${index}`);
+  if (!btn || !input || btn.dataset.mode === 'pick') return;
+  const url = buildCompanyMapUrl(input.value, btn.dataset.lat, btn.dataset.lng);
+  if (url) {
+    btn.setAttribute('href', url);
+    btn.removeAttribute('aria-disabled');
+    btn.removeAttribute('tabindex');
+    btn.title = 'เปิดแผนที่ในแท็บใหม่';
+  } else {
+    btn.removeAttribute('href');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.setAttribute('tabindex', '-1');
+    btn.title = 'ยังไม่มีที่อยู่';
+  }
+};
+
+// ===== หน้าต่างค้นหาสถานที่ + ปักหมุด (Leaflet + OpenStreetMap / ค้นหาด้วย Nominatim) =====
+// โหลดจาก cdnjs พร้อม SRI (integrity) — ถ้าไฟล์บน CDN ถูกแก้ browser จะไม่ยอมรัน
+const LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+const LEAFLET_CSS_SRI = 'sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==';
+const LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+const LEAFLET_JS_SRI = 'sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==';
+const NOMINATIM = 'https://nominatim.openstreetmap.org';
+const MAP_DEFAULT_CENTER = [13.7563, 100.5018]; // กรุงเทพฯ (กรณียังไม่มีหมุด)
+let leafletLoading = null;
+let mapPicker = null; // { seq, index, map, marker, results, picked: { lat, lng, address, province } }
+let pickerSeq = 0;  // เลขรอบการเปิดหน้าต่าง → ทิ้งงาน async ของรอบที่ปิดไปแล้ว
+let reverseSeq = 0; // เลขคำขอ reverse geocode ล่าสุด
+let searchSeq = 0;  // เลขคำขอค้นหาล่าสุด
+
+// หน้าต่างรอบนี้ยังเปิดอยู่หรือไม่ (กันผลลัพธ์ที่มาช้าจากรอบเก่า)
+function isActivePicker(seq) {
+  return Boolean(mapPicker) && mapPicker.seq === seq;
+}
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletLoading) return leafletLoading;
+  leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = LEAFLET_CSS;
+    css.integrity = LEAFLET_CSS_SRI;
+    css.crossOrigin = 'anonymous';
+    css.referrerPolicy = 'no-referrer';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = LEAFLET_JS;
+    js.integrity = LEAFLET_JS_SRI;
+    js.crossOrigin = 'anonymous';
+    js.referrerPolicy = 'no-referrer';
+    js.onload = () => resolve(window.L);
+    js.onerror = () => { leafletLoading = null; reject(new Error('โหลดแผนที่ไม่สำเร็จ')); };
+    document.head.appendChild(js);
+  });
+  return leafletLoading;
+}
+
+// ผล Nominatim → ที่อยู่ภาษาไทย + จังหวัด (ตัด "ประเทศไทย" และย้ายรหัสไปรษณีย์ไปท้าย)
+function nominatimToAddress(item) {
+  const a = item.address || {};
+  let province = a.province || a.state || '';
+  if (!province && /กรุงเทพ/.test(a.city || item.display_name || '')) province = 'กรุงเทพมหานคร';
+  province = province.replace(/^จังหวัด\s*/, '').trim();
+  const parts = String(item.display_name || '')
+    .split(',')
+    .map(p => p.trim())
+    .filter(p => p && p !== 'ประเทศไทย' && p !== 'Thailand' && p !== a.postcode);
+  let address = parts.join(' ');
+  if (a.postcode) address += ' ' + a.postcode;
+  return { address: address.trim(), province };
+}
+
+function mapPickerEl(id) {
+  return document.getElementById(id);
+}
+
+function ensureMapPickerModal() {
+  let modal = mapPickerEl('company-map-modal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'company-map-modal';
+  modal.className = 'map-picker-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'map-picker-title');
+  modal.innerHTML = `
+    <div class="map-picker">
+      <div class="map-picker-head">
+        <span class="material-icons" aria-hidden="true">travel_explore</span>
+        <h3 id="map-picker-title">ค้นหาและปักหมุดสถานประกอบการ</h3>
+        <button type="button" class="map-picker-close" aria-label="ปิด" onclick="window.closeCompanyMapPicker()">
+          <span class="material-icons" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <form class="map-picker-search" onsubmit="event.preventDefault(); window.searchCompanyMapPlace();">
+        <input type="search" id="map-picker-query" class="input-field" placeholder="ชื่อสถานที่ / อาคาร / ที่อยู่ เช่น อาคารรัฐประศาสนภักดี" autocomplete="off" />
+        <button type="submit" class="addr-map-btn" aria-label="ค้นหา"><span class="material-icons" aria-hidden="true">search</span><span class="addr-map-btn-text">ค้นหา</span></button>
+      </form>
+      <div id="map-picker-results" class="map-picker-results" role="listbox" hidden></div>
+      <div id="map-picker-map" class="map-picker-map"></div>
+      <div class="map-picker-hint">คลิกบนแผนที่ หรือลากหมุด เพื่อปรับตำแหน่งให้ตรงกับสถานประกอบการ</div>
+      <div id="map-picker-selected" class="map-picker-selected">ยังไม่ได้เลือกตำแหน่ง</div>
+      <div class="map-picker-foot">
+        <button type="button" class="map-picker-cancel" onclick="window.closeCompanyMapPicker()">ยกเลิก</button>
+        <button type="button" id="map-picker-confirm" class="addr-map-btn" disabled onclick="window.confirmCompanyMapPicker()">
+          <span class="material-icons" aria-hidden="true">check</span><span>ใช้ตำแหน่งนี้</span>
+        </button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', (e) => { if (e.target === modal) window.closeCompanyMapPicker(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) window.closeCompanyMapPicker();
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function renderPickedInfo(html, loading = false) {
+  const box = mapPickerEl('map-picker-selected');
+  if (box) box.innerHTML = loading
+    ? '<span class="material-icons map-picker-spin" aria-hidden="true">autorenew</span> กำลังค้นหาที่อยู่...'
+    : html;
+  const ok = mapPickerEl('map-picker-confirm');
+  if (ok) ok.disabled = loading || !mapPicker?.picked;
+}
+
+function showPicked() {
+  const p = mapPicker?.picked;
+  if (!p) return renderPickedInfo('ยังไม่ได้เลือกตำแหน่ง');
+  renderPickedInfo(`
+    <div><b>ที่อยู่:</b> ${p.address ? escapeHtml(p.address) : '<span style="color:#B45309;">ไม่พบที่อยู่ของจุดนี้ — กด "ใช้ตำแหน่งนี้" แล้วกรอกที่อยู่เองในช่องที่อยู่</span>'}</div>
+    <div><b>จังหวัด:</b> ${p.province ? escapeHtml(p.province) : '-'} · <b>พิกัด:</b> ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>`);
+}
+
+function placePickerMarker(lat, lng, zoom) {
+  const L = window.L;
+  if (!mapPicker) return;
+  if (!mapPicker.marker) {
+    mapPicker.marker = L.marker([lat, lng], { draggable: true }).addTo(mapPicker.map);
+    mapPicker.marker.on('dragend', () => {
+      const p = mapPicker.marker.getLatLng();
+      reverseGeocodePick(p.lat, p.lng);
+    });
+  } else {
+    mapPicker.marker.setLatLng([lat, lng]);
+  }
+  mapPicker.map.setView([lat, lng], zoom || Math.max(mapPicker.map.getZoom(), 16));
+}
+
+async function reverseGeocodePick(lat, lng) {
+  if (!mapPicker) return;
+  const seq = ++reverseSeq;
+  mapPicker.picked = null;
+  renderPickedInfo('', true);
+  let info = { address: '', province: '' };
+  try {
+    const res = await fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&accept-language=th&lat=${lat}&lon=${lng}`);
+    const item = await res.json();
+    if (item && !item.error) info = nominatimToAddress(item);
+  } catch (err) {
+    console.error('reverse geocode failed:', err);
+  }
+  if (seq !== reverseSeq || !mapPicker) return;
+  mapPicker.picked = { lat, lng, ...info };
+  showPicked();
+}
+
+window.openCompanyMapPicker = async function(index) {
+  const modal = ensureMapPickerModal();
+  modal.classList.add('is-open');
+  document.body.style.overflow = 'hidden';
+  const addr = document.getElementById(`company-address-${index}`)?.value || '';
+  const name = document.querySelectorAll('.company-name-input')[index]?.value || '';
+  const q = mapPickerEl('map-picker-query');
+  q.value = hasRealAddress(addr) ? addr : name;
+  mapPickerEl('map-picker-results').hidden = true;
+  mapPickerEl('map-picker-results').innerHTML = '';
+  if (mapPicker?.map) mapPicker.map.remove(); // กันเปิดซ้อนโดยไม่ได้ปิด
+  const seq = ++pickerSeq;
+  mapPicker = { seq, index, map: null, marker: null, results: [], picked: null };
+  renderPickedInfo('ยังไม่ได้เลือกตำแหน่ง');
+
+  let L;
+  try {
+    L = await loadLeaflet();
+  } catch (err) {
+    if (isActivePicker(seq)) renderPickedInfo('<span style="color:#DC2626;">โหลดแผนที่ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่</span>');
+    return;
+  }
+  // ระหว่างรอโหลด หน้าต่างถูกปิด/เปิดใหม่ → ให้รอบล่าสุดเป็นคนสร้างแผนที่ (กัน "Map container is already initialized")
+  if (!isActivePicker(seq)) return;
+  const map = L.map('map-picker-map').setView(MAP_DEFAULT_CENTER, 11);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
+  }).addTo(map);
+  mapPicker.map = map;
+  map.on('click', (e) => {
+    placePickerMarker(e.latlng.lat, e.latlng.lng);
+    reverseGeocodePick(e.latlng.lat, e.latlng.lng);
+  });
+  setTimeout(() => map.invalidateSize(), 50);
+
+  // มีหมุดเดิม → แสดงหมุดเดิมพร้อมที่อยู่ในฟอร์ม
+  const cur = getCompanyPin(index);
+  if (cur.latitude !== null) {
+    placePickerMarker(cur.latitude, cur.longitude, 17);
+    const prov = document.getElementById(`company-province-${index}`)?.value || '';
+    mapPicker.picked = { lat: cur.latitude, lng: cur.longitude, address: hasRealAddress(addr) ? addr : '', province: prov };
+    showPicked();
+  }
+  q.focus();
+};
+
+window.closeCompanyMapPicker = function() {
+  const modal = mapPickerEl('company-map-modal');
+  if (modal) modal.classList.remove('is-open');
+  document.body.style.overflow = '';
+  if (mapPicker?.map) mapPicker.map.remove();
+  mapPicker = null;
+  reverseSeq++;
+  searchSeq++;
+};
+
+window.searchCompanyMapPlace = async function() {
+  const q = (mapPickerEl('map-picker-query').value || '').trim();
+  const list = mapPickerEl('map-picker-results');
+  if (!q || !mapPicker?.map) return;
+  const pSeq = mapPicker.seq;
+  const sSeq = ++searchSeq;
+  const isCurrent = () => isActivePicker(pSeq) && sSeq === searchSeq; // ทิ้งผลของคำค้นเก่า/หน้าต่างรอบเก่า
+  list.hidden = false;
+  list.innerHTML = '<div class="map-picker-empty">กำลังค้นหา...</div>';
+  try {
+    const res = await fetch(`${NOMINATIM}/search?format=jsonv2&addressdetails=1&accept-language=th&countrycodes=th&limit=6&q=${encodeURIComponent(q)}`);
+    const items = await res.json();
+    if (!isCurrent()) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      list.innerHTML = '<div class="map-picker-empty">ไม่พบสถานที่ ลองพิมพ์ชื่ออาคาร ถนน หรืออำเภอ หรือคลิกปักหมุดบนแผนที่เอง</div>';
+      return;
+    }
+    mapPicker.results = items;
+    list.innerHTML = items.map((it, i) => {
+      const info = nominatimToAddress(it);
+      return `<button type="button" role="option" class="map-picker-result" onclick="window.pickCompanyMapResult(${i})">
+        <span class="material-icons" aria-hidden="true">place</span>
+        <span class="map-picker-result-text"><b>${escapeHtml(it.name || info.address)}</b><small>${escapeHtml(info.address)}</small></span>
+      </button>`;
+    }).join('');
+  } catch (err) {
+    if (isCurrent()) list.innerHTML = '<div class="map-picker-empty" style="color:#DC2626;">ค้นหาไม่สำเร็จ กรุณาลองใหม่</div>';
+  }
+};
+
+window.pickCompanyMapResult = function(i) {
+  const it = mapPicker?.results?.[i];
+  if (!it) return;
+  const lat = parseFloat(it.lat), lng = parseFloat(it.lon);
+  mapPickerEl('map-picker-results').hidden = true;
+  placePickerMarker(lat, lng, 17);
+  reverseSeq++;
+  mapPicker.picked = { lat, lng, ...nominatimToAddress(it) };
+  showPicked();
+};
+
+window.confirmCompanyMapPicker = function() {
+  const p = mapPicker?.picked;
+  if (!p) return;
+  const index = mapPicker.index;
+  const addrInput = document.getElementById(`company-address-${index}`);
+  const provInput = document.getElementById(`company-province-${index}`);
+  if (addrInput) {
+    // ไม่พบที่อยู่ของจุดที่ปัก → ล้างที่อยู่เดิม (ซึ่งไม่ตรงกับหมุด) แล้วให้นิสิตกรอกเอง
+    addrInput.value = p.address || '';
+    if (!p.address) addrInput.placeholder = 'ไม่พบที่อยู่ของจุดที่ปักหมุด กรุณากรอกที่อยู่สถานประกอบการเอง';
+  }
+  if (provInput && p.province) provInput.value = p.province;
+  setCompanyPin(index, p.lat, p.lng);
+  window.closeCompanyMapPicker();
+  if (addrInput && !p.address) addrInput.focus();
+};
+
 async function loadData() {
   try {
     const [trainRes, cvRes, profRes] = await Promise.all([
@@ -396,6 +770,7 @@ window.onCompanyNameInput = function(index) {
   if (!card) return;
   const nameInput = card.querySelector('.company-name-input');
   if (!nameInput) return;
+  invalidateCompanyPin(index); // เปลี่ยนบริษัท → หมุดของบริษัทเดิมใช้ไม่ได้
   const val = nameInput.value.trim().toLowerCase().replace(/\s+/g, '');
   if (!val) return;
 
@@ -413,6 +788,7 @@ window.onCompanyNameInput = function(index) {
 
     if (addrInput && (!addrInput.value || addrInput.value === 'รอตรวจสอบที่อยู่')) {
       addrInput.value = matched.address && matched.address !== '-' ? matched.address : '';
+      window.updateCompanyMapBtn(index);
     }
     if (provInput && (!provInput.value || provInput.value === 'รอระบุจังหวัด')) {
       provInput.value = matched.province && matched.province !== '-' ? matched.province : '';
@@ -584,7 +960,11 @@ function renderCompanyCard(comp, index) {
             <label style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">
               ที่อยู่สถานประกอบการ / แหล่งฝึกงาน <span style="color:#DC2626;">*</span>
             </label>
-            <input type="text" id="company-address-${index}" value="${escapeHtml(plc.companyAddress || '')}" placeholder="เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} />
+            <div class="addr-map-row">
+              <input type="text" id="company-address-${index}" value="${escapeHtml(plc.companyAddress || '')}" placeholder="เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์" class="input-field" style="width:100%; padding:7px 10px; font-size:12.5px; border:1px solid #CBD5E1; border-radius:8px;" ${infoLocked ? 'readonly style="background-color: #f8fafc; cursor: not-allowed;"' : ''} oninput="window.onCompanyAddressInput(${index})" />
+              ${companyMapBtnHtml(index, { companyAddress: plc.companyAddress, ...placementPinFor(comp, plc) }, !infoLocked)}
+            </div>
+            ${infoLocked ? '' : companyMapPinHtml(index, placementPinFor(comp, plc))}
           </div>
 
           <!-- เบอร์โทรศัพท์ -->
@@ -748,6 +1128,7 @@ document.getElementById('save-all-btn').addEventListener('click', async () => {
       companyPhone1,
       companyPhone2,
       companyEmail,
+      ...getCompanyPin(0), // latitude / longitude จากหมุดบนแผนที่ (null = ไม่ได้ปัก)
       // รอบออกฝึก: ส่งเฉพาะกรณีมีให้เลือกหลายรอบ (รอบเดียว server ผูกให้อัตโนมัติ)
       internshipWindowId: (document.getElementById('internship-window-select') as HTMLSelectElement | null)?.value || undefined,
     };

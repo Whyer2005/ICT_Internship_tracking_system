@@ -1,5 +1,62 @@
 // @ts-nocheck
 // dashboard.js - ดึงข้อมูลสรุปนิสิตแสดงใน Dashboard
+
+// แถบ "ข้อมูลบริษัทที่สมัครผ่าน" (แนวนอน ใต้ CV / การอบรม)
+function renderDashboardCompany(plc) {
+  const box = document.getElementById('company-box');
+  if (!box) return;
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const clean = (v) => {
+    const s = String(v || '').trim();
+    return s && s !== '-' ? s : '';
+  };
+  box.classList.remove('dash-company--empty');
+
+  const name = clean(plc.companyNameTh) || '-';
+  setText('comp-name', name);
+
+  // ที่อยู่ใต้ชื่อบริษัท: ยังไม่มี/ค่ารอตรวจสอบ → ป้ายสีเหลือง "รอตรวจสอบที่อยู่จากนิสิต" / มีแล้ว → แสดงที่อยู่เต็ม
+  const address = clean(plc.companyAddress);
+  const hasAddress = window.IctCompanyMap.hasRealAddress(address); // helper กลาง: src/client/components/company_map.ts
+  const addrLine = document.getElementById('comp-addr-line');
+  if (addrLine) addrLine.className = `dash-company-addr${hasAddress ? '' : ' dash-company-addr--warn'}`;
+  setText('comp-addr', hasAddress ? address : 'รอตรวจสอบที่อยู่จากนิสิต');
+  setText('comp-prov', clean(plc.province) && !/^รอระบุ/.test(plc.province) ? plc.province : '-');
+  setText('comp-phone', clean(plc.companyPhone1) || '-');
+  setText('comp-email', clean(plc.companyEmail) || '-');
+  const details = document.getElementById('company-details');
+  if (details) details.style.display = 'flex';
+
+  // ค้นหาสถานประกอบการบน Google Maps: มีหมุด → พิกัด / ไม่มี → ชื่อบริษัท + ที่อยู่
+  const btn = document.getElementById('company-search-btn');
+  const url = window.IctCompanyMap.mapUrl(address, plc.latitude, plc.longitude, name === '-' ? '' : name);
+  if (btn && url) {
+    btn.setAttribute('href', url);
+    btn.removeAttribute('aria-disabled');
+    btn.title = 'เปิดตำแหน่งสถานประกอบการใน Google Maps (แท็บใหม่)';
+  }
+}
+
+// การ์ด Checklist (ซ้ายสุดของแถบบริษัท): ไอคอน/ป้ายสถานะ + จำนวนบริษัท
+function renderDashboardChecklist(companies, approvedCount) {
+  const card = document.getElementById('dash-checklist-card');
+  if (!card) return;
+  const total = companies.length;
+  const pending = companies.filter(c => !c.checklistStatus || c.checklistStatus === 'PENDING').length;
+  const rejected = companies.filter(c => c.checklistStatus === 'REJECTED').length;
+
+  let tone = 'none', icon = 'playlist_add', label = 'ยังไม่ยื่น';
+  if (approvedCount > 0) { tone = 'ok'; icon = 'task_alt'; label = 'ผ่าน'; }
+  else if (pending > 0) { tone = 'wait'; icon = 'schedule'; label = 'รอผล'; }
+  else if (rejected > 0) { tone = 'bad'; icon = 'cancel'; label = 'ไม่ผ่าน'; }
+
+  card.className = `dash-ckl dash-ckl--${tone}`;
+  document.getElementById('dash-ckl-icon').textContent = icon;
+  document.getElementById('display-checklist-status').textContent = label;
+  document.getElementById('display-checklist-header').textContent = `${total} บริษัท`;
+  card.setAttribute('aria-label', `ดูสถานะ Checklist: ${label} ${total} บริษัท`);
+}
+
 function loadDashboardData() {
   fetch('/api/student/dashboard-summary')
     .then(res => res.json())
@@ -287,33 +344,12 @@ updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, 
 
 
     // Checklist Status
-    if (data.approvedCompaniesCount > 0) {
-      document.getElementById('display-checklist-header').textContent = `Checklist : ${data.companies.length} บริษัท`;
-      document.getElementById('display-checklist-status').innerHTML = `<span class="text-green-600 font-semibold">อาจารย์รีวิวแล้ว / ผ่าน (${data.approvedCompaniesCount} ที่)</span>`;
-    } else if (data.companies && data.companies.length > 0) {
-      document.getElementById('display-checklist-header').textContent = `Checklist : ${data.companies.length} บริษัท`;
-      document.getElementById('display-checklist-status').textContent = 'สถานะ: รอผล';
-    }
+    renderDashboardChecklist(data.companies || [], data.approvedCompaniesCount || 0);
 
     // Placement / Passed Company
     if (data.placement && data.placement.companyNameTh) {
       document.getElementById('display-position').textContent = `${data.placement.position || '-'}`;
-      // ซ่อน empty state ทั้งหมด (icon + placeholder + hint)
-      const emptyIcon = document.getElementById('company-empty-icon');
-      const placeholderText = document.getElementById('company-placeholder-text');
-      const hintText = document.getElementById('company-hint-text');
-      if (emptyIcon) emptyIcon.style.display = 'none';
-      if (placeholderText) placeholderText.style.display = 'none';
-      if (hintText) hintText.style.display = 'none';
-      // เปลี่ยน company-box ให้ไม่เป็น empty state style
-      const companyBox = document.getElementById('company-box');
-      if (companyBox) { companyBox.style.borderStyle = 'solid'; companyBox.style.background = '#fff'; companyBox.style.cursor = 'default'; }
-      document.getElementById('company-details').style.display = 'flex';
-      document.getElementById('comp-name').textContent = data.placement.companyNameTh || '-';
-      document.getElementById('comp-addr').textContent = data.placement.companyAddress || '-';
-      document.getElementById('comp-prov').textContent = data.placement.province || '-';
-      document.getElementById('comp-phone').textContent = data.placement.companyPhone1 || '-';
-      document.getElementById('comp-email').textContent = data.placement.companyEmail || '-';
+      renderDashboardCompany(data.placement);
     }
 
     // ==========================================
