@@ -2780,19 +2780,9 @@ window.restoreCohort = async function(id: number) {
 
 window.eventSessions = window.eventSessions || [];
 
+// เริ่มต้นแบบว่าง: ยังไม่มีช่วงเวลา จนกว่าจะกด "+ เพิ่มวัน" (ช่วงแรกที่เพิ่มจะเป็น "ช่วงที่ 1")
 window.initEventSessions = function() {
-  if (!Array.isArray(window.eventSessions) || window.eventSessions.length === 0) {
-    window.eventSessions = [
-      {
-        id: 'SES-1',
-        title: 'ช่วงที่ 1',
-        date: getTodayDateStr(),
-        startTime: '09:00',
-        endTime: '16:00',
-        hours: 6,
-      },
-    ];
-  }
+  if (!Array.isArray(window.eventSessions)) window.eventSessions = [];
   window.renderEventSessionsList();
   window.calculateTotalEventHours();
 };
@@ -2802,16 +2792,13 @@ window.renderEventSessionsList = function() {
   if (!listEl) return;
 
   if (!Array.isArray(window.eventSessions) || window.eventSessions.length === 0) {
-    window.eventSessions = [
-      {
-        id: 'SES-1',
-        title: 'ช่วงที่ 1',
-        date: getTodayDateStr(),
-        startTime: '09:00',
-        endTime: '16:00',
-        hours: 6,
-      },
-    ];
+    window.eventSessions = [];
+    listEl.innerHTML = `
+      <div style="border:1.5px dashed #CBD5E1; border-radius:10px; padding:16px 12px; text-align:center; color:#64748B; font-size:12px; background:#FFFFFF;">
+        <span class="material-icons" style="font-size:22px; color:#94A3B8; display:block; margin-bottom:4px;">event</span>
+        ยังไม่มีวันและเวลาอบรม — กดปุ่ม <b style="color:#4338CA;">+ เพิ่มวัน</b> เพื่อเพิ่มช่วงที่ 1
+      </div>`;
+    return;
   }
 
   listEl.innerHTML = window.eventSessions.map((s: any, idx: number) => `
@@ -2820,11 +2807,9 @@ window.renderEventSessionsList = function() {
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:11.5px; font-weight:700; background:#EEF2FF; color:#4338CA; border:1px solid #C7D2FE; padding:3px 8px; border-radius:6px; white-space:nowrap;">ช่วงที่ ${idx + 1}</span>
         <input type="text" class="input-field" value="${s.title || ''}" placeholder="ระบุชื่อช่วง เช่น วันที่ ${idx + 1} (บรรยาย)" oninput="window.updateSessionField(${idx}, 'title', this.value)" style="flex:1; padding:4px 8px; font-size:12px; height:30px; margin:0;" />
-        ${window.eventSessions.length > 1 ? `
-          <button type="button" onclick="window.removeEventSession(${idx})" title="ลบช่วงเวลานี้" style="background:#FEE2E2; border:1px solid #FECACA; color:#DC2626; border-radius:6px; width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:background 0.15s;" class="hover:bg-red-200">
-            <span class="material-icons" style="font-size:17px;">delete</span>
-          </button>
-        ` : ''}
+        <button type="button" onclick="window.removeEventSession(${idx})" title="ลบช่วงเวลานี้" style="background:#FEE2E2; border:1px solid #FECACA; color:#DC2626; border-radius:6px; width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:background 0.15s;" class="hover:bg-red-200">
+          <span class="material-icons" style="font-size:17px;">delete</span>
+        </button>
       </div>
 
       <!-- แถวที่ 2: วันที่จัด (เต็มแถว ไม่เบียดกับเวลา) -->
@@ -2891,13 +2876,19 @@ window.addEventSession = function() {
     }
   }
 
+  // id ไม่ซ้ำแม้เคยลบช่วงกลางออกไป (ใช้เลขมากสุด + 1)
+  const maxIdNum = currentSessions.reduce((max: number, s: any) => {
+    const num = Number(String(s.id || '').replace('SES-', ''));
+    return Number.isFinite(num) && num > max ? num : max;
+  }, 0);
+
   currentSessions.push({
-    id: `SES-${nextIdx}`,
+    id: `SES-${maxIdNum + 1}`,
     title: `ช่วงที่ ${nextIdx}`,
     date: nextDate,
     startTime: '09:00',
     endTime: '16:00',
-    hours: 3,
+    hours: lastSession ? 3 : 6, // ช่วงแรกตั้งต้น 6 ชม. (09:00–16:00) เหมือนค่าเดิม
   });
 
   window.eventSessions = currentSessions;
@@ -2906,8 +2897,12 @@ window.addEventSession = function() {
 };
 
 window.removeEventSession = function(idx: number) {
-  if (window.eventSessions && window.eventSessions.length > 1) {
+  if (window.eventSessions && window.eventSessions[idx]) {
     window.eventSessions.splice(idx, 1);
+    // ชื่อช่วงที่ยังเป็นค่าตั้งต้น ("ช่วงที่ N") ให้เรียงเลขใหม่ตามลำดับ — ชื่อที่พิมพ์เองไม่แตะ
+    window.eventSessions.forEach((s: any, i: number) => {
+      if (/^ช่วงที่ \d+$/.test(String(s.title || '').trim())) s.title = `ช่วงที่ ${i + 1}`;
+    });
     window.renderEventSessionsList();
     window.calculateTotalEventHours();
   }
@@ -2923,9 +2918,7 @@ window.calculateTotalEventHours = function() {
 
   if (badgeEl) badgeEl.textContent = String(total);
   if (noteEl) {
-    noteEl.textContent = count > 1
-      ? `${count} ช่วงเวลา`
-      : `1 ช่วงเวลา`;
+    noteEl.textContent = count > 0 ? `${count} ช่วงเวลา` : 'ยังไม่มีช่วงเวลา';
   }
 };
 
@@ -3067,6 +3060,11 @@ window.createTrainingEvent = async function() {
 
   if (!title) {
     alert('กรุณากรอกชื่อกิจกรรมอบรม');
+    return;
+  }
+
+  if (!Array.isArray(window.eventSessions) || window.eventSessions.length === 0) {
+    alert('กรุณากดปุ่ม "+ เพิ่มวัน" เพื่อระบุวันและเวลาอบรมอย่างน้อย 1 ช่วง');
     return;
   }
 

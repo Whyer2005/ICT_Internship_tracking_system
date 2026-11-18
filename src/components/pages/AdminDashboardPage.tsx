@@ -1158,10 +1158,10 @@ ${majorOptionsHtml("              ")}
                 <div style="margin-top:10px; padding:10px 14px; background:#ECFDF5; border:1px solid #A7F3D0; border-radius:10px; display:flex; align-items:center; justify-content:space-between;">
                   <div>
                     <div style="font-size:12px; font-weight:700; color:#065F46;">ชั่วโมงรวม</div>
-                    <div id="evt-hours-summary-note" style="font-size:11px; color:#047857;">1 ช่วงเวลา</div>
+                    <div id="evt-hours-summary-note" style="font-size:11px; color:#047857;">ยังไม่มีช่วงเวลา</div>
                   </div>
                   <div style="text-align:right;">
-                    <span id="evt-total-hours-badge" style="font-size:22px; font-weight:800; color:#059669;">6</span>
+                    <span id="evt-total-hours-badge" style="font-size:22px; font-weight:800; color:#059669;">0</span>
                     <span style="font-size:12px; font-weight:700; color:#065F46;"> ชม.</span>
                   </div>
                 </div>

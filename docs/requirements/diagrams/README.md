@@ -1,6 +1,6 @@
 # แผนภาพประกอบระบบ (Diagrams)
 
-> ปรับปรุงล่าสุด: 16 พ.ย. 2569 · ER/Schema สร้างตามฐานข้อมูลจริง (`prisma/schema.prisma`)
+> ปรับปรุงล่าสุด: 18 พ.ย. 2569 · ER/Schema สร้างตามฐานข้อมูลจริง (`prisma/schema.prisma`)
 > ⚠️ แผนภาพอาจปรับหลังประชุมคณะ (ดู [04_OPEN_ISSUES.md](../04_OPEN_ISSUES.md))
 
 ## รายการแผนภาพ
@@ -14,6 +14,7 @@
 | 08 | Context Diagram (DFD Level 0) | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [context_diagram.drawio](context_diagram.drawio) | Proposal |
 | 08 | DFD Level 1 | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [dfd_level1.drawio](dfd_level1.drawio) | Proposal |
 | 09 | Activity Diagram | [09_ACTIVITY_DIAGRAM.md](09_ACTIVITY_DIAGRAM.md) | [activity_main_flow.drawio](activity_main_flow.drawio) | สไลด์ประชุม, Proposal |
+| 10 | Use Case แยกตามบทบาท (5 ภาพ) | [10_USE_CASE_BY_ROLE.md](10_USE_CASE_BY_ROLE.md) | `use_case_role_*.drawio` (5 ไฟล์) | สไลด์ประชุม (บทบาทละ 1 หน้า) |
 | — | สถาปัตยกรรมระบบ (System Architecture) | — | [architecture_diagram.drawio](architecture_diagram.drawio) | Proposal |
 
 ---
