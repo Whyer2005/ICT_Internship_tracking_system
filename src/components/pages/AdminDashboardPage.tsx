@@ -1973,7 +1973,7 @@ ${majorOptionsHtml("              ")}
             <label style="font-size:12.5px; font-weight:700; color:#475569;">สถานะสถานประกอบการ</label>
             <select id="mc-status" class="input-field" style="margin-top:4px; cursor:pointer;">
               <option value="VERIFIED">✅ ยืนยันแล้ว (Master Data)</option>
-              <option value="PARTNER">⭐ พันธมิตรคณะ ICT (Partner / MOU)</option>
+              <option value="PARTNER">🏛️ สถานประกอบการที่คณะ ICT เป็นผู้เพิ่มข้อมูล</option>
               <option value="BLACKLIST">⛔ งดส่งนิสิต (Blacklist / เฝ้าระวัง)</option>
               <option id="mc-status-opt-pending" value="PENDING_REVIEW" style="display:none;">⏳ ส่งกลับไปตารางรออนุมัติ / ยุบรวม (เฉพาะที่นิสิตเพิ่ม)</option>
             </select>

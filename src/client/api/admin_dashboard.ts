@@ -4558,11 +4558,16 @@ window.renderMasterCompanyTable = function() {
     tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400">ไม่พบรายการสถานประกอบการที่ค้นหา</td></tr>';
   } else {
     tbody.innerHTML = pageCompanies.map(c => {
-      let badge = `<span style="background:#DCFCE7; color:#166534; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:700;">✅ ยืนยันแล้ว (Master)</span>`;
+      // ป้ายเป็นกล่องก้อนเดียว (inline-flex): ตอนซูม/คอลัมน์แคบ ข้อความขึ้นบรรทัดใหม่ได้แต่พื้นหลังไม่ขาดเป็นท่อน
+      // radius 14px: บรรทัดเดียวยังเป็นแคปซูล, 2 บรรทัดเป็นสี่เหลี่ยมมุมมน / ไอคอนแยกช่องให้บรรทัดที่สองตรงแนวข้อความ
+      const statusBadge = (icon: string, label: string, colors: string) =>
+        `<span style="display:inline-flex; align-items:center; gap:5px; max-width:100%; padding:3px 10px; border-radius:14px; font-size:11.5px; font-weight:700; line-height:1.4; text-align:left; ${colors}">`
+        + `<span style="flex:none;">${icon}</span><span>${label}</span></span>`;
+      let badge = statusBadge('✅', 'ยืนยันแล้ว (Master)', 'background:#DCFCE7; color:#166534;');
       if (c.status === 'PARTNER') {
-        badge = `<span style="background:#EEF2FF; color:#3730A3; border:1px solid #C7D2FE; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:700;">⭐ พันธมิตรคณะ ICT</span>`;
+        badge = statusBadge('🏛️', 'คณะ ICT เป็นผู้เพิ่ม', 'background:#EEF2FF; color:#3730A3; border:1px solid #C7D2FE;');
       } else if (c.status === 'BLACKLIST') {
-        badge = `<span style="background:#FEE2E2; color:#991B1B; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:700;">⛔ งดส่งนิสิต (Blacklist)</span>`;
+        badge = statusBadge('⛔', 'งดส่งนิสิต (Blacklist)', 'background:#FEE2E2; color:#991B1B;');
       }
       const safeId = escapePendingCompanyHtml(c.id);
 
