@@ -1,6 +1,8 @@
 // =====================================================================
 // API: รุ่น (Cohort) & รอบออกฝึก (Internship Window) — หน้า "รอบฝึกงาน & ปลดล็อก" ของ Super Admin
-// mount ใต้ /api/admin (ผ่าน requireAdmin แล้ว) และจำกัดการแก้ไขเฉพาะ Staff / Admin
+// mount ใต้ /api/admin (ผ่าน requireAdmin แล้ว)
+// - สร้าง/ปิดรุ่น, เปิด/ปิดรอบ, เปิดต่อพิเศษ, จบรอบ: เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้น
+// - ตั้งนิสิตตกค้าง (RETEST) รายคน: Staff หรืออาจารย์ประจำวิชา (เฉพาะสาขาตัวเอง)
 // =====================================================================
 import express, { NextFunction, Request, Response } from "express";
 import prisma from "../db";
@@ -23,12 +25,27 @@ import {
 
 const router = express.Router();
 
-function requireStaffOrAdmin(req: Request, res: Response, next: NextFunction) {
+// การจัดการรุ่น / รอบออกฝึก เป็นหน้าที่ของเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) role เดียว
+// (อาจารย์ประจำวิชาดู/กรองรายชื่อตามรุ่นและรอบได้ แต่แก้รอบไม่ได้ — ดู docs/requirements/02_ROLE_MATRIX.md)
+function requireStaffOnly(req: Request, res: Response, next: NextFunction) {
+  const ok = Boolean((req as any).staff?.isStaff || req.session.user?.role === "STAFF");
+  if (!ok) {
+    return res.status(403).json({ success: false, message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่จัดการรุ่นและรอบออกฝึกได้" });
+  }
+  next();
+}
+
+// ตั้งตกค้างรายคน: เจ้าหน้าที่ หรืออาจารย์ประจำวิชา
+// (อาจารย์ประจำวิชาอาจมี role หลักเป็น ADVISOR แล้วมีสิทธิ์ Course Admin เพิ่ม จึงต้องดู flag isCourseAdmin ด้วย ไม่ใช่แค่ role ADMIN)
+function requireStaffOrCourseAdmin(req: Request, res: Response, next: NextFunction) {
   const ok = Boolean(
-    (req as any).staff?.isStaff || req.session.user?.role === "STAFF" || req.session.user?.role === "ADMIN"
+    (req as any).staff?.isStaff ||
+      req.session.user?.role === "STAFF" ||
+      req.session.user?.role === "ADMIN" ||
+      (req as any).staff?.isCourseAdmin
   );
   if (!ok) {
-    return res.status(403).json({ success: false, message: "เฉพาะเจ้าหน้าที่คณะ (Staff) หรือ Admin เท่านั้น" });
+    return res.status(403).json({ success: false, message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน หรืออาจารย์ประจำวิชาเท่านั้น" });
   }
   next();
 }
@@ -145,7 +162,7 @@ router.get("/super-admin/cohorts", async (_req: Request, res: Response) => {
 // ---------------------------------------------------------------------
 // POST /super-admin/cohorts — สร้างรุ่นใหม่ (เลือกคัดลอกโครงสร้างรอบจากรุ่นอื่น + เลื่อนปีอัตโนมัติ)
 // ---------------------------------------------------------------------
-router.post("/super-admin/cohorts", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.post("/super-admin/cohorts", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const code = String(req.body.code || "").trim();
     const copyFromId = req.body.copyFromCohortId ? parseInt(req.body.copyFromCohortId, 10) : null;
@@ -205,7 +222,7 @@ router.post("/super-admin/cohorts", requireStaffOrAdmin, async (req: Request, re
 //   body.dryRun = true -> คืนรายชื่อนิสิตที่ยังไม่ได้หนังสือส่งตัว (ใช้แสดงคำเตือนก่อนยืนยัน)
 //   ปิดจริง -> นิสิตที่ยังไม่ได้หนังสือส่งตัวถูกตั้งเป็น RETEST อัตโนมัติ
 // ---------------------------------------------------------------------
-router.post("/super-admin/cohorts/:id/archive", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.post("/super-admin/cohorts/:id/archive", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const cohort = await prisma.internshipCohort.findUnique({ where: { id } });
@@ -252,7 +269,7 @@ router.post("/super-admin/cohorts/:id/archive", requireStaffOrAdmin, async (req:
 });
 
 // POST /super-admin/cohorts/:id/restore — นำรุ่นที่ปิดแล้วกลับมาใช้งาน (สถานะ RETEST ของนิสิตไม่ถูกย้อนอัตโนมัติ)
-router.post("/super-admin/cohorts/:id/restore", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.post("/super-admin/cohorts/:id/restore", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const cohort = await prisma.internshipCohort.update({
@@ -267,7 +284,7 @@ router.post("/super-admin/cohorts/:id/restore", requireStaffOrAdmin, async (req:
 });
 
 // POST /super-admin/cohorts/:id/bulk — ปลดล็อก / ล็อก ทุกรอบออกฝึกในรุ่น
-router.post("/super-admin/cohorts/:id/bulk", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.post("/super-admin/cohorts/:id/bulk", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const action = req.body.action;
@@ -295,7 +312,7 @@ router.post("/super-admin/cohorts/:id/bulk", requireStaffOrAdmin, async (req: Re
 // ---------------------------------------------------------------------
 // POST /super-admin/windows — เพิ่ม/อัปเดตรอบออกฝึกให้หลายสาขาพร้อมกัน (ตาม term เดียวกัน)
 // ---------------------------------------------------------------------
-router.post("/super-admin/windows", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.post("/super-admin/windows", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const cohortId = parseInt(req.body.cohortId, 10);
     const majorCodes: string[] = Array.isArray(req.body.majorCodes) ? req.body.majorCodes : [];
@@ -337,7 +354,7 @@ router.post("/super-admin/windows", requireStaffOrAdmin, async (req: Request, re
 });
 
 // PATCH /super-admin/windows/:id — แก้ไขรอบออกฝึก (รวมปลดล็อก / เปิดต่อพิเศษ / จบรอบ)
-router.patch("/super-admin/windows/:id", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.patch("/super-admin/windows/:id", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const current = await prisma.internshipWindow.findUnique({ where: { id }, include: { cohort: true } });
@@ -375,7 +392,7 @@ router.patch("/super-admin/windows/:id", requireStaffOrAdmin, async (req: Reques
 });
 
 // DELETE /super-admin/windows/:id — ลบได้เฉพาะรอบที่ยังไม่มีนิสิตเลือก
-router.delete("/super-admin/windows/:id", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.delete("/super-admin/windows/:id", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const w = await prisma.internshipWindow.findUnique({
@@ -443,11 +460,22 @@ router.get("/super-admin/students/:id/cohort-info", async (req: Request, res: Re
   }
 });
 
-router.patch("/super-admin/students/:id/internship-type", requireStaffOrAdmin, async (req: Request, res: Response) => {
+router.patch("/super-admin/students/:id/internship-type", requireStaffOrCourseAdmin, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const type = req.body.internshipType === "RETEST" ? "RETEST" : req.body.internshipType === "NEW" ? "NEW" : null;
     if (!type) return res.status(400).json({ success: false, message: "internshipType ต้องเป็น NEW หรือ RETEST" });
+
+    // อาจารย์ประจำวิชา (ที่ไม่ใช่เจ้าหน้าที่) ตั้งได้เฉพาะนิสิตในสาขาของตัวเอง — ใช้ขอบเขตเดียวกับหน้ารายชื่อนิสิต
+    const isStaff = Boolean((req as any).staff?.isStaff || req.session.user?.role === "STAFF");
+    const deptCode = findMajor((req as any).staff?.department)?.code;
+    if (!isStaff && deptCode) {
+      const target = await prisma.student.findUnique({ where: { id }, select: { major: true } });
+      if (!target) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
+      if (findMajor(target.major)?.code !== deptCode) {
+        return res.status(403).json({ success: false, message: "ตั้งสถานะตกค้างได้เฉพาะนิสิตในสาขาของตัวเอง" });
+      }
+    }
     const student = await prisma.student.update({
       where: { id },
       data: { internshipType: type },

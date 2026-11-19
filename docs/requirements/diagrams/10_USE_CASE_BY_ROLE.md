@@ -8,7 +8,7 @@
 |---|:---:|:---:|---|
 | [นิสิต](#student) | 7 | 2 | [use_case_role_student.drawio](use_case_role_student.drawio) |
 | [อาจารย์ที่ปรึกษา](#advisor) | 5 | 1 | [use_case_role_advisor.drawio](use_case_role_advisor.drawio) |
-| [อาจารย์ประจำวิชา](#course-admin) | 6 | 1 | [use_case_role_course_admin.drawio](use_case_role_course_admin.drawio) |
+| [อาจารย์ประจำวิชา](#course-admin) | 5 | 1 | [use_case_role_course_admin.drawio](use_case_role_course_admin.drawio) |
 | [เจ้าหน้าที่ฝ่ายฝึกงาน](#staff) | 11 | 5 | [use_case_role_staff.drawio](use_case_role_staff.drawio) |
 | [ผู้บริหาร (PM) (\*)](#executive) | 1 (+3 ข้อเสนอ) | 1 | [use_case_role_executive.drawio](use_case_role_executive.drawio) |
 
@@ -75,18 +75,15 @@ flowchart LR
         UC02(["UC-02 ตรวจและอนุมัติ CV"])
         UC04(["UC-04 อนุมัติชั่วโมงอบรม"])
         UC15(["UC-15 นำเข้ารายชื่อนิสิต / กำหนดที่ปรึกษา"])
-        UC05(["UC-05 สร้างรุ่นและเปิด/ปิดรอบออกฝึก"])
-        UC05X(["เปิดต่อพิเศษ"])
         UC12(["UC-12 ฝึกงานรอบที่ 2 / ตกค้าง"])
         UC13(["UC-13 ติดตามผ่าน Dashboard (*)"])
     end
-    A --- UC02 & UC04 & UC15 & UC05 & UC12 & UC13
-    UC05X -. "«extend»" .-> UC05
+    A --- UC02 & UC04 & UC15 & UC12 & UC13
     classDef red fill:#f8cecc,stroke:#b85450,stroke-width:2px
-    classDef sub fill:#f5f5f5,stroke:#999999
     class UC13 red
-    class UC05X sub
 ```
+
+> **รุ่นและรอบออกฝึก:** อาจารย์ประจำวิชา **ดูและกรองรายชื่อนิสิต** ตามรุ่น / ภาคเรียน / รอบออกฝึกได้อย่างเดียว — การสร้างรุ่นและเปิด/ปิดรอบ (UC-05) เป็นหน้าที่ของเจ้าหน้าที่ฝ่ายฝึกงานเท่านั้น (ยืนยัน 19 พ.ย. 2569)
 
 **ประเด็นที่ต้องเคาะ:** [OI-01](../04_OPEN_ISSUES.md#oi-01) เกณฑ์หรือข้อยกเว้นรายสาขา · [OI-03](../04_OPEN_ISSUES.md#oi-03) เห็นเฉพาะสาขาตัวเองหรือทั้งคณะ · [OI-14](../04_OPEN_ISSUES.md#oi-14) ใครเป็นผู้เปลี่ยนอาจารย์ที่ปรึกษา
 
