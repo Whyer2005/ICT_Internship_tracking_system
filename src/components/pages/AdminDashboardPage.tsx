@@ -189,7 +189,9 @@ const PAGE_STYLES: string[] = [`
     max-width: none !important;
     min-width: 0;
     margin: 0 !important;
-    padding: 32px clamp(22px, 3vw, 44px) 52px;
+    /* !important: กันไม่ให้ .main-content { padding: 0 20px !important } ใน modern-ict.css ทับ
+       ระยะด้านข้างเท่าหน้านิสิต (status-all) · ด้านบน 24px เท่ากันทุกแท็บ */
+    padding: 24px clamp(22px, 3vw, 44px) 52px !important;
     box-sizing: border-box;
   }
 
@@ -288,7 +290,7 @@ const PAGE_STYLES: string[] = [`
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 18px;
     margin-bottom: 24px;
-    margin-top: 24px;
+    margin-top: 0; /* ระยะด้านบนมาจาก padding ของ .admin-main แล้ว */
   }
 
   #admin-dashboard .admin-summary-card {
@@ -574,7 +576,7 @@ const PAGE_STYLES: string[] = [`
     }
 
     #admin-dashboard .admin-main {
-      padding: 20px 14px 32px;
+      padding: 20px 14px 32px !important;
     }
   }
 

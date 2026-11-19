@@ -5499,7 +5499,117 @@ function renderArchiveHistoryTable() {
   `).join('');
 }
 
+// ===== คำตอบ Checklist ใน Archive: แสดงเป็น Checklist จริง (แยกหมวด + ✓/✗ + ข้อความคำถาม) =====
+// Archive เก็บ snapshot เป็น [{ itemId, description, checked, detail }] แต่ไม่มีชื่อหมวด
+// จึงหาหมวดจาก itemId ผ่าน /api/admin/checklist-versions (ทุกเวอร์ชัน เพราะ Archive เก่าอาจใช้เวอร์ชันก่อน)
+type ArchivedChecklistAnswer = { itemId?: number; description: string; checked: boolean; detail?: string };
+let archiveItemSectionMap: Map<number, { secKey: string; title: string; secOrder: number; itemOrder: number }> | null = null;
+let archiveItemSectionMapLoading: Promise<void> | null = null;
+
+function loadArchiveItemSectionMap(): Promise<void> {
+  if (archiveItemSectionMap) return Promise.resolve();
+  if (!archiveItemSectionMapLoading) {
+    archiveItemSectionMapLoading = fetch('/api/admin/checklist-versions')
+      .then((res) => res.json())
+      .then((data) => {
+        const map = new Map<number, { secKey: string; title: string; secOrder: number; itemOrder: number }>();
+        (data?.versions || []).forEach((v: any) => {
+          (v.sections || []).forEach((sec: any) => {
+            (sec.items || []).forEach((it: any) => {
+              map.set(Number(it.id), { secKey: `${v.id}-${sec.id}`, title: String(sec.title || ''), secOrder: Number(sec.order) || 0, itemOrder: Number(it.order) || 0 });
+            });
+          });
+        });
+        archiveItemSectionMap = map;
+      })
+      .catch(() => {
+        archiveItemSectionMap = new Map(); // โหลดไม่ได้ -> แสดงแบบรายการเดียวไม่แยกหมวด
+      });
+  }
+  return archiveItemSectionMapLoading;
+}
+
+function normalizeArchivedAnswers(raw: any): ArchivedChecklistAnswer[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((x: any) => ({
+      itemId: x?.itemId != null ? Number(x.itemId) : undefined,
+      description: String(x?.description || x?.text || ''),
+      checked: Boolean(x?.checked),
+      detail: String(x?.detail || ''),
+    }));
+  }
+  // รูปแบบเก่า: object { index: { checked, text } }
+  return Object.entries(raw).map(([k, v]: [string, any]) => ({
+    description: `ข้อที่ ${Number(k) + 1}`,
+    checked: Boolean(v?.checked),
+    detail: String(v?.text || ''),
+  }));
+}
+
+function renderArchivedChecklistAnswers(raw: any): string {
+  const answers = normalizeArchivedAnswers(raw);
+  if (answers.length === 0) return '';
+
+  const passed = answers.filter((x) => x.checked).length;
+  const allPass = passed === answers.length;
+
+  // จัดกลุ่มตามหมวด (ถ้ารู้หมวด) เรียงตามลำดับหมวด/ข้อ
+  const groups: { key: string; title: string; order: number; items: (ArchivedChecklistAnswer & { o: number })[] }[] = [];
+  answers.forEach((ans, i) => {
+    const info = ans.itemId != null ? archiveItemSectionMap?.get(ans.itemId) : undefined;
+    const key = info ? info.secKey : '__none__';
+    let g = groups.find((x) => x.key === key);
+    if (!g) {
+      g = { key, title: info ? info.title : '', order: info ? info.secOrder : 9999, items: [] };
+      groups.push(g);
+    }
+    g.items.push({ ...ans, o: info ? info.itemOrder : 1000 + i });
+  });
+  groups.sort((a, b) => a.order - b.order);
+  groups.forEach((g) => g.items.sort((a, b) => a.o - b.o));
+  const showHeaders = groups.some((g) => g.title);
+
+  const row = (ans: ArchivedChecklistAnswer) => `
+    <div style="display:flex; align-items:flex-start; gap:8px; padding:7px 4px; border-bottom:1px solid #F1F5F9;">
+      <span class="material-icons" aria-hidden="true" style="flex:none; font-size:19px; margin-top:1px; color:${ans.checked ? '#16A34A' : '#DC2626'};">${ans.checked ? 'check_box' : 'disabled_by_default'}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12.5px; color:#1E293B; line-height:1.55;">${escapeHtmlText(ans.description || '-')}</div>
+        ${ans.detail ? `<div style="font-size:11.5px; color:#2563EB; margin-top:2px;">คำตอบ/หมายเหตุของนิสิต: ${escapeHtmlText(ans.detail)}</div>` : ''}
+      </div>
+      <span style="flex:none; font-size:11px; font-weight:700; padding:1px 8px; border-radius:10px; ${ans.checked ? 'background:#DCFCE7; color:#166534;' : 'background:#FEE2E2; color:#991B1B;'}">${ans.checked ? 'ผ่าน' : 'ไม่ผ่าน'}</span>
+    </div>`;
+
+  return `
+    <details style="margin-top:10px; font-size:12px;">
+      <summary style="cursor:pointer; color:#4F46E5; font-weight:700; user-select:none;">
+        ดูคำตอบ Checklist ในรอบนี้
+        <span style="margin-left:6px; font-size:11px; font-weight:700; padding:1px 8px; border-radius:10px; ${allPass ? 'background:#DCFCE7; color:#166534;' : 'background:#FEF3C7; color:#92400E;'}">ผ่าน ${passed}/${answers.length} ข้อ</span>
+      </summary>
+      <div style="margin-top:8px; padding:6px 12px 10px; background:white; border-radius:10px; border:1px solid #E2E8F0; max-height:380px; overflow-y:auto;">
+        ${groups.map((g) => {
+          const gp = g.items.filter((x) => x.checked).length;
+          return `
+            ${showHeaders ? `
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:10px; padding:6px 8px; background:#EEF2FF; border-radius:8px;">
+                <span style="font-size:12.5px; font-weight:800; color:#3730A3;">${escapeHtmlText(g.title || 'ข้ออื่น ๆ')}</span>
+                <span style="flex:none; font-size:11px; color:#4338CA; font-weight:700;">${gp}/${g.items.length}</span>
+              </div>` : ''}
+            ${g.items.map(row).join('')}
+          `;
+        }).join('')}
+      </div>
+    </details>`;
+}
+
 window.openStudentArchiveModal = function(studentId: number) {
+  // โหลดชื่อหมวด Checklist ครั้งแรก แล้ววาดใหม่เมื่อได้ข้อมูล (ระหว่างรอแสดงแบบไม่แยกหมวดไปก่อน)
+  if (!archiveItemSectionMap) {
+    loadArchiveItemSectionMap().then(() => {
+      const m = document.getElementById('student-archive-modal');
+      if (m && m.style.display !== 'none') window.openStudentArchiveModal(studentId);
+    });
+  }
   const modal = document.getElementById('student-archive-modal');
   const bodyEl = document.getElementById('student-archive-modal-body');
   const titleEl = document.getElementById('student-archive-modal-title');
@@ -5589,20 +5699,7 @@ window.openStudentArchiveModal = function(studentId: number) {
                 </div>
               ` : ''}
 
-              ${a.answers && Object.keys(a.answers).length > 0 ? `
-                <details style="margin-top:10px; font-size:12px;">
-                  <summary style="cursor:pointer; color:#4F46E5; font-weight:600; user-select:none;">
-                    ดูรายละเอียดคำตอบ Checklist ในรอบนี้ (${Object.keys(a.answers).length} ข้อ)
-                  </summary>
-                  <div style="margin-top:8px; padding:10px; background:white; border-radius:8px; border:1px solid #E2E8F0; max-height:200px; overflow-y:auto;">
-                    <ul style="margin:0; padding-left:18px; color:#334155; line-height:1.6;">
-                      ${Object.entries(a.answers).map(([k, v]: [string, any]) => `
-                        <li>ข้อที่ ${k}: <strong>${v.checked ? '✓ ผ่าน' : '✗ ไม่ผ่าน'}</strong> ${v.text ? `(${escapeHtmlText(v.text)})` : ''}</li>
-                      `).join('')}
-                    </ul>
-                  </div>
-                </details>
-              ` : ''}
+              ${renderArchivedChecklistAnswers(a.answers)}
             </div>
           `;
         }).join('')}
