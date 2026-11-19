@@ -216,6 +216,114 @@ type UrlMode = "push" | "replace" | null;
     }
   }
 
+  // ให้ sidebar sticky อยู่ใต้ header ตามความสูงจริง
+  const shell = document.querySelector<HTMLElement>(".status-all-shell");
+  const headerEl = document.getElementById("header-placeholder");
+  if (shell && headerEl) {
+    const syncHeaderHeight = () => {
+      shell.style.setProperty("--status-header-height", `${headerEl.offsetHeight || 70}px`);
+    };
+    syncHeaderHeight();
+    if (window.ResizeObserver) new ResizeObserver(syncHeaderHeight).observe(headerEl);
+  }
+
+  // มือถือ/แท็บเล็ต (≤900px): sidebar เป็นลิ้นชักเลื่อนจากซ้าย — ปิดอยู่จะเห็นแถบจับ (เส้น ๆ) ที่ขอบซ้าย
+  // คืน { close } ให้ตัวจัดการคลิกของ nav ปิดลิ้นชักก่อนสลับแท็บ
+  function createStatusDrawer(shellEl: HTMLElement, sidebar: HTMLElement): { close: () => void } {
+    const drawerMq = window.matchMedia("(max-width: 900px)");
+    const root = document.documentElement;
+    sidebar.id = sidebar.id || "status-all-sidebar";
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "status-drawer-handle";
+    handle.setAttribute("aria-label", "เปิดเมนูหมวดหมู่");
+    handle.setAttribute("aria-controls", sidebar.id);
+    handle.setAttribute("aria-expanded", "false");
+    handle.innerHTML = "<span></span><span></span>";
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "status-drawer-backdrop";
+    backdrop.setAttribute("aria-hidden", "true");
+    shellEl.append(handle, backdrop);
+
+    const isOpen = () => shellEl.classList.contains("is-drawer-open");
+
+    // ล็อกการเลื่อนหน้าด้วย class บน <html> (แยกจาก body.style.overflow ที่ modal อื่นใช้ → ไม่ทับ/ปลดล็อกกันเอง)
+    const setDrawer = (open: boolean) => {
+      if (open === isOpen()) return;
+      if (open && !drawerMq.matches) return;
+      shellEl.classList.toggle("is-drawer-open", open);
+      root.classList.toggle("status-drawer-scroll-lock", open);
+      handle.setAttribute("aria-expanded", String(open));
+      if (open) {
+        nav!.querySelector<HTMLElement>('.status-nav-item[aria-current="page"]')?.focus({ preventScroll: true });
+      } else if (sidebar.contains(document.activeElement)) {
+        // โฟกัสค้างอยู่ในลิ้นชักที่ซ่อนแล้ว → ย้ายกลับไปที่แถบจับ
+        handle.focus({ preventScroll: true });
+      }
+    };
+
+    handle.addEventListener("click", () => setDrawer(true));
+    backdrop.addEventListener("click", () => setDrawer(false));
+
+    document.addEventListener("keydown", (e) => {
+      if (!isOpen()) return;
+      // มี overlay อื่น (lightbox/modal) อยู่บนลิ้นชักและถือโฟกัสอยู่ → ไม่ยุ่ง
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && !sidebar.contains(active)) return;
+      if (e.key === "Escape") {
+        setDrawer(false);
+        return;
+      }
+      // กัก Tab ไว้ในลิ้นชักระหว่างเปิด
+      if (e.key === "Tab") {
+        const items = Array.from(
+          sidebar.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        ).filter((el) => !el.hidden && el.offsetParent !== null);
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && (active === first || !sidebar.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !sidebar.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    });
+
+    // ขยายจอเกิน 900px ขณะลิ้นชักเปิด → ปิด แล้วกลับเป็น sidebar ปกติ (Safari < 14 มีแค่ addListener)
+    const onMqChange = () => {
+      if (!drawerMq.matches && isOpen()) setDrawer(false);
+    };
+    if (drawerMq.addEventListener) drawerMq.addEventListener("change", onMqChange);
+    else drawerMq.addListener(onMqChange);
+
+    // ปัดซ้ายบนลิ้นชักเพื่อปิด (ไม่มีปัดจากขอบจอเพื่อเปิด เพราะชนกับท่าทาง "ย้อนกลับ" ของ iOS/Android — เปิดด้วยแถบจับ)
+    let touchX: number | null = null;
+    let touchY = 0;
+    sidebar.addEventListener("touchstart", (e) => {
+      const t = e.touches[0];
+      touchX = isOpen() ? t.clientX : null;
+      touchY = t.clientY;
+    }, { passive: true });
+    sidebar.addEventListener("touchend", (e) => {
+      if (touchX === null) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchX;
+      const dy = Math.abs(t.clientY - touchY);
+      touchX = null;
+      if (dy < Math.abs(dx) && dx < -50) setDrawer(false);
+    }, { passive: true });
+
+    return { close: () => setDrawer(false) };
+  }
+
+  const sidebarEl = document.querySelector<HTMLElement>(".status-all-sidebar");
+  const drawer = shell && sidebarEl ? createStatusDrawer(shell, sidebarEl) : null;
+
   nav.addEventListener("click", (event) => {
     const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(".status-nav-item");
     if (!btn || btn.hidden) return;
@@ -224,6 +332,8 @@ type UrlMode = "push" | "replace" | null;
     // แท็บที่ล็อกยังเปิดดูเหตุผลได้ แต่ไม่เขียนลง URL
     viewingLockInfo = info.locked;
     pendingUrlTab = null;
+    // มือถือ: ปิดลิ้นชัก (ปลดล็อกการเลื่อน) ก่อน แล้วค่อยเลื่อนขึ้นบนสุด
+    drawer?.close();
     showTab(tab, { urlMode: info.locked ? null : "push", scroll: true });
   });
 
@@ -259,17 +369,6 @@ type UrlMode = "push" | "replace" | null;
       showTab(firstIncompleteTab(), { urlMode: "replace" });
     }
   });
-
-  // ให้ sidebar sticky อยู่ใต้ header ตามความสูงจริง
-  const shell = document.querySelector<HTMLElement>(".status-all-shell");
-  const headerEl = document.getElementById("header-placeholder");
-  if (shell && headerEl) {
-    const syncHeaderHeight = () => {
-      shell.style.setProperty("--status-header-height", `${headerEl.offsetHeight || 70}px`);
-    };
-    syncHeaderHeight();
-    if (window.ResizeObserver) new ResizeObserver(syncHeaderHeight).observe(headerEl);
-  }
 
   ["prof-phone", "prof-lineId"].forEach((id) => {
     const input = document.getElementById(id);

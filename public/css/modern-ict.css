@@ -600,6 +600,28 @@ body {
     padding: 10px 14px !important;
     border-top: none !important;
   }
+  /* ออกจากระบบย้ายเข้าเมนู 3 ขีด เฉพาะเมื่อ header.js ผูกเมนูสำเร็จ (class .has-menu-logout)
+     หน้าอาจารย์/เจ้าหน้าที่ไม่มีเมนู หรือ script พัง → ยังเห็นปุ่มขวาบน */
+  .ict-persistent-topbar.has-menu-logout .ict-topbar-center.header-nav .nav-link.nav-logout {
+    display: flex !important;
+    margin-top: 4px;
+    padding-top: 12px !important;
+    border-top: 1px solid #F1F5F9 !important;
+    border-radius: 0 0 10px 10px;
+    color: #DC2626 !important;
+    font-weight: 600;
+  }
+  .ict-persistent-topbar.has-menu-logout .ict-topbar-center.header-nav .nav-link.nav-logout:hover {
+    background: #FEF2F2 !important;
+  }
+  .ict-persistent-topbar.has-menu-logout .ict-role-switcher-wrap .ict-logout-btn {
+    display: none !important;
+  }
+}
+
+/* จอใหญ่: เมนูอยู่แถวบน ใช้ปุ่มออกจากระบบขวาบนแทน */
+.ict-topbar-center.header-nav .nav-link.nav-logout {
+  display: none;
 }
 
 @media (max-width: 700px) {

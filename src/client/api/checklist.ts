@@ -135,8 +135,9 @@ function companyMapPinHtml(index, plc) {
 }
 
 function pinStatusInner(index, lat, lng) {
-  const la = parseFloat(lat), ln = parseFloat(lng);
-  if (!Number.isFinite(la) || !Number.isFinite(ln)) return '';
+  const c = window.IctCompanyMap.coords(lat, lng);
+  if (!c) return '';
+  const la = c.lat, ln = c.lng;
   return `<span class="material-icons" aria-hidden="true">push_pin</span>
     <span>ปักหมุดแล้ว (${la.toFixed(5)}, ${ln.toFixed(5)})</span>
     <a href="${escapeHtml(buildCompanyMapUrl('', la, ln))}" target="_blank" rel="noopener noreferrer">ดูใน Google Maps</a>
@@ -171,8 +172,8 @@ window.onCompanyAddressInput = function(index) {
 // พิกัดที่ส่งไปบันทึก (null = ไม่ได้ปักหมุด)
 function getCompanyPin(index) {
   const btn = document.getElementById(`company-map-btn-${index}`);
-  const la = parseFloat(btn?.dataset.lat), ln = parseFloat(btn?.dataset.lng);
-  return Number.isFinite(la) && Number.isFinite(ln) ? { latitude: la, longitude: ln } : { latitude: null, longitude: null };
+  const c = window.IctCompanyMap.coords(btn?.dataset.lat, btn?.dataset.lng);
+  return c ? { latitude: c.lat, longitude: c.lng } : { latitude: null, longitude: null };
 }
 
 window.updateCompanyMapBtn = function(index) {

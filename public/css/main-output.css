@@ -2548,44 +2548,95 @@
     padding: 10px;
   }
 }
+.status-drawer-handle, .status-drawer-backdrop {
+  display: none;
+}
+html.status-drawer-scroll-lock, html.status-drawer-scroll-lock body {
+  overflow: hidden;
+}
 @media (max-width: 900px) {
   .status-all-shell {
     padding-left: 0;
   }
   .status-all-sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    min-height: 0;
-    overflow: visible;
-    border-right: 0;
-    border-bottom: 1px solid #e2e8f0;
+    top: 0;
+    bottom: 0;
+    z-index: 1001;
+    width: min(360px, 84%);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.28s ease, visibility 0s linear 0.28s, box-shadow 0.28s ease;
+    border-right: 1px solid #e2e8f0;
+    overscroll-behavior: contain;
   }
-  .status-brand {
-    min-height: 62px;
-    padding: 8px 16px;
+  .status-all-shell.is-drawer-open .status-all-sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.28s ease, visibility 0s, box-shadow 0.28s ease;
+    box-shadow: 12px 0 32px -12px rgba(15, 23, 42, 0.35);
   }
-  .status-brand-mark {
-    width: 36px;
-    height: 36px;
+  .status-drawer-handle {
+    position: fixed;
+    top: 50%;
+    left: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 22px;
+    height: 76px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 1px solid #e2e8f0;
+    border-left: 0;
+    border-radius: 0 14px 14px 0;
+    background: #fff;
+    box-shadow: 4px 0 14px -6px rgba(15, 23, 42, 0.3);
+    cursor: pointer;
+    transition: width 0.15s ease, background 0.15s ease, opacity 0.2s ease;
   }
-  .status-nav-heading, .status-nav-reason, .status-sidebar-note {
-    display: none !important;
+  .status-drawer-handle span {
+    display: block;
+    width: 3px;
+    height: 30px;
+    border-radius: 999px;
+    background: #94a3b8;
   }
-  .status-nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 8px 12px;
-    scrollbar-width: thin;
+  .status-drawer-handle:hover, .status-drawer-handle:focus-visible {
+    width: 26px;
+    background: #eef2ff;
+    outline: none;
   }
-  .status-nav-item {
-    width: auto;
-    min-width: max-content;
-    min-height: 46px;
-    font-size: 15px;
+  .status-drawer-handle:hover span, .status-drawer-handle:focus-visible span {
+    background: #4338ca;
+  }
+  .status-all-shell.is-drawer-open .status-drawer-handle {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .status-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: block;
+    background: rgba(15, 23, 42, 0.45);
+    touch-action: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
+  }
+  .status-all-shell.is-drawer-open .status-drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
   }
   .student-scale .status-all-shell .main-content.status-all-main, .status-all-shell .main-content.status-all-main {
-    padding: 20px 14px 32px !important;
+    padding: 20px 14px 32px 26px !important;
+  }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .status-all-sidebar, .status-drawer-backdrop {
+    transition: none !important;
   }
 }
 .cv-doc {

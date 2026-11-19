@@ -41,6 +41,7 @@ function initPersistentHeader(templateUrl) {
                     if (!headerNav.contains(e.target) && !menuToggle.contains(e.target)) setMenuOpen(false);
                 });
             }
+            const menuWired = Boolean(menuToggle && headerNav && headerNav.isConnected);
 
             fetch('/auth/me')
                 .then(r => r.json())
@@ -90,6 +91,9 @@ function initPersistentHeader(templateUrl) {
                     const subEl = document.getElementById('ict-topbar-user-sub');
 
                     if (role === 'STUDENT') {
+                        // นิสิตที่ล็อกอินแล้ว + เมนู 3 ขีดพร้อมใช้ → จอเล็กย้ายปุ่มออกจากระบบเข้าไปในเมนู
+                        // (ดู .has-menu-logout ใน modern-ict.css) ยังไม่ล็อกอิน/เช็คสิทธิ์ไม่สำเร็จ/script พัง → ปุ่มขวาบนยังแสดง
+                        if (menuWired) document.querySelector('.ict-persistent-topbar')?.classList.add('has-menu-logout');
                         if (avatarEl) avatarEl.className = 'ict-role-avatar role-student';
                         if (avatarIconEl) avatarIconEl.textContent = 'school';
                         if (rolePillEl) {
