@@ -255,12 +255,28 @@ initPersistentHeader('/components/header.html');
 // Real-time refresh (polling) — แทน Socket.io เดิม
 // ==========================================
 (function setupRealtime() {
-  const POLL_INTERVAL_MS = 15000;
+  const POLL_INTERVAL_MS = 3 * 60 * 1000; // 3 นาที (ลดการดึงข้อมูลซ้ำและประหยัด Network Transfer ของ DB)
+  const VISIBILITY_COOLDOWN_MS = 30 * 1000; // กันยิงซ้ำถี่เมื่อสลับแท็บไปมาภายใน 30 วินาที
 
   if (window.__appRealtimePolling) return;
   window.__appRealtimePolling = true;
 
+  let lastRefreshAt = Date.now();
+
+  const triggerRefresh = (source) => {
+    if (document.hidden) return;
+    lastRefreshAt = Date.now();
+    window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { polled: true, source } }));
+  };
+
   setInterval(() => {
-    window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { polled: true } }));
+    if (document.hidden) return;
+    triggerRefresh('interval');
   }, POLL_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - lastRefreshAt >= VISIBILITY_COOLDOWN_MS) {
+      triggerRefresh('visibility');
+    }
+  });
 })();

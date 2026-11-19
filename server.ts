@@ -30,6 +30,8 @@ app.use(
       pool: new Pool({ connectionString: process.env.DATABASE_URL }),
       tableName: "session", // pgSession จะสร้างตารางนี้ให้เองอัตโนมัติ (createTableIfMissing)
       createTableIfMissing: true,
+      disableTouch: true, // ลดการยิง UPDATE ตาราง session ใน Postgres ทุกๆ HTTP request
+      pruneSessionInterval: false, // ไม่รัน timer พื้นหลังปลุก Neon compute ทุก 15 นาทีตอนไม่มีคนใช้
     }),
     secret: process.env.SESSION_SECRET || "se_internship_secret_key",
     resave: false,

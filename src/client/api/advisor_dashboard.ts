@@ -1063,7 +1063,8 @@ window.submitBatchStatus = async function() {
 // เริ่มโหลด
 initAdvisorDashboard();
 
-// ⚡ เมื่อมีสัญญาณ Real-time จาก Socket.io ให้อัปเดต Dashboard อาจารย์ที่ปรึกษาทันที
+// ⚡ เมื่อมีสัญญาณ Real-time / Polling ให้อัปเดตเฉพาะข้อมูลสรุปและตารางนิสิต (ไม่ต้องโหลด /auth/me และ dropdown limit=9999 ซ้ำ)
 window.addEventListener('app:data-updated', () => {
-  initAdvisorDashboard();
+  loadDashboardSummary();
+  loadStudents();
 });
