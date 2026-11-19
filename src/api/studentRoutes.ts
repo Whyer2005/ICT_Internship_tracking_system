@@ -4,6 +4,7 @@ import path from "path";
 import prisma from "../db";
 import requireLogin from "../auth/requireLogin";
 import { uploadToCloudinary } from "../utils/cloudinary";
+import { findMajor, ICT_DEGREES } from "../utils/majors";
 import {
   getInternshipLock,
   getStudentWindowEligibility,
@@ -66,6 +67,7 @@ async function getStudentByUserId(userId: number) {
         },
       },
       placement: true,
+      internshipWindow: { select: { internEndDate: true } }, // ช่วงฝึกงานบน Dashboard
     },
   });
 }
@@ -1647,15 +1649,10 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
       .filter((t) => t.skillType === "HARD")
       .reduce((sum, t) => sum + t.hours, 0);
 
-    // คำนวณสถานะการอบรมโดยรวม และดึงหมายเหตุปัญหาจากอาจารย์
+    // คำนวณสถานะการอบรมโดยรวม (หมายเหตุของอาจารย์อยู่ในแต่ละ record — Dashboard แสดงรายแถว)
     let trainingStatus = "PENDING";
-    let trainingNote = "";
 
     const hasRejected = student.trainingRecords.some((t) => t.status === "REJECTED");
-    const rejectedRecord = student.trainingRecords.find((t) => t.status === "REJECTED" && t.note);
-    if (rejectedRecord && rejectedRecord.note) {
-      trainingNote = rejectedRecord.note;
-    }
 
     if (approvedSoft >= 12 && approvedHard >= 18 && !hasRejected) {
       trainingStatus = "APPROVED";
@@ -1686,6 +1683,21 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
     const hasDispatchLetter = Boolean(docWf?.dispatchLetterIssued);
     const canCompleteRound1 = isPlacementApproved || hasDispatchLetter || roundState.isRound1Completed;
 
+    // Dashboard: ชื่อผู้ตรวจที่ฝึกงาน — reviewedById = User.id (ไม่ใช่ Staff.id)
+    // แสดงเฉพาะเมื่อผู้ตรวจเป็นอาจารย์ (เจ้าหน้าที่ที่อนุมัติผ่านการออกหนังสือส่งตัวไม่นับเป็นผู้ตรวจ → หน้าเว็บใช้อาจารย์ที่ปรึกษาแทน)
+    const reviewerStaff = student.placement?.reviewedById
+      ? await prisma.staff.findUnique({
+          where: { userId: student.placement.reviewedById },
+          select: { name: true, isAdvisor: true, isCourseAdmin: true, isSupervisor: true },
+        })
+      : null;
+    const placementReviewerName =
+      reviewerStaff && (reviewerStaff.isAdvisor || reviewerStaff.isCourseAdmin || reviewerStaff.isSupervisor)
+        ? reviewerStaff.name
+        : null;
+    // หาสาขา/หลักสูตรที่ server (ใช้ findMajor ตัวเดียวกับทั้งระบบ) → Dashboard ไม่ต้องจับคู่เอง
+    const majorInfo = findMajor(student.major);
+
     res.json({
       success: true,
       hasProfile: true,
@@ -1710,6 +1722,8 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
         profileImageUrl: student.profileImageUrl,
         stage: student.stage,
         advisor: student.advisor ? student.advisor.name : null,
+        majorName: majorInfo ? majorInfo.name : null,
+        degreeName: majorInfo ? ICT_DEGREES.find((d) => d.code === majorInfo.degreeCode)?.name || null : null,
       },
       cv: student.cv,
       trainings: {
@@ -1719,7 +1733,6 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
         approvedSoft,
         approvedHard,
         status: trainingStatus,
-        note: trainingNote,
       },
       companies: student.companies,
       approvedCompaniesCount: approvedCompanies.length,
@@ -1728,8 +1741,13 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
         ? {
             ...student.placement,
             isMatchedWithChecklist,
+            reviewerName: placementReviewerName,
           }
         : null,
+      // ช่วงฝึกงาน: วันสิ้นสุดจากรอบออกฝึกที่ผูกไว้ (วันเริ่มยังไม่มีแหล่งข้อมูล — รอ REG)
+      internshipPeriod: {
+        endDate: student.internshipWindow?.internEndDate || null,
+      },
       roundInfo: {
         currentRound: roundState.currentRound,
         currentTerm: roundState.currentTerm || defaultTerm,

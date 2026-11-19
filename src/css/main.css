@@ -614,7 +614,7 @@ select.input-field {
 
 /* =========================================================
    Student pages scale
-   ขยายสเกลหน้าฝั่งนิสิตให้เท่ากับการซูม browser 125%
+   ขยายสเกลหน้าฝั่งนิสิต — ค่าปัจจุบัน = ค่าเดิม × 0.9 (ให้ซูม browser 100% ได้หน้าตาเท่ากับที่เคยเห็นตอนซูม 90%)
    - wrapper .student-scale ถูกใส่โดย PageShell เฉพาะ pageKey ของนิสิต
    - ใช้ CSS zoom (layout คำนวณใหม่ตามขนาดที่ขยาย ไม่เกิด scrollbar เพี้ยนแบบ transform)
    - media query ยังอ้างอิงความกว้างจอจริง จึงสเกลเฉพาะจอที่กว้างพอให้พื้นที่หลังสเกล
@@ -628,14 +628,14 @@ select.input-field {
 
 @media (min-width: 1320px) {
   .student-scale {
-    --student-zoom: 1.1;
+    --student-zoom: 0.99; /* เดิม 1.1 */
     zoom: var(--student-zoom);
   }
 }
 
 @media (min-width: 1500px) {
   .student-scale {
-    --student-zoom: 1.25;
+    --student-zoom: 1.125; /* เดิม 1.25 */
   }
 }
 
@@ -2100,3 +2100,163 @@ body.trn-modal-open { overflow: hidden; }
 .dash-ckl--ok .dash-ckl-pill { background: #DCFCE7; color: #166534; border-color: #BBF7D0; }
 .dash-ckl--bad .dash-ckl-icon { background: #FEE2E2; color: #B91C1C; }
 .dash-ckl--bad .dash-ckl-pill { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
+
+/* ===== Student Dashboard: แถว CV (กระชับ) | การอบรม | บริษัท+Checklist (การ์ดแนวตั้ง) ===== */
+.dash-cv-col { width: 340px; max-width: 100%; }
+/* การ์ด CV ยืดเต็มความสูงแถว → กล่องตัวอย่างกินพื้นที่ที่เหลือทั้งหมด (ไม่เหลือช่องว่างใต้การ์ด) และรูป CV ขยายเต็มกล่อง */
+.dash-cv-col > .soft-card { display: flex; flex-direction: column; }
+.dash-cv-box { flex: 1 1 auto; height: auto; min-height: 340px; }
+.dash-cv-box #cv-preview-image { max-width: 100% !important; width: 100%; height: 100%; position: absolute; inset: 0; padding: 6px; box-sizing: border-box; border: 0 !important; }
+/* การอบรมกับบริษัทอยู่แถวเดียวกันเมื่อพื้นที่พอ ไม่พอ → บริษัทตกลงบรรทัดใหม่เต็มความกว้าง (grow 999 ให้ที่ว่างไปที่การอบรมเกือบทั้งหมด) */
+.dash-train-row { flex-wrap: wrap; }
+.dash-train-main { flex: 999 1 360px; min-width: 0; }
+.dash-company-col { flex: 1 1 400px; min-width: 0; }
+.dash-company--stack { height: 100%; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 14px; padding: 16px; }
+.dash-company--stack .dash-ckl { flex: none; width: auto; }
+.dash-company--stack .dash-company-divider { display: none; }
+.dash-company--stack .dash-company-main { flex: none; }
+.dash-company--stack .dash-company-chips { flex: none; max-width: none; }
+.dash-company--stack .dash-chip { max-width: 100%; }
+.dash-company--stack .dash-company-btn { width: 100%; justify-content: center; margin-top: auto; }
+
+@media (max-width: 767px) {
+  .dash-cv-col { width: 100%; }
+  .dash-cv-box { min-height: 420px; }
+}
+
+/* ===== Student Dashboard: แถบข้อมูลนิสิต 3 ช่อง (ข้อมูลนิสิต | ข้อมูลการศึกษา | ติดต่อ) ===== */
+.dash-info { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.85fr); border-bottom: 1px solid #f1f5f9; padding-bottom: 18px; }
+.dash-info-col { min-width: 0; padding: 2px 24px; }
+.dash-info-col:first-child { padding-left: 0; }
+.dash-info-col:last-child { padding-right: 0; }
+.dash-info-col + .dash-info-col { border-left: 1px solid #e2e8f0; }
+.dash-info-id { display: flex; align-items: center; gap: 16px; }
+.dash-info-id-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dash-info-name { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.35; color: #0f172a; overflow-wrap: anywhere; }
+.dash-info-name-en { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: #64748b; }
+.dash-info-name-en:empty { display: none; }
+.dash-info-line { margin: 4px 0 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 13px; color: #64748b; }
+.dash-info-line b { font-weight: 600; color: #334155; }
+.dash-info-line .material-icons { font-size: 16px; color: #94a3b8; }
+.dash-info-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 14px; font-weight: 700; color: #0f172a; }
+.dash-info-head > .material-icons { font-size: 18px; color: #4338ca; }
+.dash-info-reg { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 6px; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 11px; font-weight: 700; }
+.dash-info-reg .material-icons { font-size: 12px; }
+.dash-info-dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 13px; }
+.dash-info-dl dt { color: #94a3b8; font-weight: 500; }
+.dash-info-dl dd { margin: 0; color: #1e293b; font-weight: 500; overflow-wrap: anywhere; }
+.dash-info-contact { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #334155; }
+.dash-info-contact li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dash-info-contact li[hidden] { display: none; }
+.dash-info-contact .material-icons { flex: 0 0 auto; font-size: 16px; color: #94a3b8; }
+.dash-info-contact li > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-info-link { color: #1d4ed8; font-weight: 600; }
+.dash-info-period { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.dash-info-period li { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 13px; }
+.dash-info-period .material-icons { flex: 0 0 auto; font-size: 16px; color: #94a3b8; }
+.dash-info-period-label { flex: 0 0 auto; color: #94a3b8; }
+.dash-info-period b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: #4338ca; }
+
+@media (max-width: 1100px) {
+  .dash-info { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 16px; }
+  .dash-info-id { grid-column: 1 / -1; padding-right: 0; }
+  .dash-info-col:nth-child(2) { border-left: 0; padding-left: 0; }
+}
+
+@media (max-width: 640px) {
+  /* มือถือ: แต่ละหมวดเป็นการ์ดเล็กของตัวเอง อ่านง่าย แตะง่าย */
+  .dash-info { grid-template-columns: minmax(0, 1fr); row-gap: 12px; border-bottom: 0; padding-bottom: 4px; }
+  .dash-info-col { padding: 0; }
+  .dash-info-col + .dash-info-col { border-left: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+  .dash-info-id { padding-bottom: 4px; }
+  .dash-info-head { margin-bottom: 12px; font-size: 15px; }
+  .dash-info-head > .material-icons { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: #eef2ff; font-size: 18px; }
+  .dash-info-dl { grid-template-columns: 72px minmax(0, 1fr); gap: 0; font-size: 14px; }
+  .dash-info-dl dt, .dash-info-dl dd { padding: 8px 0; border-top: 1px solid #e2e8f0; }
+  .dash-info-dl dt:first-of-type, .dash-info-dl dd:first-of-type { border-top: 0; padding-top: 0; }
+  .dash-info-dl dd { font-weight: 600; }
+  .dash-info-contact { gap: 0; font-size: 14px; }
+  .dash-info-contact li { min-height: 40px; padding: 4px 0; border-top: 1px solid #e2e8f0; gap: 10px; }
+  .dash-info-contact li:first-child { border-top: 0; padding-top: 0; }
+  .dash-info-contact .material-icons { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #fff; border: 1px solid #e2e8f0; color: #64748b; font-size: 15px; }
+  .dash-info-period li { padding: 9px 12px; font-size: 14px; background: #fff; }
+}
+
+/* ===== Student Dashboard: สถานะการเข้าฝึกงาน (3 ขั้นตอน — ออกแบบใหม่) ===== */
+.dsp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.dsp-head-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.dsp-head-title h3 { margin: 0; font-size: 16px; font-weight: 800; color: #14532d; }
+.dsp-head-title span { font-size: 12.5px; color: #64748b; }
+.dsp-head-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.dsp-head-tags .current-step-tag, .dsp-head-tags .next-step-tag { padding: 4px 12px; font-size: 12px; }
+.next-step-tag--done { color: #1d4ed8; }
+.dsp-progress { height: 4px; margin: 10px 0 14px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+.dsp-progress-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.4s ease; }
+
+.dsp-steps { display: flex; align-items: stretch; gap: 6px; }
+.dsp-arrow { flex: 0 0 auto; align-self: center; font-size: 20px; color: #22c55e; }
+.dsp-step { position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1.5px solid #e2e8f0; border-radius: 16px; background: #fff; }
+.dsp-step--done { border-color: #bbf7d0; background: #f0fdf4; }
+.dsp-step--active { border-color: #fcd34d; background: #fffbeb; }
+.dsp-step--focus { border-width: 2px; box-shadow: 0 8px 22px -14px rgba(217, 119, 6, 0.55); }
+.dsp-step--done.dsp-step--focus { border-color: #22c55e; }
+.dsp-step--active.dsp-step--focus { border-color: #f59e0b; }
+.dsp-step-tab { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); padding: 1px 12px; border-radius: 999px; background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.dsp-step--active .dsp-step-tab { background: #f59e0b; }
+
+.dsp-step-num { flex: 0 0 auto; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 17px; font-weight: 800; }
+.dsp-step-num .material-icons { font-size: 22px; }
+.dsp-step--done .dsp-step-num { background: #22c55e; color: #fff; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18); }
+.dsp-step--active .dsp-step-num { background: #f59e0b; color: #fff; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18); }
+.dsp-step-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dsp-step-no { font-size: 12px; color: #94a3b8; }
+.dsp-step-when { font-weight: 600; color: #64748b; }
+.dsp-step--done .dsp-step-when { color: #15803d; }
+.dsp-step--active .dsp-step-when { color: #b45309; }
+.dsp-step-title { font-size: 16px; font-weight: 800; line-height: 1.3; color: #0f172a; }
+.dsp-step--todo .dsp-step-title { color: #64748b; }
+.dsp-step-sub { font-size: 13px; color: #475569; }
+
+.dsp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.dsp-mini { display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.dsp-mini .material-icons { font-size: 13px; }
+.dsp-mini--ok { background: #dcfce7; color: #15803d; }
+.dsp-reviewer { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: #334155; }
+.dsp-reviewer-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dsp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; font-size: 13px; color: #475569; }
+.dsp-foot-pos { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.dsp-foot-pos .material-icons { font-size: 18px; color: #94a3b8; }
+.dsp-foot-pos b { color: #0f172a; }
+.dsp-foot-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.dsp-chip { padding: 3px 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 12px; color: #64748b; }
+.dsp-chip b { color: #0f172a; }
+.dsp-foot-link { display: inline-flex; align-items: center; gap: 4px; color: #4338ca; font-weight: 700; text-decoration: none; }
+.dsp-foot-link .material-icons { font-size: 16px; }
+.dsp-foot-link:hover { text-decoration: underline; }
+
+/* จอกลาง: การ์ดเรียงลงมา (ลูกศรชี้ลง) */
+@media (max-width: 1100px) {
+  .dsp-steps { flex-direction: column; gap: 4px; }
+  .dsp-step { flex: none; }
+  .dsp-arrow { transform: rotate(90deg); }
+  .dsp-step--focus { margin-top: 8px; }
+}
+
+/* มือถือ: รายละเอียดของแต่ละขั้นลงไปอยู่ใต้ชื่อขั้น */
+@media (max-width: 560px) {
+  .dsp-step { padding: 14px; }
+  .dsp-foot-link { margin-left: auto; }
+}
+
+/* Dashboard: รายการอบรมที่ไม่ผ่าน + หมายเหตุอาจารย์ (ใต้ตารางการอบรม) */
+.trn-reject-notes { margin-top: 10px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 12px; background: #fef2f2; display: flex; flex-direction: column; gap: 6px; }
+.trn-reject-notes[hidden] { display: none; }
+.trn-reject-head { display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 700; color: #b91c1c; }
+.trn-reject-head .material-icons { font-size: 16px; }
+.trn-reject-item { display: flex; flex-direction: column; gap: 1px; padding-top: 6px; border-top: 1px dashed #fecaca; font-size: 12.5px; color: #7f1d1d; }
+.trn-reject-item b { font-weight: 700; color: #991b1b; overflow-wrap: anywhere; }
+.trn-reject-item span { overflow-wrap: anywhere; }
+
+/* Dashboard: แถวเกณฑ์ผ่าน + สรุปผลชั่วโมงอบรมรวม */
+.trn-criteria-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 12px; }

@@ -412,7 +412,8 @@ body {
 }
 
 #student-training-table .student-training-scroll {
-  max-height: 296px;
+  /* หัวตาราง 38 + 6 แถว × 44 + แถวรวม 38 = 340px (แสดง 6 รายการก่อนเลื่อน) */
+  max-height: 340px;
   overflow: auto;
 }
 
@@ -427,8 +428,14 @@ body {
 
 #student-training-table table {
   width: 100%;
-  min-width: 640px;
+  /* การ์ดการอบรมแคบลง (มีคอลัมน์บริษัทด้านขวา) → ให้ตารางพอดีการ์ด ไม่ต้องเลื่อนแนวนอนบนจอใหญ่ */
+  min-width: 500px;
   table-layout: fixed;
+}
+
+/* คอลัมน์สถานะรายการ: ป้ายแบบเดียวกับหน้า status-all ไม่ถูกตัดด้วย ellipsis */
+#student-training-table td:last-child .trn-status {
+  padding-inline: 8px;
 }
 
 #student-training-table th,

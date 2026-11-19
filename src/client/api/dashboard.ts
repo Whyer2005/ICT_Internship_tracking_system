@@ -1,11 +1,17 @@
 // @ts-nocheck
 // dashboard.js - ดึงข้อมูลสรุปนิสิตแสดงใน Dashboard
 
+// 3 ขั้นตอนของการ์ดสถานะ (ระดับไฟล์ — ใช้ได้ทั้งกรณีมี/ไม่มีโปรไฟล์; ใช้ var เพราะสคริปต์อาจถูกโหลดซ้ำตอนเปลี่ยนหน้าแบบ SPA)
+var stageCards = [
+  { cardId: 'stage-prepare',          tagLabel: 'เตรียมเอกสาร',         nextLabel: 'รออนุมัติที่ฝึกงาน' },
+  { cardId: 'stage-waiting-approve',  tagLabel: 'รออนุมัติที่ฝึกงาน',   nextLabel: 'อนุมัติแล้ว' },
+  { cardId: 'stage-approved',         tagLabel: 'อนุมัติแล้ว',          nextLabel: null },
+];
+
 // แถบ "ข้อมูลบริษัทที่สมัครผ่าน" (แนวนอน ใต้ CV / การอบรม)
 function renderDashboardCompany(plc) {
   const box = document.getElementById('company-box');
   if (!box) return;
-  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const clean = (v) => {
     const s = String(v || '').trim();
     return s && s !== '-' ? s : '';
@@ -13,17 +19,17 @@ function renderDashboardCompany(plc) {
   box.classList.remove('dash-company--empty');
 
   const name = clean(plc.companyNameTh) || '-';
-  setText('comp-name', name);
+  setDashText('comp-name', name);
 
   // ที่อยู่ใต้ชื่อบริษัท: ยังไม่มี/ค่ารอตรวจสอบ → ป้ายสีเหลือง "รอตรวจสอบที่อยู่จากนิสิต" / มีแล้ว → แสดงที่อยู่เต็ม
   const address = clean(plc.companyAddress);
   const hasAddress = window.IctCompanyMap.hasRealAddress(address); // helper กลาง: src/client/components/company_map.ts
   const addrLine = document.getElementById('comp-addr-line');
   if (addrLine) addrLine.className = `dash-company-addr${hasAddress ? '' : ' dash-company-addr--warn'}`;
-  setText('comp-addr', hasAddress ? address : 'รอตรวจสอบที่อยู่จากนิสิต');
-  setText('comp-prov', clean(plc.province) && !/^รอระบุ/.test(plc.province) ? plc.province : '-');
-  setText('comp-phone', clean(plc.companyPhone1) || '-');
-  setText('comp-email', clean(plc.companyEmail) || '-');
+  setDashText('comp-addr', hasAddress ? address : 'รอตรวจสอบที่อยู่จากนิสิต');
+  setDashText('comp-prov', clean(plc.province) && !/^รอระบุ/.test(plc.province) ? plc.province : '-');
+  setDashText('comp-phone', clean(plc.companyPhone1) || '-');
+  setDashText('comp-email', clean(plc.companyEmail) || '-');
   const details = document.getElementById('company-details');
   if (details) details.style.display = 'flex';
 
@@ -35,6 +41,67 @@ function renderDashboardCompany(plc) {
     btn.removeAttribute('aria-disabled');
     btn.title = 'เปิดตำแหน่งสถานประกอบการใน Google Maps (แท็บใหม่)';
   }
+}
+
+// escape ข้อความก่อนใส่ลง innerHTML (ใช้ทั้งไฟล์ — กัน XSS จากชื่อกิจกรรม/หมายเหตุ/ชื่อคน)
+function escapeDashHtml(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ตั้ง textContent ตาม id (ไม่มี element ก็ข้าม)
+function setDashText(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = v;
+}
+
+// วันที่แบบไทยสั้น เช่น "20 ม.ค. 2569"
+// dateOnly: ค่าแบบ @db.Date (เที่ยงคืน UTC) แสดงตาม UTC ไม่ให้คลาด 1 วัน / ค่า DateTime (createdAt, reviewedAt) แสดงตามเวลาเครื่อง
+function fmtDashDate(v, { dateOnly = false, empty = '—' } = {}) {
+  if (!v) return empty;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return empty;
+  return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', ...(dateOnly ? { timeZone: 'UTC' } : {}) });
+}
+
+// แถวบนของการ์ด "ข้อมูลและสถานะของนิสิต": ชื่ออังกฤษ / อาจารย์ที่ปรึกษา / ข้อมูลการศึกษา / ติดต่อ
+function renderDashboardStudentInfo(s, user) {
+  const clean = (v) => {
+    const t = String(v || '').trim();
+    return t && t !== '-' ? t : '';
+  };
+  const showRow = (rowId, textId, value) => {
+    const row = document.getElementById(rowId);
+    if (row) row.hidden = !value;
+    if (value) setDashText(textId, value);
+  };
+
+  setDashText('display-name-en', clean(s.nameEn).toUpperCase());
+  setDashText('display-advisor', clean(s.advisor) || '-');
+
+  // สาขา/หลักสูตรมาจาก server (findMajor ใน src/utils/majors.ts)
+  setDashText('display-faculty', clean(s.faculty).replace(/^คณะ\s*/, '') || '-');
+  setDashText('display-major', clean(s.majorName) || clean(s.major).replace(/^(สาขาวิชา|สาขา)\s*/, '') || '-');
+  // หลักสูตร: ค่าใน DB ก่อน ถ้าว่างใช้หลักสูตรของสาขา (เช่น "วิศวกรรมศาสตรบัณฑิต")
+  const curriculum = clean(s.curriculum) || clean(s.degreeName);
+  // ตัด "หลักสูตร" หน้า และ "สาขาวิชา..." ท้าย (สาขาแสดงอยู่บรรทัดบนแล้ว)
+  setDashText('display-curriculum', curriculum.replace(/^หลักสูตร\s*/, '').replace(/\s*สาขาวิชา.*$/, '') || '-');
+
+  setDashText('display-phone', clean(s.phone) || '-');
+  setDashText('display-email', clean(user && user.email) || '-');
+  showRow('display-line-row', 'display-line', clean(s.lineId));
+  showRow('display-facebook-row', 'display-facebook', clean(s.facebook));
+}
+
+// ช่วงฝึกงาน: มีวันที่ → แสดงแบบไทย / ยังไม่มี → "ข้อมูลจาก REG" (วันเริ่มยังไม่มีแหล่งข้อมูล)
+function renderDashboardInternPeriod(period) {
+  const fmt = (v) => fmtDashDate(v, { dateOnly: true, empty: 'ข้อมูลจาก REG' });
+  setDashText('display-intern-start', fmt(period && period.startDate));
+  setDashText('display-intern-end', fmt(period && period.endDate));
 }
 
 // การ์ด Checklist (ซ้ายสุดของแถบบริษัท): ไอคอน/ป้ายสถานะ + จำนวนบริษัท
@@ -72,6 +139,7 @@ function loadDashboardData() {
       actionBtnText.textContent = 'เพิ่มข้อมูล';
       document.getElementById('display-name').textContent = data.user.username || data.user.email;
       document.getElementById('display-email').textContent = data.user.email || '-';
+      updateStageWithDetails(0, data); // ยังไม่มีโปรไฟล์ → แสดง 3 ขั้นตอน (อยู่ขั้นที่ 1)
       return;
     }
 
@@ -100,10 +168,8 @@ function loadDashboardData() {
     }
 
     document.getElementById('display-name').textContent = `${s.studentCode || ''} ${s.nameTh || data.user.username}`.trim();
-    document.getElementById('display-phone').textContent = s.phone || '-';
-    document.getElementById('display-email').textContent = data.user.email || '-';
-    document.getElementById('display-advisor').textContent = `อาจารย์ที่ปรึกษา: ${s.advisor || '-'}`;
-    document.getElementById('display-gpa').textContent = `GPA : ${s.gpa ? Number(s.gpa).toFixed(2) : '-.--'}`;
+    renderDashboardStudentInfo(s, data.user);
+    renderDashboardInternPeriod(data.internshipPeriod);
 
     if (s.profileImageUrl) {
       const img = document.getElementById('profile-img');
@@ -113,11 +179,6 @@ function loadDashboardData() {
     }
 
 // Stage Indicators — 3 ขั้นตอนใหม่: เตรียมเอกสาร → รออนุมัติที่ฝึกงาน → อนุมัติแล้ว
-const stageCards = [
-  { cardId: 'stage-prepare',          tagLabel: 'เตรียมเอกสาร',         nextLabel: 'รออนุมัติที่ฝึกงาน' },
-  { cardId: 'stage-waiting-approve',  tagLabel: 'รออนุมัติที่ฝึกงาน',   nextLabel: 'อนุมัติแล้ว' },
-  { cardId: 'stage-approved',         tagLabel: 'อนุมัติแล้ว',          nextLabel: null },
-];
 
 function computeCurrentStep(cvData, trainingsData, placementData, companiesData) {
   // ขั้น 3 สำเร็จ: placement ถูกอนุมัติแล้ว → ทุกการ์ดเขียวหมด
@@ -137,49 +198,6 @@ function computeCurrentStep(cvData, trainingsData, placementData, companiesData)
 
   // ขั้น 1: ยังอยู่ในขั้นเตรียมเอกสาร
   return 0;
-}
-
-function updateStageIndicator(currentIdx) {
-  // 1. รีเซ็ตทุกการ์ดก่อน
-  stageCards.forEach(cfg => {
-    const card = document.getElementById(cfg.cardId);
-    if (!card) return;
-    card.classList.remove('step-card--active', 'step-card--done');
-    card.querySelector('.step-num')?.classList.remove('step-num--active', 'step-num--done');
-    card.querySelector('.step-card-title')?.classList.remove('step-card-title--active', 'step-card-title--done');
-    card.querySelector('.step-card-sub')?.classList.remove('step-card-sub--active', 'step-card-sub--done');
-  });
-
-  // ถ้าครบทุกขั้นตอนแล้ว (currentIdx >= จำนวนขั้น) → ทุกการ์ดเขียวหมด
-  const allDone = currentIdx >= stageCards.length;
-
-  // 2. ขั้นที่ผ่านไปแล้ว → done (สีเขียว)
-  const doneUpTo = allDone ? stageCards.length : currentIdx;
-  for (let i = 0; i < doneUpTo; i++) {
-    const card = document.getElementById(stageCards[i].cardId);
-    if (!card) continue;
-    card.classList.add('step-card--done');
-    card.querySelector('.step-num')?.classList.add('step-num--done');
-    card.querySelector('.step-card-title')?.classList.add('step-card-title--done');
-    card.querySelector('.step-card-sub')?.classList.add('step-card-sub--done');
-    // เปลี่ยน icon เป็น check
-    const icon = card.querySelector('.material-icons');
-    if (icon) { icon.textContent = 'check_circle'; icon.className = 'material-icons text-green-500'; icon.style.fontSize = '16px'; }
-  }
-
-  // 3. ขั้นปัจจุบัน → active (สีเหลือง) — เฉพาะกรณียังไม่ครบ
-  if (!allDone) {
-    const activeCfg = stageCards[currentIdx];
-    const activeCard = document.getElementById(activeCfg.cardId);
-    if (activeCard) {
-      activeCard.classList.add('step-card--active');
-      activeCard.querySelector('.step-num')?.classList.add('step-num--active');
-      activeCard.querySelector('.step-card-title')?.classList.add('step-card-title--active');
-      activeCard.querySelector('.step-card-sub')?.classList.add('step-card-sub--active');
-    }
-  }
-
-  // 4-5 อัปเดตด้านนอก (ใน updateStageWithDetails)
 }
 
 // คำนวณ sub-task ย่อยที่ต้องทำ/เสร็จแล้ว ในขั้นที่ 1 (เตรียมเอกสาร)
@@ -216,26 +234,104 @@ function getSubTaskLabels(subTasks, currentIdx, allDone, placementData) {
   return { current: 'อนุมัติแล้ว', next: '✓ ครบทุกขั้นตอน' };
 }
 
-function updateStageWithDetails(currentIdx, cvData, trainingsData, companiesData, placementData) {
-  updateStageIndicator(currentIdx);
-
+function updateStageWithDetails(currentIdx, data) {
   const allDone = currentIdx >= stageCards.length;
-  const subTasks = computeSubTasks(cvData, trainingsData, companiesData);
-  const labels = getSubTaskLabels(subTasks, currentIdx, allDone, placementData);
+  const subTasks = computeSubTasks(data.cv, data.trainings, data.companies);
+  const labels = getSubTaskLabels(subTasks, currentIdx, allDone, data.placement);
 
   const currentLabel = document.getElementById('current-step-label');
-  if (currentLabel) currentLabel.textContent = `ขั้นตอนปัจจุบัน: ${labels.current}`;
+  if (currentLabel) {
+    currentLabel.textContent = `ขั้นตอนปัจจุบัน: ${labels.current}`;
+    // ครบทุกขั้นแล้วเหลือป้าย "ครบทุกขั้นตอน" ป้ายเดียว (ไม่รก)
+    const currentTag = currentLabel.closest('.current-step-tag');
+    if (currentTag) currentTag.style.display = allDone ? 'none' : '';
+  }
 
   const nextTag = document.getElementById('next-step-tag');
   const nextLabelEl = document.getElementById('next-step-label');
+  const nextIcon = document.getElementById('next-step-icon');
   if (nextTag && nextLabelEl) {
-    nextLabelEl.textContent = labels.next.startsWith('✓') ? labels.next : `ถัดไป: ${labels.next}`;
+    const finished = labels.next.startsWith('✓');
+    nextLabelEl.textContent = finished ? labels.next.replace(/^✓\s*/, '') : `ถัดไป: ${labels.next}`;
+    if (nextIcon) nextIcon.textContent = finished ? 'check' : 'arrow_forward';
+    nextTag.classList.toggle('next-step-tag--done', finished);
     nextTag.style.display = '';
   }
+
+  renderDashboardStepper(currentIdx, subTasks, data);
+}
+
+// การ์ด 3 ขั้นตอน (แบบเรียบ): เลขวงกลม | ขั้นที่ + สถานะ/วันที่ | ชื่อขั้น | รายละเอียดสั้น 1 บรรทัด
+function renderDashboardStepper(currentIdx, subTasks, data) {
+  const wrap = document.getElementById('stage-indicators');
+  if (!wrap) return;
+  const total = stageCards.length;
+  const allDone = currentIdx >= total;
+  const doneCount = allDone ? total : currentIdx;
+  const focusIdx = Math.min(currentIdx, total - 1); // การ์ดที่ติดป้าย "ขั้นตอนปัจจุบัน"
+  const esc = escapeDashHtml;
+  const fmtDate = (v) => fmtDashDate(v);
+  const plc = data.placement || null;
+  // ผู้ตรวจ: คนที่ตรวจที่ฝึกงานจริง (placement.reviewerName) ยังไม่มีคนตรวจ → แสดงอาจารย์ที่ปรึกษา
+  const reviewer = (plc && plc.reviewerName) || '';
+  const advisor = (data.student && data.student.advisor) || '';
+  const reviewerLabel = reviewer ? 'ผู้ตรวจ' : 'อาจารย์ที่ปรึกษา';
+  const reviewerName = reviewer || advisor;
+
+  // วันที่เสร็จของแต่ละขั้น: ขั้น 1 = วันส่งข้อมูลที่ฝึกงาน, ขั้น 2–3 = วันที่อาจารย์อนุมัติ
+  const approvedAt = plc && plc.status === 'APPROVED' ? plc.reviewedAt : null;
+  const doneAt = [plc && plc.createdAt, approvedAt, approvedAt];
+
+  // รายละเอียดสั้น 1 บรรทัดต่อขั้น (ไม่ซ้ำกับชื่อขั้น)
+  const detail = (i, state) => {
+    if (i === 0) {
+      return `<div class="dsp-chips">${subTasks.map((t) => `
+        <span class="dsp-mini ${t.done ? 'dsp-mini--ok' : ''}">${t.done ? '<span class="material-icons" aria-hidden="true">check</span>' : ''}${esc(t.name)}</span>`).join('')}</div>`;
+    }
+    if (i === 1) {
+      return reviewerName
+        ? `<div class="dsp-reviewer"><span class="dsp-reviewer-text">${reviewerLabel}: ${esc(reviewerName)}</span></div>`
+        : '<div class="dsp-reviewer"><span class="dsp-reviewer-text">อาจารย์ตรวจข้อมูลบริษัท</span></div>';
+    }
+    return `<div class="dsp-step-sub">${state === 'done' ? 'พร้อมออกฝึกงาน' : 'รออาจารย์อนุมัติที่ฝึกงาน'}</div>`;
+  };
+
+  const titles = stageCards.map((c) => c.tagLabel); // ชื่อขั้นจากที่เดียว (ตรงกับป้ายที่หัว)
+
+  wrap.innerHTML = titles.map((title, i) => {
+    const state = i < doneCount ? 'done' : i === currentIdx ? 'active' : 'todo';
+    // บรรทัดเล็กบนชื่อขั้น: เสร็จ → วันที่ (ถ้ามี) / กำลังทำ / ยังไม่ถึง
+    const when = state === 'done'
+      ? (doneAt[i] ? `เสร็จ ${fmtDate(doneAt[i])}` : 'เสร็จแล้ว')
+      : state === 'active' ? 'กำลังดำเนินการ' : 'ยังไม่ถึง';
+    // ป้าย "ขั้นตอนปัจจุบัน" เฉพาะตอนยังไม่ครบ (ครบแล้วหัวการ์ดบอกอยู่แล้ว)
+    const isFocus = !allDone && i === focusIdx;
+    const card = `
+      <div class="dsp-step dsp-step--${state}${isFocus ? ' dsp-step--focus' : ''}" id="${stageCards[i].cardId}">
+        ${isFocus ? '<span class="dsp-step-tab">ขั้นตอนปัจจุบัน</span>' : ''}
+        <span class="dsp-step-num">${state === 'done' ? '<span class="material-icons" aria-hidden="true">check</span>' : i + 1}</span>
+        <div class="dsp-step-text">
+          <span class="dsp-step-no">ขั้นที่ ${i + 1} · <span class="dsp-step-when">${when}</span></span>
+          <span class="dsp-step-title">${title}</span>
+          ${detail(i, state)}
+        </div>
+      </div>`;
+    return i < titles.length - 1 ? card + '<span class="material-icons dsp-arrow" aria-hidden="true">chevron_right</span>' : card;
+  }).join('');
+
+  // หัว: ความคืบหน้า + แถบเขียว
+  const progressText = document.getElementById('dsp-progress-text');
+  if (progressText) progressText.textContent = `ความคืบหน้า ${doneCount}/${total}`;
+  const fill = document.getElementById('dsp-progress-fill');
+  if (fill) fill.style.width = `${Math.round((doneCount / total) * 100)}%`;
+
+  // แถบล่าง: บริษัท
+  const companyEl = document.getElementById('dsp-company');
+  if (companyEl) companyEl.textContent = (plc && plc.companyNameTh) || '—';
 }
 
 const currentStepIdx = computeCurrentStep(data.cv, data.trainings, data.placement, data.companies);
-updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, data.placement);
+updateStageWithDetails(currentStepIdx, data);
 
     // CV
     if (data.cv && data.cv.fileUrl) {
@@ -261,7 +357,7 @@ updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, 
       } else if (data.cv.status === 'REJECTED') {
         cvStatusEl.innerHTML = `
           <span class="text-xs font-semibold text-red-700 bg-red-100 border border-red-300 px-2 py-0.5 rounded-md inline-block">CVไม่ผ่าน / ทำใหม่</span>
-          ${data.cv.note ? `<div class="text-xs text-red-600 mt-1 font-normal" style="word-break: break-all;">(${data.cv.note})</div>` : ''}
+          ${data.cv.note ? `<div class="text-xs text-red-600 mt-1 font-normal" style="word-break: break-all;">(${escapeDashHtml(data.cv.note)})</div>` : ''}
         `;
       } else {
         cvStatusEl.innerHTML = '<span class="text-xs font-semibold text-amber-700 bg-yellow-100 border border-yellow-400 px-2 py-0.5 rounded-md inline-block">รอผล (รออาจารย์ตรวจ)</span>';
@@ -272,19 +368,49 @@ updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, 
     if (data.trainings && data.trainings.records && data.trainings.records.length > 0) {
       const tbody = document.getElementById('training-tbody');
       tbody.innerHTML = '';
+      // สถานะรายการ (แบบเดียวกับตารางในหน้า status-all: .trn-status)
+      const statusPill = (rec) => rec.status === 'APPROVED'
+        ? '<span class="trn-status trn-status--pass"><span class="material-icons">check</span>ผ่าน</span>'
+        : rec.status === 'REJECTED'
+        ? `<span class="trn-status trn-status--fail"${rec.note ? ` title="หมายเหตุ: ${escapeDashHtml(rec.note)}"` : ''}><span class="material-icons">close</span>ไม่ผ่าน</span>`
+        : '<span class="trn-status trn-status--wait"><span class="material-icons">schedule</span>รอตรวจ</span>';
       data.trainings.records.forEach((rec, idx) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="bg-white py-2 px-3 border border-[#777] text-center font-medium">${idx + 1}</td>
-          <td class="bg-white py-2 px-3 border border-[#777]">${rec.title}</td>
+          <td class="bg-white py-2 px-3 border border-[#777]" title="${escapeDashHtml(rec.title)}">${escapeDashHtml(rec.title)}</td>
           <td class="bg-white py-2 px-3 border border-[#777] text-center">${rec.skillType === 'SOFT' ? rec.hours : '-'}</td>
           <td class="bg-white py-2 px-3 border border-[#777] text-center">${rec.skillType === 'HARD' ? rec.hours : '-'}</td>
+          <td class="bg-white py-2 px-2 border border-[#777] text-center">${statusPill(rec)}</td>
         `;
         tbody.appendChild(tr);
       });
 
+      // รายการที่ไม่ผ่าน + หมายเหตุอาจารย์ (มือถือ/แท็บเล็ตชี้เมาส์ดู title ไม่ได้ → แสดงใต้ตาราง)
+      const notesEl = document.getElementById('training-reject-notes');
+      if (notesEl) {
+        const rejected = data.trainings.records.filter((r) => r.status === 'REJECTED');
+        notesEl.hidden = rejected.length === 0;
+        notesEl.innerHTML = rejected.length
+          ? `<div class="trn-reject-head"><span class="material-icons" aria-hidden="true">error_outline</span>รายการที่ไม่ผ่าน (${rejected.length})</div>`
+            + rejected.map((r) => `<div class="trn-reject-item"><b>${escapeDashHtml(r.title)}</b><span>${r.note ? 'หมายเหตุ: ' + escapeDashHtml(r.note) : 'ไม่มีหมายเหตุจากอาจารย์'}</span></div>`).join('')
+          : '';
+      }
+
       document.getElementById('total-soft').textContent = data.trainings.totalSoft || 0;
       document.getElementById('total-hard').textContent = data.trainings.totalHard || 0;
+    }
+
+    // สรุปผลชั่วโมงอบรมรวม (จาก server: trainings.status) ข้างเกณฑ์ผ่าน
+    const overallEl = document.getElementById('training-overall');
+    if (overallEl) {
+      const st = data.trainings && data.trainings.status;
+      overallEl.className = `trn-status ${st === 'APPROVED' ? 'trn-status--pass' : st === 'REJECTED' ? 'trn-status--fail' : 'trn-status--wait'}`;
+      overallEl.innerHTML = st === 'APPROVED'
+        ? '<span class="material-icons">check</span>ผ่าน / ชั่วโมงครบ'
+        : st === 'REJECTED'
+        ? '<span class="material-icons">close</span>ไม่ผ่าน / ชั่วโมงยังไม่ครบ'
+        : '<span class="material-icons">schedule</span>รอผล';
     }
 
     // คำนวณและแสดงชั่วโมงที่ผ่านการอนุมัติแล้ว (APPROVED)
@@ -309,38 +435,6 @@ updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, 
     if (hardTextEl) hardTextEl.textContent = `${approvedHard} / 18 ชม.`;
     if (hardBarEl) hardBarEl.style.width = `${Math.min(100, Math.round((approvedHard / 18) * 100))}%`;
 
-    // แสดงสถานะชั่วโมงอบรมและหมายเหตุจากอาจารย์
-    const trainingStatusEl = document.getElementById('display-training-status');
-    if (trainingStatusEl) {
-      let tStatus = data.trainings?.status;
-      let tNote = data.trainings?.note;
-
-      // Fallback: คำนวณจาก records ทันที (ทำงานได้ทันทีแม้ยังไม่ได้รีสตาร์ทเซิร์ฟเวอร์ node)
-      if (!tStatus && records && records.length > 0) {
-        const hasRejected = records.some(r => r.status === 'REJECTED');
-        const rejectedWithNote = records.find(r => r.status === 'REJECTED' && r.note);
-        if (rejectedWithNote) tNote = rejectedWithNote.note;
-
-        if (approvedSoft >= 12 && approvedHard >= 18 && !hasRejected) {
-          tStatus = 'APPROVED';
-        } else if (hasRejected) {
-          tStatus = 'REJECTED';
-        } else if (records.some(r => r.status === 'PENDING')) {
-          tStatus = 'PENDING';
-        }
-      }
-
-      if (tStatus === 'APPROVED') {
-        trainingStatusEl.innerHTML = '<span class="text-xs font-semibold text-green-700 bg-green-100 border border-green-300 px-2.5 py-1 rounded-md inline-block">✓ ผ่าน / ชั่วโมงอบรมครบ</span>';
-      } else if (tStatus === 'REJECTED') {
-        trainingStatusEl.innerHTML = `
-          <span class="text-xs font-semibold text-red-700 bg-red-100 border border-red-300 px-2.5 py-1 rounded-md inline-block">✗ ไม่ผ่าน / ชั่วโมงยังไม่ครบ</span>
-          ${tNote ? `<div class="text-xs text-red-600 mt-1.5 font-medium" style="word-break: break-all;">(หมายเหตุ: ${tNote})</div>` : ''}
-        `;
-      } else {
-        trainingStatusEl.innerHTML = '<span class="text-xs font-semibold text-amber-700 bg-yellow-100 border border-yellow-400 px-2.5 py-1 rounded-md inline-block">⏳ รอผล (รออาจารย์ตรวจ)</span>';
-      }
-    }
 
 
     // Checklist Status
@@ -413,13 +507,13 @@ updateStageWithDetails(currentStepIdx, data.cv, data.trainings, data.companies, 
             if (r1DocsList) {
               const docs = [];
               if (r1.requestLetterIssued) {
-                docs.push(`📄 หนังสือขอความอนุเคราะห์ (${r1.requestLetterDocNo ? 'เลขที่: ' + r1.requestLetterDocNo : 'ออกหนังสือแล้ว'})`);
+                docs.push(`📄 หนังสือขอความอนุเคราะห์ (${r1.requestLetterDocNo ? 'เลขที่: ' + escapeDashHtml(r1.requestLetterDocNo) : 'ออกหนังสือแล้ว'})`);
               }
-              if (r1.companyResponseFileUrl) {
-                docs.push(`📄 แบบตอบรับ: <a href="${r1.companyResponseFileUrl}" target="_blank" class="text-blue-600 underline font-semibold">${r1.companyResponseFileName || 'เปิดดูแบบตอบรับ'}</a>`);
+              if (r1.companyResponseFileUrl && /^https?:\/\//i.test(String(r1.companyResponseFileUrl))) {
+                docs.push(`📄 แบบตอบรับ: <a href="${escapeDashHtml(r1.companyResponseFileUrl)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline font-semibold">${escapeDashHtml(r1.companyResponseFileName || 'เปิดดูแบบตอบรับ')}</a>`);
               }
               if (r1.dispatchLetterIssued) {
-                docs.push(`📄 หนังสือส่งตัว (${r1.dispatchLetterDocNo ? 'เลขที่: ' + r1.dispatchLetterDocNo : 'ออกหนังสือแล้ว'})`);
+                docs.push(`📄 หนังสือส่งตัว (${r1.dispatchLetterDocNo ? 'เลขที่: ' + escapeDashHtml(r1.dispatchLetterDocNo) : 'ออกหนังสือแล้ว'})`);
               }
 
               if (docs.length > 0) {
@@ -481,7 +575,7 @@ function renderRound2WindowOptions(windows) {
   }
   select.disabled = windows.length === 1;
   select.innerHTML = (windows.length > 1 ? '<option value="">-- เลือกรอบออกฝึก --</option>' : '') +
-    windows.map(w => `<option value="${w.id}">${w.label}${closeText(w)}</option>`).join('');
+    windows.map(w => `<option value="${escapeDashHtml(w.id)}">${escapeDashHtml(w.label)}${closeText(w)}</option>`).join('');
   if (hint) {
     hint.textContent = windows.length === 1
       ? '* ระบบเลือกรอบที่เปิดรับอยู่ให้อัตโนมัติ'
