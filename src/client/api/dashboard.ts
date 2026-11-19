@@ -94,7 +94,7 @@ function renderDashboardStudentInfo(s, user) {
 
 // ช่วงฝึกงาน: มีวันที่ → แสดงแบบไทย / ยังไม่มี → "ข้อมูลจาก REG" (วันเริ่มยังไม่มีแหล่งข้อมูล)
 function renderDashboardInternPeriod(period) {
-  const fmt = (v) => fmtDashDate(v, { dateOnly: true, empty: 'ข้อมูลจาก REG' });
+  const fmt = (v) => fmtDashDate(v, { dateOnly: true, empty: 'เจ้าหน้าที่ยังไม่กำหนด' }); // ตามรอบออกฝึก
   setDashText('display-intern-start', fmt(period && period.startDate));
   setDashText('display-intern-end', fmt(period && period.endDate));
 }

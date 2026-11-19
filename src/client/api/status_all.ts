@@ -85,6 +85,12 @@ async function loadProfile() {
           renderOtherInfoLinks();
           otherEl.oninput = renderOtherInfoLinks;
         }
+        // วันเริ่ม/สิ้นสุดฝึกงาน = ตามรอบออกฝึกที่เจ้าหน้าที่กำหนด (ผูกรอบอัตโนมัติตอนยื่น Checklist)
+        const win = s.internshipWindow || null;
+        const startEl = document.getElementById('prof-internship-start');
+        const endEl = document.getElementById('prof-internship-end');
+        if (startEl) startEl.value = letterThaiDate(win?.internStartDate);
+        if (endEl) endEl.value = letterThaiDate(win?.internEndDate);
 
         // [REQ-04] ล็อคข้อมูลทางวิชาการที่ดึงจากระบบทะเบียน REG ห้ามนิสิตแก้ไข
         ['prof-studentCode', 'prof-nameTh', 'prof-year', 'prof-gpa', 'prof-major', 'prof-curriculum', 'prof-faculty', 'prof-email'].forEach(id => {
@@ -289,6 +295,35 @@ function parseIsoDate(value) {
   const dt = value ? new Date(value) : null;
   if (!dt || isNaN(dt.getTime())) return null;
   return { y: dt.getFullYear(), m: dt.getMonth() + 1, d: dt.getDate() };
+}
+
+// ===== ช่วงฝึกในหนังสือ ("ในระหว่างวันที่ … ถึงวันที่ …") — กติกาเดียวกับฝั่งเจ้าหน้าที่ (admin_dashboard.ts) =====
+const LETTER_THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+/** "2026-11-02" -> "2 พฤศจิกายน 2569" */
+function letterThaiDate(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  return `${parseInt(m[3], 10)} ${LETTER_THAI_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
+}
+
+function letterPeriodText(start, end) {
+  const a = letterThaiDate(start);
+  const b = letterThaiDate(end);
+  if (a && b) return `ในระหว่างวันที่ ${a} ถึงวันที่ ${b}`;
+  if (a) return `ตั้งแต่วันที่ ${a} เป็นต้นไป`;
+  return '';
+}
+
+/** ทุกคนช่วงเดียวกัน -> ใส่ในประโยค · คนละช่วง -> แสดงใต้ชื่อแต่ละคน · ไม่มีข้อมูล (ฉบับเก่า) -> ไม่ใส่ */
+function letterPeriodInfo(students) {
+  const perStudent = students.map(s => letterPeriodText(s.internStartDate, s.internEndDate));
+  const uniq = Array.from(new Set(perStudent.filter(Boolean)));
+  const same = uniq.length === 1 && perStudent.every(p => p === uniq[0]);
+  return {
+    sentence: same ? ` <strong>${uniq[0]}</strong>` : (uniq.length ? ' ตามช่วงเวลาที่ระบุใต้ชื่อนิสิตแต่ละคน' : ''),
+    perStudent: same ? students.map(() => '') : perStudent,
+  };
 }
 
 // "13 พ.ย. 2569" / ช่วงวัน "7–8 พ.ย. 2569", "30 ต.ค. – 2 พ.ย. 2569"
@@ -1091,6 +1126,7 @@ document.addEventListener('keydown', (e) => {
 // ข้อมูลเสริมสำหรับการ์ด Checklist (มาจาก API เดิม: /api/student/companies และ /api/student/profile)
 let currentArchivedCompanies = [];
 let currentChecklistPlacement = null;
+let currentChecklistWindowPeriod = null; // { internStartDate, internEndDate } ของรอบออกฝึกที่ผูกไว้
 let currentStudentAdvisor = null;
 
 async function loadCompanies() {
@@ -1102,6 +1138,7 @@ async function loadCompanies() {
       currentCompaniesData = data.companies;
       currentArchivedCompanies = Array.isArray(data.archivedCompanies) ? data.archivedCompanies : [];
       currentChecklistPlacement = data.placement || null;
+      currentChecklistWindowPeriod = data.windowPeriod || null;
     }
     renderChecklistCards();
   } catch (err) {
@@ -1185,7 +1222,7 @@ function cklWebsite(url) {
   return `<a class="ckl-link" href="${escapeStudentHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeStudentHtml(s)}<span class="material-icons">open_in_new</span></a>`;
 }
 
-// ช่วงฝึกงาน + จำนวนเดือน (API ยังไม่มี field วันเริ่ม/สิ้นสุด → รองรับไว้ถ้ามีในอนาคต)
+// ช่วงฝึกงาน + จำนวนเดือน (วันเริ่ม/สิ้นสุดตามรอบออกฝึกที่เจ้าหน้าที่กำหนด)
 function cklPeriod(start, end) {
   const range = formatThaiDateRange(start, end);
   if (!range || !end) return '-';
@@ -1319,7 +1356,7 @@ function renderChecklistCurrentCard() {
         <div class="ckl-info-box">
           ${cklField('ที่อยู่บริษัท:', cklText(info.companyAddress))}
           ${cklField('เว็บไซต์บริษัท:', cklWebsite(info.website))}
-          ${cklField('ช่วงเวลาฝึกงาน:', cklPeriod(info.startDate, info.endDate))}
+          ${cklField('ช่วงเวลาฝึกงาน:', cklPeriod(info.startDate || currentChecklistWindowPeriod?.internStartDate, info.endDate || currentChecklistWindowPeriod?.internEndDate))}
         </div>
         <div class="ckl-info-box">
           ${cklField('ผู้ประสานงาน/HR:', cklText(hr))}
@@ -2410,11 +2447,12 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
     ? 'ขอส่งตัวนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา'
     : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา และนัดหมายสัมภาษณ์';
 
+  const period = letterPeriodInfo(students);
   const studentRowsHtml = students.map((s, idx) => `
     <tr>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${idx + 1}</td>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${escapeStudentHtml(s.studentCode)}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${escapeStudentHtml(s.nameTh)}</td>
+      <td style="border:1px solid #334155; padding:6px 10px;">${escapeStudentHtml(s.nameTh)}${period.perStudent[idx] ? `<div style="font-size:11.5px; color:#334155;">${period.perStudent[idx]}</div>` : ''}</td>
       <td style="border:1px solid #334155; padding:6px 10px;">วท.บ. (${escapeStudentHtml(s.major || targetMajor)})</td>
       <td style="border:1px solid #334155; padding:6px 10px;">${escapeStudentHtml(s.position || 'นิสิตฝึกงาน')}</td>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${escapeStudentHtml(s.phone || '-')}</td>
@@ -2479,7 +2517,7 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
           </p>
 
           <p style="text-indent:40px; margin-bottom:14px;">
-            ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong> ประจำปีการศึกษา ${escapeStudentHtml(cfg.currentAcademicYear || '2568')} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
+            ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong>${period.sentence} ประจำปีการศึกษา ${escapeStudentHtml(cfg.currentAcademicYear || '2568')} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
           </p>
 
           <table style="width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13px;">

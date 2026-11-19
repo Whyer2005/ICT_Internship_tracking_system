@@ -72,6 +72,7 @@ erDiagram
         TEXT term "เทอม เช่น 2/2568"
         InternshipTermType termType "REGULAR/SUMMER"
         DATE closeDate "วันปิดยื่น"
+        DATE internStartDate "วันเริ่มฝึก (ใช้ในหนังสือ)"
         DATE internEndDate "วันสิ้นสุดการฝึก"
     }
     InternshipCohort {
@@ -135,7 +136,7 @@ erDiagram
 | ชั่วโมงอบรม | `TrainingRecord` | 13 |
 | CV นิสิต | `StudentCV` | 9 |
 | นิสิต | `Student` | 28 |
-| รอบออกฝึก | `InternshipWindow` | 17 |
+| รอบออกฝึก | `InternshipWindow` | 18 |
 | รุ่น | `InternshipCohort` | 8 |
 | สถานที่ฝึกงาน | `InternshipPlacement` | 18 |
 | บริษัทที่นิสิตยื่น | `Company` | 10 |

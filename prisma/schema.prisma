@@ -132,6 +132,7 @@ model InternshipWindow {
 
   openDate      DateTime?          @db.Date // ช่วงเปิดยื่นบริษัท
   closeDate     DateTime?          @db.Date
+  internStartDate DateTime?        @db.Date // วันเริ่มฝึก (ตามแผนของรอบ ใช้ระบุช่วงฝึกในหนังสือ + โปรไฟล์นิสิต)
   internEndDate DateTime?          @db.Date // วันสิ้นสุดการฝึก (ใช้ปลดล็อก CV/ชั่วโมงอบรมอัตโนมัติ)
 
   isUnlocked    Boolean            @default(false) // พี่จอมกดปลดล็อก

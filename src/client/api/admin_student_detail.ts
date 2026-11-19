@@ -165,6 +165,14 @@ async function initStudentDetail() {
 // =====================================================================
 // รุ่น / รอบออกฝึก / ตกค้าง (RETEST) — พี่จอม (Staff) หรือ Admin ตั้ง RETEST รายคนได้
 // =====================================================================
+/** "2026-11-02" -> "2 พ.ย. 2569" (ว่าง = "-") */
+function fmtWindowDate(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '-';
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  return `${parseInt(m[3], 10)} ${months[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
+}
+
 async function loadCohortInfo(studentId) {
   const section = document.getElementById('internship-cohort-section');
   const body = document.getElementById('internship-cohort-body');
@@ -189,7 +197,8 @@ async function loadCohortInfo(studentId) {
     const w = info.window;
     const windowText = w
       ? `${w.term}${w.termType === 'SUMMER' ? ' (Summer)' : ''}${w.cohortCode !== info.cohortCode ? ` · รอบของรุ่น ${w.cohortCode}` : ''}
-         <span style="font-size:11.5px; font-weight:600; color:#4338CA;"> — ${w.statusLabel}</span>`
+         <span style="font-size:11.5px; font-weight:600; color:#4338CA;"> — ${w.statusLabel}</span>
+         ${w.internStartDate || w.internEndDate ? `<div style="font-size:11.5px; font-weight:600; color:#475569; margin-top:2px;">ฝึก ${fmtWindowDate(w.internStartDate)} – ${fmtWindowDate(w.internEndDate)}</div>` : ''}`
       : '<span style="color:#94A3B8; font-weight:600;">ยังไม่ได้ผูกรอบ (ผูกอัตโนมัติตอนยื่น Checklist)</span>';
     const typeText = isRetest
       ? '<span style="color:#B45309;">⚠ ตกค้าง (RETEST)</span>'

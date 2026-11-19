@@ -86,12 +86,12 @@ const STUDENT_PROFILE_CONTENT_HTML = `
           <input class="input-field" id="prof-phone" type="tel" inputmode="numeric" pattern="[0-9]{9,10}" maxlength="10" title="กรุณากรอกเบอร์โทรศัพท์เป็นตัวเลข 9-10 หลัก" required value="" />
         </div>
         <div class="student-profile-field">
-          <label for="prof-internship-start">วันที่เริ่มฝึกงาน <span class="student-profile-reg-badge">🔒 REG</span></label>
-          <input class="input-field" id="prof-internship-start" value="" placeholder="ข้อมูลจาก REG" readonly />
+          <label for="prof-internship-start">วันที่เริ่มฝึกงาน <span class="student-profile-reg-badge" title="เจ้าหน้าที่กำหนดตามรอบออกฝึก">🔒 ตามรอบ</span></label>
+          <input class="input-field" id="prof-internship-start" value="" placeholder="เจ้าหน้าที่ยังไม่กำหนด" readonly />
         </div>
         <div class="student-profile-field">
-          <label for="prof-internship-end">วันที่สิ้นสุดฝึกงาน <span class="student-profile-reg-badge">🔒 REG</span></label>
-          <input class="input-field" id="prof-internship-end" value="" placeholder="ข้อมูลจาก REG" readonly />
+          <label for="prof-internship-end">วันที่สิ้นสุดฝึกงาน <span class="student-profile-reg-badge" title="เจ้าหน้าที่กำหนดตามรอบออกฝึก">🔒 ตามรอบ</span></label>
+          <input class="input-field" id="prof-internship-end" value="" placeholder="เจ้าหน้าที่ยังไม่กำหนด" readonly />
         </div>
       </div>
       <input id="prof-year" type="hidden" />

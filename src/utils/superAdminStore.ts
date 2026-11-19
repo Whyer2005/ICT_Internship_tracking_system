@@ -119,6 +119,9 @@ export interface LetterBatchStudent {
   position: string;
   phone: string;
   companyAddress?: string;
+  /** ช่วงฝึกตามรอบออกฝึก ณ วันที่ออกหนังสือ (YYYY-MM-DD) — ฉบับเก่าที่ออกก่อนมีช่องนี้จะไม่มีค่า */
+  internStartDate?: string;
+  internEndDate?: string;
 }
 
 /**

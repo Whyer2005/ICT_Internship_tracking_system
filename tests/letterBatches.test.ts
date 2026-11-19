@@ -39,6 +39,17 @@ test("toBatchStudent ใช้ค่าเริ่มต้นเมื่อ�
   assert.equal(s.position, "นิสิตฝึกงาน");
   assert.equal(s.phone, "-");
   assert.equal(s.major, "-");
+  assert.equal(s.internStartDate, undefined);
+  assert.equal(s.internEndDate, undefined);
+});
+
+test("toBatchStudent เก็บช่วงฝึกของรอบออกฝึก ณ วันที่ออกหนังสือ", () => {
+  const s = toBatchStudent({
+    id: 6, studentCode: "67000006", nameTh: "ข", major: "SE", phone: "0800000000", placement: null,
+    internshipWindow: { internStartDate: new Date("2026-11-02T00:00:00.000Z"), internEndDate: new Date("2027-02-19T00:00:00.000Z") },
+  });
+  assert.equal(s.internStartDate, "2026-11-02");
+  assert.equal(s.internEndDate, "2027-02-19");
 });
 
 test("REQUEST: นิสิตที่มีหนังสือแล้วออกซ้ำไม่ได้", () => {

@@ -20,6 +20,7 @@ import {
   shiftTerm,
   termSortKey,
   todayYmdBangkok,
+  windowDateOrderError,
   ymd,
 } from "../utils/internshipWindowRules";
 
@@ -61,6 +62,7 @@ function serializeWindow(w: any, today: string) {
     isOptional: w.isOptional,
     openDate: ymd(w.openDate),
     closeDate: ymd(w.closeDate),
+    internStartDate: ymd(w.internStartDate),
     internEndDate: ymd(w.internEndDate),
     isUnlocked: w.isUnlocked,
     extendedOpen: w.extendedOpen,
@@ -81,6 +83,7 @@ function windowFieldsFromBody(body: any) {
   if (body.isOptional !== undefined) data.isOptional = Boolean(body.isOptional);
   if (body.openDate !== undefined) data.openDate = parseYmd(body.openDate);
   if (body.closeDate !== undefined) data.closeDate = parseYmd(body.closeDate);
+  if (body.internStartDate !== undefined) data.internStartDate = parseYmd(body.internStartDate);
   if (body.internEndDate !== undefined) data.internEndDate = parseYmd(body.internEndDate);
   if (body.isUnlocked !== undefined) data.isUnlocked = Boolean(body.isUnlocked);
   if (body.extendedOpen !== undefined) data.extendedOpen = Boolean(body.extendedOpen);
@@ -96,10 +99,7 @@ function validateWindowData(data: Record<string, any>): string | null {
   if (data.term !== undefined && !isValidTerm(data.term)) {
     return "รูปแบบรอบเทอมไม่ถูกต้อง (ต้องเป็น เทอม/ปี พ.ศ. เช่น 1/2569 หรือ 3/2569)";
   }
-  const open = ymd(data.openDate);
-  const close = ymd(data.closeDate);
-  if (open && close && open > close) return "วันเปิดยื่นต้องไม่เกินวันปิดยื่น";
-  return null;
+  return windowDateOrderError(data);
 }
 
 /** รายชื่อนิสิตของรุ่น (ใช้นับจำนวนรายสาขา และตรวจก่อนปิดรุ่น) */
@@ -192,6 +192,7 @@ router.post("/super-admin/cohorts", requireStaffOnly, async (req: Request, res: 
               isOptional: w.isOptional,
               openDate: shiftDate(w.openDate, years),
               closeDate: shiftDate(w.closeDate, years),
+              internStartDate: shiftDate(w.internStartDate, years),
               internEndDate: shiftDate(w.internEndDate, years),
               note: w.note,
               sortOrder: w.sortOrder,
@@ -311,6 +312,8 @@ router.post("/super-admin/cohorts/:id/bulk", requireStaffOnly, async (req: Reque
 
 // ---------------------------------------------------------------------
 // POST /super-admin/windows — เพิ่ม/อัปเดตรอบออกฝึกให้หลายสาขาพร้อมกัน (ตาม term เดียวกัน)
+// - ส่งมาเฉพาะช่องที่กรอก: สาขาที่มีรอบนี้อยู่แล้ว ช่องที่เว้นว่างจะคงค่าเดิม (ไม่ล้างวันเปิด/ปิดยื่นทิ้ง)
+// - ตรวจลำดับวันกับค่าที่จะได้จริงของทุกสาขาก่อน แล้วค่อยบันทึก (ผิดสาขาเดียว = ไม่บันทึกเลย)
 // ---------------------------------------------------------------------
 router.post("/super-admin/windows", requireStaffOnly, async (req: Request, res: Response) => {
   try {
@@ -330,11 +333,29 @@ router.post("/super-admin/windows", requireStaffOnly, async (req: Request, res: 
     const err = validateWindowData(data);
     if (err) return res.status(400).json({ success: false, message: err });
 
+    const existing = await prisma.internshipWindow.findMany({
+      where: { cohortId, term: data.term, majorCode: { in: validCodes } },
+    });
+    for (const ex of existing) {
+      const mergedErr = windowDateOrderError({
+        openDate: data.openDate !== undefined ? data.openDate : ex.openDate,
+        closeDate: data.closeDate !== undefined ? data.closeDate : ex.closeDate,
+        internStartDate: data.internStartDate !== undefined ? data.internStartDate : ex.internStartDate,
+        internEndDate: data.internEndDate !== undefined ? data.internEndDate : ex.internEndDate,
+      });
+      if (mergedErr) {
+        return res.status(400).json({
+          success: false,
+          message: `สาขา ${ex.majorCode} (รอบ ${data.term} เดิม): ${mergedErr} — ยังไม่ได้บันทึกสาขาใดเลย`,
+        });
+      }
+    }
+
     let created = 0;
     let updated = 0;
     for (const majorCode of validCodes) {
       const key = { cohortId_majorCode_term: { cohortId, majorCode, term: data.term } };
-      const exists = await prisma.internshipWindow.findUnique({ where: key });
+      const exists = existing.find((w) => w.majorCode === majorCode);
       if (exists) {
         await prisma.internshipWindow.update({ where: key, data });
         updated++;
@@ -368,6 +389,8 @@ router.patch("/super-admin/windows/:id", requireStaffOnly, async (req: Request, 
       ...data,
       openDate: data.openDate !== undefined ? data.openDate : current.openDate,
       closeDate: data.closeDate !== undefined ? data.closeDate : current.closeDate,
+      internStartDate: data.internStartDate !== undefined ? data.internStartDate : current.internStartDate,
+      internEndDate: data.internEndDate !== undefined ? data.internEndDate : current.internEndDate,
     });
     if (err) return res.status(400).json({ success: false, message: err });
     if (data.term && data.term !== current.term) {
@@ -448,6 +471,7 @@ router.get("/super-admin/students/:id/cohort-info", async (req: Request, res: Re
             term: w.term,
             termType: w.termType,
             cohortCode: w.cohort.code,
+            internStartDate: ymd(w.internStartDate),
             internEndDate: ymd(w.internEndDate),
             status,
             statusLabel: status ? WINDOW_STATUS_LABEL[status] : "",

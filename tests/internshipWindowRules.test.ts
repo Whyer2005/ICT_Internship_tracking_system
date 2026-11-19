@@ -12,6 +12,7 @@ import {
   shiftTerm,
   termSortKey,
   todayYmdBangkok,
+  windowDateOrderError,
 } from "../src/utils/internshipWindowRules";
 
 const base = {
@@ -98,8 +99,25 @@ describe("resolveSubmissionWindow", () => {
     assert.equal(resolveSubmissionWindow([]).window, null);
   });
 
-  test("display label marks Summer / optional", () => {
-    assert.equal(windowDisplayLabel({ term: "1/2570", termType: "REGULAR", isOptional: false }), "1/2570");
-    assert.equal(windowDisplayLabel({ term: "3/2569", termType: "SUMMER", isOptional: true }), "3/2569 (Summer · ไม่บังคับ)");
+  test("display label marks Summer only (optional tag removed for now)", () => {
+    assert.equal(windowDisplayLabel({ term: "1/2570", termType: "REGULAR" }), "1/2570");
+    assert.equal(windowDisplayLabel({ term: "3/2569", termType: "SUMMER" }), "3/2569 (Summer)");
+  });
+});
+
+describe("windowDateOrderError (เปิดยื่น ≤ ปิดยื่น ≤ เริ่มฝึก < สิ้นสุดการฝึก)", () => {
+  const d = (s: string) => parseYmd(s);
+  test("valid order, and empty fields are skipped", () => {
+    assert.equal(windowDateOrderError({ openDate: d("2026-06-01"), closeDate: d("2026-08-31"), internStartDate: d("2026-11-02"), internEndDate: d("2027-02-19") }), null);
+    assert.equal(windowDateOrderError({ closeDate: d("2026-11-02"), internStartDate: d("2026-11-02") }), null);
+    assert.equal(windowDateOrderError({ internStartDate: null, internEndDate: d("2027-02-19") }), null);
+    assert.equal(windowDateOrderError({}), null);
+  });
+
+  test("rejects dates out of order", () => {
+    assert.match(windowDateOrderError({ openDate: d("2026-09-01"), closeDate: d("2026-08-31") })!, /เปิดยื่น/);
+    assert.match(windowDateOrderError({ closeDate: d("2026-11-03"), internStartDate: d("2026-11-02") })!, /ปิดยื่น/);
+    assert.match(windowDateOrderError({ openDate: d("2026-11-03"), internStartDate: d("2026-11-02") })!, /เปิดยื่น/);
+    assert.match(windowDateOrderError({ internStartDate: d("2027-02-19"), internEndDate: d("2027-02-19") })!, /เริ่มฝึก/);
   });
 });

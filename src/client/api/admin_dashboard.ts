@@ -2559,9 +2559,6 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
               <option value="REGULAR" ${w.termType === 'REGULAR' ? 'selected' : ''}>ภาคปกติ</option>
               <option value="SUMMER" ${w.termType === 'SUMMER' ? 'selected' : ''}>Summer</option>
             </select>
-            <label style="font-size:11px; color:#475569; display:inline-flex; align-items:center; gap:3px;">
-              <input type="checkbox" id="${p}-optional" ${w.isOptional ? 'checked' : ''} ${dis} /> ไม่บังคับ
-            </label>
           </div>
         </td>
         <td>
@@ -2573,7 +2570,11 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
           <input type="text" id="${p}-note" value="${escapeHtmlText(w.note)}" ${dis} placeholder="หมายเหตุแจ้งนิสิต..." class="input-field" style="margin-top:4px; width:100%; box-sizing:border-box; padding:4px 8px !important; font-size:11.5px;" />
         </td>
         <td>
-          <input type="date" id="${p}-end" value="${w.internEndDate}" ${dis} class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+          <div style="display:flex; align-items:center; gap:4px; font-size:11.5px; flex-wrap:wrap;">
+            <input type="date" id="${p}-start" value="${w.internStartDate || ''}" ${dis} title="วันเริ่มฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+            <span>ถึง</span>
+            <input type="date" id="${p}-end" value="${w.internEndDate}" ${dis} title="วันสิ้นสุดการฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+          </div>
           <div style="font-size:10.5px; color:#94A3B8; margin-top:3px;">เลือกรอบนี้แล้ว ${w.studentCount} คน</div>
         </td>
         <td>${windowStatusBadge(w)}</td>
@@ -2596,11 +2597,11 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
       <table class="data-table" style="margin:0;">
         <thead>
           <tr>
-            <th style="width:18%;">รอบเทอม / ประเภท</th>
-            <th style="width:30%;">ช่วงเปิดยื่นบริษัท</th>
-            <th style="width:16%;">สิ้นสุดการฝึก</th>
-            <th style="width:14%;">สถานะ</th>
-            <th style="width:22%; text-align:right;">จัดการ</th>
+            <th style="width:15%;">รอบเทอม / ประเภท</th>
+            <th style="width:26%;">ช่วงเปิดยื่นบริษัท</th>
+            <th style="width:23%;">ช่วงฝึก (เริ่ม – สิ้นสุด)</th>
+            <th style="width:13%;">สถานะ</th>
+            <th style="width:23%; text-align:right;">จัดการ</th>
           </tr>
         </thead>
         <tbody>
@@ -2623,9 +2624,26 @@ window.toggleBatchMajor = function(code: string, checked: boolean) {
   updateCohortSelectedCount();
 };
 
+// ติ๊ก/ล้าง ทุกสาขาของรุ่นที่เลือก (ฟอร์ม "เพิ่ม/อัปเดตรอบออกฝึก" ด้านบน)
+window.toggleAllBatchMajors = function(checked: boolean) {
+  const cohort = getSelectedCohort();
+  if (!cohort || cohort.status === 'ARCHIVED') return;
+  selectedBatchMajors.clear();
+  if (checked) (cohort.majors || []).forEach(m => selectedBatchMajors.add(m.code));
+  renderCohortWorkspace();
+};
+
 function updateCohortSelectedCount() {
   const el = document.getElementById('cohort-selected-count');
   if (el) el.textContent = String(selectedBatchMajors.size);
+  // ช่อง "เลือกทั้งหมด": ครบทุกสาขา = ติ๊ก · บางสาขา = ขีด (indeterminate) · ไม่มี = ว่าง
+  const all = document.getElementById('cohort-select-all') as HTMLInputElement | null;
+  if (all) {
+    const total = (getSelectedCohort()?.majors || []).length;
+    const n = selectedBatchMajors.size;
+    all.checked = total > 0 && n === total;
+    all.indeterminate = n > 0 && n < total;
+  }
 }
 
 function readWindowRow(id: number) {
@@ -2633,9 +2651,9 @@ function readWindowRow(id: number) {
   return {
     term: v('term')?.value.trim(),
     termType: (v('type') as any)?.value,
-    isOptional: Boolean(v('optional')?.checked),
     openDate: v('open')?.value || '',
     closeDate: v('close')?.value || '',
+    internStartDate: v('start')?.value || '',
     internEndDate: v('end')?.value || '',
     note: v('note')?.value || '',
   };
@@ -2676,7 +2694,6 @@ window.addWindowForMajor = async function(cohortId: number, majorCode: string) {
     majorCodes: [majorCode],
     term: t,
     termType: t.startsWith('3/') ? 'SUMMER' : 'REGULAR',
-    isOptional: t.startsWith('3/'),
   });
   if (data.success) {
     expandedCohortMajors.add(`${cohortId}:${majorCode}`);
@@ -2697,18 +2714,27 @@ window.saveBatchWindows = async function() {
     alert('กรุณาระบุรอบเทอม เช่น 1/2570');
     return;
   }
-  const majors = Array.from(selectedBatchMajors);
-  if (!confirm(`บันทึกรอบ ${term} ให้สาขา ${majors.join(', ')} ของรุ่น ${cohort.code}?\n\n* ถ้าสาขาใดมีรอบ ${term} อยู่แล้ว จะอัปเดตวันที่/ประเภทตามที่กรอก`)) return;
-  const data = await cohortApi('/api/admin/super-admin/windows', 'POST', {
-    cohortId: cohort.id,
-    majorCodes: majors,
-    term,
-    termType: val('cb-type') || 'REGULAR',
-    isOptional: Boolean((document.getElementById('cb-optional') as HTMLInputElement | null)?.checked),
-    openDate: val('cb-open'),
-    closeDate: val('cb-close'),
-    internEndDate: val('cb-end'),
-  });
+  // เรียงตามลำดับสาขาบนหน้าจอ แล้วแยกว่าสาขาไหน "อัปเดตรอบเดิม" / "สร้างรอบใหม่" (กันเผลอสร้างรอบให้สาขาที่ไม่ได้ฝึกเทอมนี้)
+  const majors = (cohort.majors || []).map(m => m.code).filter(code => selectedBatchMajors.has(code));
+  const hasTerm = (code: string) =>
+    ((cohort.majors || []).find(m => m.code === code)?.windows || []).some(w => w.term === term);
+  const updateCodes = majors.filter(hasTerm);
+  const createCodes = majors.filter(code => !hasTerm(code));
+  const lines = [`บันทึกรอบ ${term} ของรุ่น ${cohort.code} (${majors.length} สาขา)`, ''];
+  if (updateCodes.length) {
+    lines.push(`• อัปเดต (มีรอบนี้อยู่แล้ว) ${updateCodes.length} สาขา: ${updateCodes.join(', ')}`);
+    lines.push('   แก้เฉพาะช่องที่กรอก ช่องวันที่ที่เว้นว่างคงค่าเดิม');
+  }
+  if (createCodes.length) {
+    lines.push(`• สร้างรอบใหม่ ${createCodes.length} สาขา: ${createCodes.join(', ')}`);
+    lines.push('   รอบใหม่จะล็อกไว้ก่อน (กดปลดล็อกทีหลัง)');
+  }
+  if (!confirm(lines.join('\n'))) return;
+  // ส่งเฉพาะวันที่ที่กรอก — กันวันเปิด/ปิดยื่นเดิมถูกล้างเมื่อใช้ฟอร์มนี้เติมแค่วันเริ่ม/สิ้นสุดการฝึก
+  const body: any = { cohortId: cohort.id, majorCodes: majors, term, termType: val('cb-type') || 'REGULAR' };
+  const dates: Array<[string, string]> = [['openDate', 'cb-open'], ['closeDate', 'cb-close'], ['internStartDate', 'cb-start'], ['internEndDate', 'cb-end']];
+  dates.forEach(([key, id]) => { if (val(id)) body[key] = val(id); });
+  const data = await cohortApi('/api/admin/super-admin/windows', 'POST', body);
   if (data.success) {
     alert('✅ ' + data.message);
     majors.forEach(code => expandedCohortMajors.add(`${cohort.id}:${code}`));
@@ -5735,6 +5761,40 @@ function thaiDateOf(ymd) {
   return (isNaN(d.getTime()) ? new Date() : d).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+// ===== ช่วงฝึกในหนังสือ ("ในระหว่างวันที่ … ถึงวันที่ …") จากวันเริ่ม/สิ้นสุดของรอบออกฝึก =====
+const LETTER_THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+/** "2026-11-02" -> "2 พฤศจิกายน 2569" (แยกส่วนเอง ไม่ผ่าน Date เพื่อไม่ให้วันเลื่อนตามโซนเวลา) */
+function letterThaiDate(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  return `${parseInt(m[3], 10)} ${LETTER_THAI_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
+}
+
+function letterPeriodText(start, end) {
+  const a = letterThaiDate(start);
+  const b = letterThaiDate(end);
+  if (a && b) return `ในระหว่างวันที่ ${a} ถึงวันที่ ${b}`;
+  if (a) return `ตั้งแต่วันที่ ${a} เป็นต้นไป`;
+  return '';
+}
+
+/**
+ * ช่วงฝึกของรายชื่อในหนังสือ 1 ฉบับ
+ * - ทุกคนช่วงเดียวกัน -> ใส่ในประโยค
+ * - คนละช่วง (เช่น คนละสาขาในบริษัทเดียวกัน) -> ประโยคอ้างถึงตาราง แล้วแสดงช่วงใต้ชื่อแต่ละคน
+ * - ไม่มีข้อมูล (รอบยังไม่กำหนดวันเริ่ม / ฉบับเก่าที่ออกก่อนมีช่องนี้) -> ไม่ใส่
+ */
+function letterPeriodInfo(students) {
+  const perStudent = students.map(s => letterPeriodText(s.internStartDate, s.internEndDate));
+  const uniq = Array.from(new Set(perStudent.filter(Boolean)));
+  const same = uniq.length === 1 && perStudent.every(p => p === uniq[0]);
+  return {
+    sentence: same ? ` <strong>${uniq[0]}</strong>` : (uniq.length ? ' ตามช่วงเวลาที่ระบุใต้ชื่อนิสิตแต่ละคน' : ''),
+    perStudent: same ? students.map(() => '') : perStudent,
+  };
+}
+
 /** ฉบับที่ควรใช้พรีวิว: ระบุตรง ๆ หรือฉบับเดียวกันของนิสิตที่เลือกทั้งหมด (ปุ่มในแถวนิสิต -> หนังสือทั้งฉบับของคนนั้น) */
 function resolveLetterBatch(type, studentIds, batchId) {
   if (batchId) return letterBatchById(batchId);
@@ -5780,11 +5840,12 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
       : `พรีวิว${kind} เลขที่ ${docNo} (${students.length} คน)`;
   }
 
+  const period = letterPeriodInfo(students);
   const studentRowsHtml = students.map((s, idx) => `
     <tr>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${idx + 1}</td>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${s.studentCode}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${s.nameTh}</td>
+      <td style="border:1px solid #334155; padding:6px 10px;">${s.nameTh}${period.perStudent[idx] ? `<div style="font-size:11.5px; color:#334155;">${period.perStudent[idx]}</div>` : ''}</td>
       <td style="border:1px solid #334155; padding:6px 10px;">วท.บ. (${s.major})</td>
       <td style="border:1px solid #334155; padding:6px 10px;">${s.position || 'นิสิตฝึกงาน'}</td>
       <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${s.phone || '-'}</td>
@@ -5817,7 +5878,7 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
       </p>
 
       <p style="text-indent:40px; margin-bottom:14px;">
-        ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong> ประจำปีการศึกษา ${cfg.currentAcademicYear || '2568'} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
+        ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong>${period.sentence} ประจำปีการศึกษา ${cfg.currentAcademicYear || '2568'} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
       </p>
 
       <table style="width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13px;">

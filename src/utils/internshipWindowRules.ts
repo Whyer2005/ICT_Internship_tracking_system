@@ -92,6 +92,27 @@ export function isValidTerm(term: string): boolean {
   return /^[123]\/\d{4}$/.test(String(term).trim());
 }
 
+/**
+ * ตรวจลำดับวันของรอบออกฝึก: เปิดยื่น ≤ ปิดยื่น ≤ เริ่มฝึก < สิ้นสุดการฝึก (ช่องที่เว้นว่างไม่ตรวจ)
+ * คืนข้อความผิดพลาด หรือ null ถ้าถูกต้อง
+ */
+export function windowDateOrderError(d: {
+  openDate?: Date | null;
+  closeDate?: Date | null;
+  internStartDate?: Date | null;
+  internEndDate?: Date | null;
+}): string | null {
+  const open = ymd(d.openDate);
+  const close = ymd(d.closeDate);
+  const start = ymd(d.internStartDate);
+  const end = ymd(d.internEndDate);
+  if (open && close && open > close) return "วันเปิดยื่นต้องไม่เกินวันปิดยื่น";
+  if (close && start && close > start) return "วันปิดยื่นต้องไม่เกินวันเริ่มฝึก";
+  if (!close && open && start && open > start) return "วันเปิดยื่นต้องไม่เกินวันเริ่มฝึก";
+  if (start && end && start >= end) return "วันเริ่มฝึกต้องอยู่ก่อนวันสิ้นสุดการฝึก";
+  return null;
+}
+
 export function shiftDate(d: Date | null, years: number): Date | null {
   if (!d) return null;
   const nd = new Date(d.getTime());
@@ -124,8 +145,10 @@ export function resolveSubmissionWindow<T extends { id: number }>(
   return { window: null, error: "มีรอบออกฝึกเปิดรับมากกว่า 1 รอบ กรุณาเลือกรอบที่ต้องการฝึก" };
 }
 
-/** ข้อความแสดงรอบ เช่น "3/2569 (Summer · ไม่บังคับ)" */
-export function windowDisplayLabel(w: { term: string; termType: string; isOptional: boolean }): string {
-  const tags = [w.termType === "SUMMER" ? "Summer" : "", w.isOptional ? "ไม่บังคับ" : ""].filter(Boolean);
-  return tags.length ? `${w.term} (${tags.join(" · ")})` : w.term;
+/**
+ * ข้อความแสดงรอบ เช่น "3/2569 (Summer)"
+ * (ป้าย "ไม่บังคับ" เอาออกไปก่อน เพราะยังไม่มีกติกาผูกกับ isOptional — คอลัมน์ใน DB ยังเก็บไว้)
+ */
+export function windowDisplayLabel(w: { term: string; termType: string }): string {
+  return w.termType === "SUMMER" ? `${w.term} (Summer)` : w.term;
 }

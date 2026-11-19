@@ -67,7 +67,7 @@ async function getStudentByUserId(userId: number) {
         },
       },
       placement: true,
-      internshipWindow: { select: { internEndDate: true } }, // ช่วงฝึกงานบน Dashboard
+      internshipWindow: { select: { internStartDate: true, internEndDate: true } }, // ช่วงฝึกงานบน Dashboard + การ์ด Checklist
     },
   });
 }
@@ -170,7 +170,7 @@ router.get("/profile", async (req: Request, res: Response) => {
         trainingRecords: true,
         companies: { include: { answers: true, submission: true } },
         placement: true,
-        internshipWindow: { select: { internEndDate: true } },
+        internshipWindow: { select: { internStartDate: true, internEndDate: true } },
       },
     });
     // ชื่อสาขา/หลักสูตรจาก findMajor (ไม่ต้องจับคู่ฝั่ง client)
@@ -863,6 +863,11 @@ router.get("/companies", async (req: Request, res: Response) => {
       isStraggler: eligibility.isStraggler,
       canSubmitChecklist: eligibility.openWindows.length > 0,
       placement: student.placement || null,
+      // ช่วงฝึกตามรอบออกฝึกที่ผูกไว้ (เจ้าหน้าที่กำหนด) — ใช้แสดง "ช่วงเวลาฝึกงาน" ในการ์ด Checklist
+      windowPeriod: {
+        internStartDate: student.internshipWindow?.internStartDate?.toISOString().slice(0, 10) || "",
+        internEndDate: student.internshipWindow?.internEndDate?.toISOString().slice(0, 10) || "",
+      },
     });
   } catch (err) {
     console.error("GET /api/student/companies error:", err);
@@ -1771,8 +1776,9 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
             reviewerName: placementReviewerName,
           }
         : null,
-      // ช่วงฝึกงาน: วันสิ้นสุดจากรอบออกฝึกที่ผูกไว้ (วันเริ่มยังไม่มีแหล่งข้อมูล — รอ REG)
+      // ช่วงฝึกงาน: วันเริ่ม/สิ้นสุดจากรอบออกฝึกที่ผูกไว้ (เจ้าหน้าที่กำหนดในหน้า "รอบฝึกงาน & ปลดล็อก")
       internshipPeriod: {
+        startDate: student.internshipWindow?.internStartDate || null,
         endDate: student.internshipWindow?.internEndDate || null,
       },
       roundInfo: {

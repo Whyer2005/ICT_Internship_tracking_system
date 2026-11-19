@@ -21,6 +21,7 @@ import {
   saveLetterBatch,
   toBatchStudent,
 } from "../utils/letterBatches";
+import { ymd } from "../utils/internshipWindowRules";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2193,7 +2194,7 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
     // สร้างรายการคิวงานเอกสารราชการ (Document Workflow Queue)
     // นโยบายใหม่: นิสิตยื่นได้ทีละ 1 บริษัท -> ที่ปรึกษาอนุมัติ Checklist -> ออกหนังสือขอความอนุเคราะห์ (+แบบตอบรับ) -> บริษัทส่งใบตอบรับ (รับ/ปฏิเสธ) -> ถ้ารับ พี่จอมอนุมัติและออกหนังสือส่งตัว
     const windowsById = new Map(
-      (await prisma.internshipWindow.findMany({ select: { id: true, term: true, termType: true } })).map((w) => [w.id, w])
+      (await prisma.internshipWindow.findMany({ select: { id: true, term: true, termType: true, internStartDate: true, internEndDate: true } })).map((w) => [w.id, w])
     );
     const documentQueue = allStudents.map((s) => {
       const cat = categorizeStudent(s);
@@ -2255,6 +2256,9 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         cohortCode: (s.studentCode || "").slice(0, 2),
         windowTerm: s.internshipWindowId ? windowsById.get(s.internshipWindowId)?.term || "" : "",
         windowIsSummer: s.internshipWindowId ? windowsById.get(s.internshipWindowId)?.termType === "SUMMER" : false,
+        // ช่วงฝึกตามรอบ (ใช้พรีวิวร่างหนังสือ — ฉบับที่ออกแล้วใช้ค่าที่เก็บไว้ในฉบับ)
+        internStartDate: ymd(s.internshipWindowId ? windowsById.get(s.internshipWindowId)?.internStartDate : null),
+        internEndDate: ymd(s.internshipWindowId ? windowsById.get(s.internshipWindowId)?.internEndDate : null),
         position,
         companyAddress: s.placement?.companyAddress || "-",
         companyProvince: s.placement?.province || "-",
@@ -3245,7 +3249,7 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
     const students = (
       await prisma.student.findMany({
         where: { id: { in: ids } },
-        include: { companies: true, placement: true },
+        include: { companies: true, placement: true, internshipWindow: true },
       })
     ).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
 
@@ -3556,7 +3560,7 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
     const students = (
       await prisma.student.findMany({
         where: { id: { in: ids } },
-        include: { companies: true, placement: true },
+        include: { companies: true, placement: true, internshipWindow: true },
       })
     ).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
 

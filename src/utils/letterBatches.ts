@@ -29,8 +29,9 @@ export function toBatchStudent(s: {
   major?: string | null;
   phone?: string | null;
   placement?: { position?: string | null; companyAddress?: string | null } | null;
+  internshipWindow?: { internStartDate?: Date | null; internEndDate?: Date | null } | null;
 }): LetterBatchStudent {
-  return {
+  const out: LetterBatchStudent = {
     studentId: s.id,
     studentCode: s.studentCode,
     nameTh: s.nameTh,
@@ -39,6 +40,12 @@ export function toBatchStudent(s: {
     phone: s.phone || "-",
     companyAddress: s.placement?.companyAddress || "",
   };
+  // ช่วงฝึกตามรอบออกฝึกของนิสิต (เก็บลงฉบับหนังสือ ณ วันที่ออก — แก้วันของรอบภายหลังไม่กระทบฉบับที่ออกไปแล้ว)
+  const start = s.internshipWindow?.internStartDate;
+  const end = s.internshipWindow?.internEndDate;
+  if (start) out.internStartDate = start.toISOString().slice(0, 10);
+  if (end) out.internEndDate = end.toISOString().slice(0, 10);
+  return out;
 }
 
 /**

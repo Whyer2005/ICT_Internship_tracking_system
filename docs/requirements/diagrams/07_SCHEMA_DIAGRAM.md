@@ -106,6 +106,7 @@ erDiagram
         BOOLEAN isOptional "ไม่บังคับ (Summer)"
         DATE openDate "วันเปิดยื่น (null ได้)"
         DATE closeDate "วันปิดยื่น (null ได้)"
+        DATE internStartDate "วันเริ่มฝึก (ใช้ในหนังสือ) (null ได้)"
         DATE internEndDate "วันสิ้นสุดการฝึก (null ได้)"
         BOOLEAN isUnlocked "ปลดล็อกแล้ว"
         BOOLEAN extendedOpen "เปิดต่อพิเศษ"
@@ -318,6 +319,7 @@ erDiagram
 | `isOptional` | BOOLEAN |  |  | ไม่บังคับ (Summer) |
 | `openDate` | DATE |  | ✓ | วันเปิดยื่น |
 | `closeDate` | DATE |  | ✓ | วันปิดยื่น |
+| `internStartDate` | DATE |  | ✓ | วันเริ่มฝึก (ใช้ในหนังสือ) |
 | `internEndDate` | DATE |  | ✓ | วันสิ้นสุดการฝึก |
 | `isUnlocked` | BOOLEAN |  |  | ปลดล็อกแล้ว |
 | `extendedOpen` | BOOLEAN |  |  | เปิดต่อพิเศษ |

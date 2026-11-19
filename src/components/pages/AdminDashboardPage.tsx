@@ -1066,14 +1066,18 @@ ${majorOptionsHtml("              ")}
               ระหว่างที่ล็อก นิสิตยังสะสมชั่วโมงอบรมและอัปโหลด CV ได้ แต่ยื่น Checklist ไม่ได้
               • <strong>พ้นวันปิดยื่น ระบบล็อกให้อัตโนมัติ</strong> (กด "เปิดต่อพิเศษ" เพื่อขยายเวลาได้)
               • พ้นวันสิ้นสุดการฝึก หรือกด "จบรอบ" = รอบนั้นจบแล้ว
+              • วันเริ่ม–สิ้นสุดการฝึกจะไปแสดงในหนังสือขอความอนุเคราะห์/หนังสือส่งตัว ("ในระหว่างวันที่ … ถึงวันที่ …")
             </div>
           </div>
 
           <!-- เพิ่ม/อัปเดตรอบให้สาขาที่เลือก -->
           <div id="cohort-batch-bar" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px 14px; margin-bottom:12px;">
-            <div style="font-size:12.5px; font-weight:800; color:#1E1B4B; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <div style="font-size:12.5px; font-weight:800; color:#1E1B4B; margin-bottom:8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span class="material-icons" style="font-size:18px; color:#4F46E5;">playlist_add</span>
               เพิ่ม/อัปเดตรอบออกฝึกให้สาขาที่ติ๊กเลือก (<span id="cohort-selected-count">0</span> สาขา)
+              <label style="margin-left:8px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:#4338CA; background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:3px 9px; cursor:pointer;">
+                <input type="checkbox" id="cohort-select-all" onchange="window.toggleAllBatchMajors(this.checked)" style="width:15px; height:15px; margin:0; cursor:pointer; accent-color:#4338CA;" /> เลือกทั้งหมด
+              </label>
             </div>
             <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
               <label style="font-size:11.5px; font-weight:700; color:#475569;">รอบเทอม
@@ -1091,11 +1095,11 @@ ${majorOptionsHtml("              ")}
               <label style="font-size:11.5px; font-weight:700; color:#475569;">ปิดยื่น
                 <input type="date" id="cb-close" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
               </label>
+              <label style="font-size:11.5px; font-weight:700; color:#475569;" title="ใช้ระบุช่วงฝึกในหนังสือขอความอนุเคราะห์/หนังสือส่งตัว และแสดงในโปรไฟล์นิสิต">เริ่มฝึก
+                <input type="date" id="cb-start" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
+              </label>
               <label style="font-size:11.5px; font-weight:700; color:#475569;">สิ้นสุดการฝึก
                 <input type="date" id="cb-end" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
-              </label>
-              <label style="font-size:12px; color:#475569; display:inline-flex; align-items:center; gap:5px; padding-bottom:8px; cursor:pointer;">
-                <input type="checkbox" id="cb-optional" style="width:15px; height:15px; accent-color:#4338CA;" /> ไม่บังคับ
               </label>
               <button type="button" onclick="window.saveBatchWindows()" style="background:#059669; color:white; border:none; padding:9px 16px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px; margin-left:auto;">
                 <span class="material-icons" style="font-size:17px;">save</span> บันทึกให้สาขาที่เลือก
