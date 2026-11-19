@@ -43,14 +43,9 @@ function renderDashboardCompany(plc) {
   }
 }
 
-// escape ข้อความก่อนใส่ลง innerHTML (ใช้ทั้งไฟล์ — กัน XSS จากชื่อกิจกรรม/หมายเหตุ/ชื่อคน)
+// escape ข้อความก่อนใส่ลง innerHTML (helper กลาง: src/client/components/text_utils.ts — กัน XSS)
 function escapeDashHtml(v) {
-  return String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return window.IctText.escapeHtml(v);
 }
 
 // ตั้ง textContent ตาม id (ไม่มี element ก็ข้าม)

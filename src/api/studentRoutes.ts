@@ -160,11 +160,28 @@ function parseCoords(
 // ==========================================
 router.get("/profile", async (req: Request, res: Response) => {
   try {
-    const student = await getStudentByUserId(req.session.user!.id);
+    // include เหมือน getStudentByUserId + อีเมลอาจารย์ที่ปรึกษา (ปุ่ม "ติดต่ออาจารย์" หน้า Profile) ใน query เดียว
+    // แยกจาก helper กลาง เพื่อไม่ให้ endpoint อื่นต้องดึงอีเมลอาจารย์ไปด้วย
+    const student = await prisma.student.findUnique({
+      where: { userId: req.session.user!.id },
+      include: {
+        advisor: { include: { user: { select: { email: true } } } },
+        cv: true,
+        trainingRecords: true,
+        companies: { include: { answers: true, submission: true } },
+        placement: true,
+        internshipWindow: { select: { internEndDate: true } },
+      },
+    });
+    // ชื่อสาขา/หลักสูตรจาก findMajor (ไม่ต้องจับคู่ฝั่ง client)
+    const majorInfo = student ? findMajor(student.major) : null;
     res.json({
       success: true,
       user: req.session.user,
       student: student || null,
+      advisorEmail: student?.advisor?.user?.email || null,
+      majorName: majorInfo ? majorInfo.name : null,
+      degreeName: majorInfo ? ICT_DEGREES.find((d) => d.code === majorInfo.degreeCode)?.name || null : null,
     });
   } catch (err) {
     console.error("GET /api/student/profile error:", err);
@@ -209,8 +226,16 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
       phone,
       lineId,
       facebook,
+      otherInfo,
       advisorId,
     } = req.body;
+
+    // ข้อมูลเพิ่มเติม (การ์ด "อื่นๆ") — ไม่เกิน 2000 ตัวอักษร (เกินแจ้งกลับ ไม่ตัดทิ้งเงียบ ๆ)
+    const OTHER_INFO_MAX = 2000;
+    if (otherInfo && String(otherInfo).trim().length > OTHER_INFO_MAX) {
+      return res.status(400).json({ success: false, message: `ข้อมูลเพิ่มเติมยาวเกิน ${OTHER_INFO_MAX} ตัวอักษร` });
+    }
+    const cleanOtherInfo = (v: unknown) => (v ? String(v).trim() || null : null);
 
     const existingStudent = await prisma.student.findUnique({
       where: { userId },
@@ -241,6 +266,7 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
         phone: phone !== undefined ? (phone ? String(phone).trim() : null) : existingStudent.phone,
         lineId: lineId !== undefined ? (lineId ? String(lineId).trim() : null) : existingStudent.lineId,
         facebook: facebook !== undefined ? (facebook ? String(facebook).trim() : null) : existingStudent.facebook,
+        otherInfo: otherInfo !== undefined ? cleanOtherInfo(otherInfo) : existingStudent.otherInfo,
       };
       if (nickname !== undefined) {
         updateData.nickname = nickname ? String(nickname).trim() : null;
@@ -272,6 +298,7 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
         phone: phone ? String(phone).trim() : null,
         lineId: lineId ? String(lineId).trim() : null,
         facebook: facebook ? String(facebook).trim() : null,
+        otherInfo: cleanOtherInfo(otherInfo),
         advisorId: advisorId ? parseInt(advisorId, 10) : null,
         stage: "PENDING_DOCUMENTS",
       };

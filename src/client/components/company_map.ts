@@ -3,8 +3,9 @@
 // ใช้ร่วมกันระหว่างหน้า Checklist (checklist.js) และ Student Dashboard (dashboard.js)
 // ต้องโหลดก่อนสคริปต์ของหน้า (ดู PAGE_SCRIPTS ใน ChecklistPage.tsx / StudentDashboardPage.tsx)
 // ไม่ประกาศ const/let ระดับบนสุด เพื่อให้โหลดซ้ำได้โดยไม่ error
+// กำหนดใหม่ทุกครั้งที่โหลด (ไม่ใช้ ||) → เปลี่ยนหน้าแบบ SPA แล้วได้เวอร์ชันล่าสุดเสมอ (helper ไม่มี state)
 
-window.IctCompanyMap = window.IctCompanyMap || {
+window.IctCompanyMap = {
   /** ที่อยู่จริงหรือไม่ — ค่าว่าง, "-", "รอตรวจสอบที่อยู่...", "รอระบุที่อยู่" ถือว่ายังไม่มีที่อยู่ */
   hasRealAddress(address) {
     const v = String(address || '').trim();

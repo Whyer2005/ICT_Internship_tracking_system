@@ -8,6 +8,7 @@ const PAGE_TITLE = "จัดการข้อมูลและติดตา
 const PAGE_STYLES: string[] = [];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
+  "../components/text_utils.js",
   "../api/status_all_tabs.js",
   "../api/status_all.js"
 ];
@@ -116,8 +117,10 @@ const STUDENT_PROFILE_CONTENT_HTML = `
     <h3 class="student-profile-card-title"><span class="material-icons">description</span> อื่นๆ</h3>
     <div class="student-profile-field">
       <label for="prof-other">ข้อมูลเพิ่มเติม</label>
-      <textarea class="input-field student-profile-textarea" id="prof-other" placeholder="ข้อมูลเพิ่มเติม เช่น ความสามารถพิเศษ โรคประจำตัว หรือข้อจำกัด"></textarea>
+      <textarea class="input-field student-profile-textarea" id="prof-other" maxlength="2000" placeholder="ข้อมูลเพิ่มเติม เช่น ความสามารถพิเศษ โรคประจำตัว หรือข้อจำกัด"></textarea>
       <p class="student-profile-hint">ระบุข้อมูลเพิ่มเติมที่เป็นประโยชน์ต่อการฝึกงาน เช่น ความสามารถพิเศษ ความสนใจ หรือข้อมูลที่ควรแจ้งอาจารย์</p>
+      <!-- ลิงก์ที่อยู่ในข้อความ (textarea กดลิงก์ไม่ได้ → แสดงเป็นลิงก์ใต้ช่อง) เติมโดย status_all.js -->
+      <div class="student-profile-links" id="prof-other-links" hidden></div>
     </div>
   </section>
 

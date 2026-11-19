@@ -38,6 +38,19 @@ async function initPage() {
   checkPlacementUnlock();
 }
 
+// ลิงก์ในช่อง "ข้อมูลเพิ่มเติม": textarea กดลิงก์ไม่ได้ → แสดง URL ที่พบเป็นลิงก์กดได้ใต้ช่อง (อัปเดตตามที่พิมพ์)
+function renderOtherInfoLinks() {
+  const input = document.getElementById('prof-other');
+  const box = document.getElementById('prof-other-links');
+  if (!input || !box) return;
+  const urls = window.IctText.extractUrls(input.value); // ใช้กติกาเดียวกับ linkify (text_utils.ts)
+  box.hidden = urls.length === 0;
+  box.innerHTML = urls.length
+    ? `<span class="student-profile-links-label"><span class="material-icons" aria-hidden="true">link</span>ลิงก์ในข้อความ:</span>`
+      + urls.map((u) => window.IctText.linkify(u)).join('')
+    : '';
+}
+
 // 1. โหลดข้อมูลส่วนตัว
 async function loadProfile() {
   try {
@@ -66,6 +79,12 @@ async function loadProfile() {
         document.getElementById('prof-phone').value = s.phone || '';
         document.getElementById('prof-lineId').value = s.lineId || '';
         document.getElementById('prof-facebook').value = s.facebook || '';
+        const otherEl = document.getElementById('prof-other');
+        if (otherEl) {
+          otherEl.value = s.otherInfo || '';
+          renderOtherInfoLinks();
+          otherEl.oninput = renderOtherInfoLinks;
+        }
 
         // [REQ-04] ล็อคข้อมูลทางวิชาการที่ดึงจากระบบทะเบียน REG ห้ามนิสิตแก้ไข
         ['prof-studentCode', 'prof-nameTh', 'prof-year', 'prof-gpa', 'prof-major', 'prof-curriculum', 'prof-faculty', 'prof-email'].forEach(id => {
@@ -180,6 +199,7 @@ if (saveProfileBtn) {
       phone: document.getElementById('prof-phone').value,
       lineId: document.getElementById('prof-lineId').value,
       facebook: document.getElementById('prof-facebook').value,
+      otherInfo: document.getElementById('prof-other')?.value || '',
       advisorId: advisorSelect.value ? parseInt(advisorSelect.value) : null,
     };
 
@@ -2041,13 +2061,9 @@ window.goToChecklistTab = function() {
   if (btn) btn.click();
 };
 
+// helper กลาง: src/client/components/text_utils.ts (โหลดก่อนใน StatusAllPage)
 function escapeStudentHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return window.IctText.escapeHtml(str);
 }
 
 // หมายเหตุ (สถานะหนังสือขอความอนุเคราะห์ / ใบตอบรับ) แสดงเป็น callout สี
@@ -2156,7 +2172,7 @@ function renderStudentAcceptanceCard() {
 
   // ---- การ์ด 3 ขั้น ----
   // ปุ่มดาวน์โหลดหนังสือส่งตัว (แสดงในขั้นตอนที่ 3 เมื่อคณะออกหนังสือแล้ว)
-  const dispatchBtn = acc.dispatchLetterIssued
+  const dispatchBtn = acc?.dispatchLetterIssued // acc อาจเป็น null (โหลดข้อมูลใบตอบรับไม่สำเร็จ)
     ? `<button type="button" class="acc-btn-outline acc-dispatch-btn" onclick="downloadStudentOfficialLetter('DISPATCH')">
         <span class="material-icons">download</span><span>หนังสือส่งตัว <span class="acc-dispatch-docno">(${escapeStudentHtml(acc.dispatchLetterDocNo || '-')})</span></span>
       </button>`
@@ -2169,7 +2185,11 @@ function renderStudentAcceptanceCard() {
         ${issued ? `onclick="if (event.target.tagName !== 'BUTTON') document.getElementById('student-acceptance-file-input').click()"
         ondragover="studentAcceptanceDragOver(event)" ondragleave="studentAcceptanceDragLeave(event)" ondrop="studentAcceptanceDrop(event)"` : ''}>
         <span class="acc-dropzone-icon"><span class="material-icons">cloud_upload</span></span>
-        <span class="acc-dropzone-text">${issued ? 'ลากไฟล์มาวางที่นี่ หรือ' : 'อัปโหลดได้หลังคณะออกหนังสือ'}</span>
+        <span class="acc-dropzone-text">${!issued
+          ? 'อัปโหลดได้หลังคณะออกหนังสือ'
+          : step3Done
+          ? 'อัปโหลดใบตอบรับแล้ว' /* มีไฟล์แล้ว ยังไม่ยืนยัน (ยืนยันแล้วจะเป็น acc-finalized แทน) */
+          : 'ลากไฟล์มาวางที่นี่ หรือ'}</span>
         <button type="button" id="student-acceptance-upload-btn" class="acc-btn-primary" ${issued ? '' : 'disabled'}
           onclick="document.getElementById('student-acceptance-file-input').click()">เลือกไฟล์</button>
       </div>

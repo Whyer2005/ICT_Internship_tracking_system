@@ -2,105 +2,183 @@
 
 import React from "react";
 import PageShell from "./PageShell";
-import { ictMajorsDataScript } from "../../utils/majors";
 
 const PAGE_TITLE = "Profile ข้อมูลส่วนตัวนิสิต - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
+  "../components/text_utils.js",
   "../api/profile_view.js"
 ];
+
+// หน้าโปรไฟล์นิสิต (อ่านอย่างเดียว) — ข้อมูลเติมโดย src/client/api/profile_view.ts
+// แก้ไขข้อมูลติดต่อ/รูป/ข้อมูลเพิ่มเติม → ไปหน้า /status-all?tab=personal
+const EDIT_URL = "/status-all?tab=personal";
+
 const PAGE_BODY_HTML = `
-${ictMajorsDataScript()}
   <!-- Header Bar -->
   <div id="header-placeholder"></div>
 
-  <!-- Main Content -->
-  <main class="main-content">
-    <section class="card">
-      <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span class="material-icons header-icon">person</span>
-          <h2 class="card-title">ข้อมูลส่วนตัวนิสิต (Student Personal Data)</h2>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <span class="srs-reg-lock-tag">🔒 ข้อมูลวิชาการจากระบบ REG</span>
-          <span class="srs-editable-tag">✏️ แก้ไขข้อมูลติดต่อได้ที่ปุ่มด้านล่าง</span>
+  <main class="main-content pf-page">
+    <!-- ===== Hero ===== -->
+    <section class="pf-hero">
+      <div class="pf-hero-top">
+        <div class="pf-hero-actions">
+          <span class="pf-tag pf-tag--reg"><span class="material-icons" aria-hidden="true">lock</span>ข้อมูลวิชาการจาก REG ถูกล็อค</span>
+          <span class="pf-tag pf-tag--edit"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขข้อมูลติดต่อได้</span>
+          <a class="pf-hero-btn" href="${EDIT_URL}"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขข้อมูลส่วนตัว</a>
         </div>
       </div>
-
-      <div class="card-body">
-        <div class="flex flex-wrap gap-[28px_40px] mb-6 max-[900px]:flex-col max-[900px]:items-center">
-          <div class="w-[230px] min-w-[180px] max-w-[230px] h-[296px] rounded-[18px] border border-slate-200 shadow-sm overflow-hidden flex items-center justify-center bg-slate-100 shrink mx-auto" style="flex-basis: 230px;">
-            <img id="p-photo" src="" alt="Profile Photo" class="w-full h-full object-cover" style="display: none;" />
-            <span id="p-icon" class="material-icons text-[88px] text-gray-400">person</span>
-          </div>
-
-          <div class="flex-1 min-w-[280px] flex flex-col gap-4 max-[900px]:w-full max-[900px]:min-w-0" style="flex: 1 1 320px;">
-            <!-- Row 1 -->
-            <div class="flex flex-wrap gap-4">
-              <div class="flex flex-col gap-1.5" style="flex: 1.4 1 220px;">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5">ชื่อ-สกุล (ไทย) <span class="srs-reg-lock-tag">🔒 REG</span></label>
-                <input class="input-field font-semibold" id="p-nameTh" readonly />
-              </div>
-              <div class="flex flex-col gap-1.5" style="flex: 1 1 150px;">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5">รหัสนิสิต <span class="srs-reg-lock-tag">🔒 REG</span></label>
-                <input class="input-field font-semibold" id="p-studentCode" readonly />
-              </div>
-            </div>
-
-            <!-- Row 2 -->
-            <div class="flex flex-wrap gap-4">
-              <div class="flex flex-col gap-1.5" style="flex: 1.4 1 220px;">
-                <label class="text-xs font-bold text-slate-600">Name &amp; Surname (English)</label>
-                <input class="input-field font-medium" id="p-nameEn" readonly />
-              </div>
-              <div class="flex flex-col gap-1.5" style="flex: 1 1 150px;">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5">ชั้นปีที่ <span class="srs-reg-lock-tag">🔒 REG</span></label>
-                <input class="input-field font-medium" id="p-year" readonly />
-              </div>
-            </div>
-
-            <!-- Row 3 -->
-            <div class="flex flex-wrap gap-4">
-              <div class="flex flex-col gap-1.5" style="flex: 1.3 1 200px;">
-                <label class="text-xs font-bold text-slate-600">อาจารย์ที่ปรึกษา</label>
-                <input class="input-field font-medium" id="p-advisor" readonly />
-              </div>
-              <div class="flex flex-col gap-1.5" style="flex: 1.3 1 200px;">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5">สาขาวิชา <span class="srs-reg-lock-tag">🔒 REG</span></label>
-                <input class="input-field font-medium" id="p-major" readonly />
-              </div>
-              <div class="flex flex-col gap-1.5" style="flex: 0.8 1 120px;">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5">เกรดเฉลี่ยสะสม (GPAX) <span class="srs-reg-lock-tag">🔒 REG</span></label>
-                <input class="input-field font-bold text-indigo-700" id="p-gpa" readonly />
-              </div>
-            </div>
-
-            <!-- Row 4 -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-bold text-slate-600">E-mail (@up.ac.th)</label>
-                <input class="input-field text-xs" id="p-email" readonly />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-bold text-slate-600 flex items-center gap-1">เบอร์โทร <span class="srs-editable-tag">✏️</span></label>
-                <input class="input-field text-xs" id="p-phone" readonly />
-              </div>
-
-            </div>
-          </div>
+      <div class="pf-hero-id">
+        <div class="pf-avatar">
+          <img id="p-photo" src="" alt="รูปประจำตัวนิสิต" style="display: none;" />
+          <span id="p-icon" class="material-icons" aria-hidden="true">person</span>
+          <span class="pf-avatar-check" aria-hidden="true"><span class="material-icons">check</span></span>
         </div>
-
-        <!-- Edit Button -->
-        <div class="flex justify-end mt-4 pt-4 border-t border-slate-100">
-          <a href="/status-all" class="btn btn-primary btn-md no-underline inline-flex items-center gap-2">
-            <span class="material-icons" style="font-size:18px;">edit</span>
-            <span>จัดการข้อมูลติดต่อ &amp; เอกสารฝึกงาน</span>
-          </a>
+        <div class="pf-hero-text">
+          <h1 class="pf-name"><span id="p-nameTh">กำลังโหลด...</span> <span class="pf-name-en" id="p-nameEnShort"></span></h1>
+          <div class="pf-hero-chips">
+            <span class="pf-hero-chip"><span class="material-icons" aria-hidden="true">badge</span>รหัสนิสิต <b id="p-studentCode-chip">-</b></span>
+            <span class="pf-hero-chip"><span class="material-icons" aria-hidden="true">school</span><span id="p-major-chip">-</span></span>
+            <span class="pf-hero-chip" id="p-position-chip-wrap" hidden><span class="material-icons" aria-hidden="true">work_outline</span><span id="p-position-chip">-</span></span>
+          </div>
         </div>
       </div>
     </section>
+
+    <div class="pf-body">
+      <!-- สรุป 3 ช่อง (วันเริ่มฝึกยังไม่มีแหล่งข้อมูล) -->
+      <div class="pf-stats">
+        <div class="pf-stat">
+          <span class="pf-stat-icon"><span class="material-icons" aria-hidden="true">co_present</span></span>
+          <div><span class="pf-stat-label">อาจารย์ที่ปรึกษา</span><b id="p-advisor">-</b></div>
+        </div>
+        <div class="pf-stat">
+          <span class="pf-stat-icon"><span class="material-icons" aria-hidden="true">event_available</span></span>
+          <div><span class="pf-stat-label">วันที่สิ้นสุดฝึกงาน</span><b><span class="pf-reg-mini"><span class="material-icons" aria-hidden="true">lock</span>REG</span> <span id="p-end">ข้อมูลจาก REG</span></b></div>
+        </div>
+        <div class="pf-stat">
+          <span class="pf-stat-icon pf-stat-icon--green"><span class="material-icons" aria-hidden="true">verified_user</span></span>
+          <div><span class="pf-stat-label">สถานะ</span><b id="p-status" class="pf-status">-</b></div>
+        </div>
+      </div>
+
+      <div class="pf-grid">
+        <!-- ===== ซ้าย ===== -->
+        <div class="pf-col">
+          <!-- ข้อมูลการศึกษา -->
+          <section class="pf-card">
+            <header class="pf-card-head">
+              <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">school</span></span>
+              <div><h2>ข้อมูลการศึกษา / ทะเบียนประวัติ</h2><p>ข้อมูลทางการศึกษาจากฐานข้อมูลสำนักทะเบียนและประมวลผล (REG)</p></div>
+              <span class="pf-tag pf-tag--reg"><span class="material-icons" aria-hidden="true">lock</span>REG</span>
+            </header>
+            <div class="pf-fields">
+              <div class="pf-field"><span>ชื่อ-สกุล (ไทย) <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-nameTh-field">-</b></div>
+              <div class="pf-field"><span>Name &amp; Surname (English) <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-nameEn">-</b></div>
+              <div class="pf-field"><span>รหัสนิสิต <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-studentCode">-</b></div>
+              <div class="pf-field"><span>สาขาวิชา <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-major">-</b></div>
+              <div class="pf-field"><span>หลักสูตร <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-curriculum">-</b></div>
+              <div class="pf-field"><span>คณะ <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-faculty">-</b></div>
+              <div class="pf-field"><span>ชั้นปีที่ <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-year">-</b></div>
+              <div class="pf-field"><span>เกรดเฉลี่ยสะสม (GPAX) <i class="material-icons" aria-hidden="true">lock</i></span><b id="p-gpa">-</b></div>
+            </div>
+            <div class="pf-field pf-field--full">
+              <span>Email (@up.ac.th) <i class="material-icons" aria-hidden="true">lock</i></span>
+              <div class="pf-email-box"><span class="material-icons" aria-hidden="true">mail_outline</span><b id="p-email">-</b><small>อีเมลทางการจากมหาวิทยาลัย</small></div>
+            </div>
+          </section>
+
+          <!-- ข้อมูลส่วนบุคคลและการศึกษา -->
+          <section class="pf-card">
+            <header class="pf-card-head">
+              <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">person_outline</span></span>
+              <div><h2>ข้อมูลส่วนบุคคลและการศึกษา</h2><p>รายละเอียดอาจารย์ที่ปรึกษาและช่วงเวลาฝึกงาน</p></div>
+            </header>
+            <span class="pf-sub-label">อาจารย์ที่ปรึกษา</span>
+            <div class="pf-advisor">
+              <span class="pf-advisor-avatar"><span class="material-icons" aria-hidden="true">person</span></span>
+              <div class="pf-advisor-text">
+                <b id="p-advisor-name">-</b>
+                <small id="p-advisor-dept">-</small>
+              </div>
+              <a class="pf-advisor-btn" id="p-advisor-mail" href="#" hidden><span class="material-icons" aria-hidden="true">mail_outline</span>ติดต่ออาจารย์</a>
+            </div>
+            <div class="pf-period-head">
+              <span class="pf-sub-label">ช่วงฝึกงาน</span>
+              <span class="pf-tag pf-tag--reg"><span class="material-icons" aria-hidden="true">lock</span>ข้อมูลจาก REG</span>
+            </div>
+            <div class="pf-period">
+              <div class="pf-period-row">
+                <small>ระยะเวลาฝึกงานตามหลักสูตร</small>
+                <span><i class="pf-dot pf-dot--green"></i>วันที่สิ้นสุด: <b id="p-end-2">ข้อมูลจาก REG</b></span>
+              </div>
+              <div class="pf-period-bar" aria-hidden="true"></div>
+              <div class="pf-period-row pf-period-row--foot">
+                <span>สถานะ: <b id="p-status-2" class="pf-status">-</b></span>
+                <small>กำหนดการจากระบบ REG</small>
+              </div>
+            </div>
+          </section>
+
+          <!-- อื่นๆ -->
+          <section class="pf-card">
+            <header class="pf-card-head">
+              <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">description</span></span>
+              <div><h2>อื่นๆ</h2><p>ข้อมูลบันทึกเพิ่มเติม</p></div>
+              <a class="pf-tag pf-tag--edit" href="${EDIT_URL}"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขได้</a>
+            </header>
+            <div id="p-extra"></div>
+          </section>
+        </div>
+
+        <!-- ===== ขวา ===== -->
+        <div class="pf-col">
+          <!-- ติดต่อ -->
+          <section class="pf-card">
+            <header class="pf-card-head">
+              <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">link</span></span>
+              <div><h2>ข้อมูลการติดต่อและโซเชียลมีเดีย</h2><p>ช่องทางสำหรับติดต่อฝึกงาน</p></div>
+              <a class="pf-tag pf-tag--edit" href="${EDIT_URL}"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขได้</a>
+            </header>
+            <ul class="pf-contact" id="p-contact"></ul>
+          </section>
+
+          <!-- รูปประจำตัว -->
+          <section class="pf-card">
+            <header class="pf-card-head">
+              <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">portrait</span></span>
+              <div><h2>รูปประจำตัว</h2></div>
+            </header>
+            <div class="pf-photo">
+              <div class="pf-photo-thumb">
+                <img id="p-photo-2" src="" alt="" style="display: none;" />
+                <span id="p-icon-2" class="material-icons" aria-hidden="true">person</span>
+              </div>
+              <div class="pf-photo-text">
+                <span class="pf-tag pf-tag--edit"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขได้</span>
+                <small>ขนาด 1.5 - 2 นิ้ว · แต่งกายด้วยชุดนิสิตถูกระเบียบ</small>
+                <a href="${EDIT_URL}">อัปโหลด / เปลี่ยนรูปที่หน้าจัดการข้อมูล <span class="material-icons" aria-hidden="true">arrow_forward</span></a>
+              </div>
+            </div>
+          </section>
+
+          <!-- ความครบถ้วนของโปรไฟล์ -->
+          <section class="pf-card">
+            <header class="pf-card-head pf-card-head--plain">
+              <h2>ความครบถ้วนของโปรไฟล์</h2>
+              <span class="pf-tag pf-tag--ok" id="p-complete-tag">-</span>
+            </header>
+            <div class="pf-complete">
+              <div class="pf-ring" id="p-ring" style="--pf-pct: 0;"><span id="p-ring-text">0%</span></div>
+              <div><b id="p-complete-title">-</b><small id="p-complete-sub">-</small></div>
+            </div>
+            <span class="pf-sub-label">สถานะรายการ:</span>
+            <ul class="pf-checks" id="p-checks"></ul>
+          </section>
+        </div>
+      </div>
+    </div>
   </main>
 `;
 

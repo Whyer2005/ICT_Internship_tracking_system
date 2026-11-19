@@ -64,6 +64,7 @@ model Student {
   phone           String?
   lineId          String?
   facebook        String?
+  otherInfo       String?         // ข้อมูลเพิ่มเติม (ความสามารถพิเศษ โรคประจำตัว ข้อจำกัด ฯลฯ) — หน้า status-all การ์ด "อื่นๆ"
   profileImageUrl String?
 
   advisorId       Int?
