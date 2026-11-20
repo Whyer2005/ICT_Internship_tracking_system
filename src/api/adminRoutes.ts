@@ -3377,6 +3377,19 @@ router.post("/super-admin/documents/record-company-response", async (req: Reques
     const position = student.placement?.position || "นิสิตฝึกงาน / สหกิจศึกษา";
     const prevWf = state.docWorkflowMap[wfKey];
 
+    // BR-41: นิสิตอัปโหลด → อาจารย์ที่ปรึกษาตรวจ → เจ้าหน้าที่ยืนยัน — ยืนยันผลได้หลังอาจารย์อนุมัติแบบตอบรับแล้วเท่านั้น
+    const advisorApproved =
+      prevWf?.advisorAcceptanceStatus === "APPROVED" || prevWf?.companyResponseStatus === "ADVISOR_APPROVED";
+    if (!advisorApproved) {
+      const why = !prevWf?.companyResponseFileUrl && !prevWf?.companyResponseSubmittedByStudent
+        ? "นิสิตยังไม่ได้อัปโหลดแบบตอบรับ"
+        : "อาจารย์ที่ปรึกษายังไม่ได้ตรวจแบบตอบรับ";
+      return res.status(400).json({
+        success: false,
+        message: `ยังยืนยันผลไม่ได้: ${why} (ขั้นตอน: นิสิตอัปโหลด → อาจารย์ที่ปรึกษาตรวจ → เจ้าหน้าที่ยืนยัน)`,
+      });
+    }
+
     // กรณีบริษัทส่งแบบตอบรับว่า "ปฏิเสธ" (REJECTED):
     // ย้ายข้อมูลบริษัทเดิมเข้า Archive แบบย่อ และปลดล็อกให้นิสิตยื่น Checklist บริษัทแห่งใหม่ได้ทันที!
     if (responseStatus === "REJECTED") {

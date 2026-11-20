@@ -5106,6 +5106,25 @@ window.rescanCompanyResponseOcr = async function(studentId) {
 
 const NO_COMPANY_NAMES = ['ยังไม่ยื่นบริษัท', 'รอเลือกบริษัทใหม่ (ปลดล็อกแล้ว)'];
 const expandedDocGroups = new Set<string>();
+// บริษัทที่กด "ดูทั้งหมด" ในรายการ "หนังสือที่ออกแล้ว" (จำไว้ระหว่างรีเฟรชข้อมูล)
+const expandedBatchLists = new Set<string>();
+const BATCH_LIST_PREVIEW = 3; // แสดงกี่ฉบับล่าสุดก่อนกด "ดูทั้งหมด"
+
+window.toggleBatchList = function(gid: string) {
+  if (expandedBatchLists.has(gid)) expandedBatchLists.delete(gid);
+  else expandedBatchLists.add(gid);
+  window.renderDocumentQueueTable();
+};
+
+/** รายชื่อในฉบับ: เกิน 3 คนย่อเป็น "ก, ข, ค และอีก n คน" (ชื่อครบอยู่ใน title และในพรีวิว) */
+function batchStudentNamesHtml(students: any[]): string {
+  const names = students.map(s => String(s.nameTh || '-'));
+  const shown = names.slice(0, 3).map(n => escapeHtmlText(n)).join(', ');
+  const more = names.length - 3;
+  return more > 0
+    ? `<span title="${escapeHtmlText(names.join(', '))}">${shown} <span style="color:#64748B;">และอีก ${more} คน</span></span>`
+    : shown;
+}
 
 function docGroupId(key: string): string {
   return encodeURIComponent(key).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
@@ -5284,7 +5303,11 @@ window.renderDocumentQueueTable = function() {
           ? `<a href="${d.companyResponseFileUrl}" target="_blank" rel="noopener" style="font-size:11px; color:#2563EB;">📎 ${escapeHtmlText(d.companyResponseFileName || 'ไฟล์ใบตอบรับ')}</a>`
           : `<div style="font-size:11px; color:#64748B;">ไฟล์: ${escapeHtmlText(d.companyResponseFileName || 'ใบตอบรับ_ประทับตรา.pdf')}</div>`}
       `;
-    } else if (d.companyResponseStatus === 'WAITING_ADVISOR_APPROVAL') {
+    } else if (
+      d.companyResponseStatus === 'WAITING_ADVISOR_APPROVAL' ||
+      // มีไฟล์แล้วแต่ยังไม่ผ่านขั้นอาจารย์ (ข้อมูลเก่า) -> ถือว่ารอ อ.ที่ปรึกษาตรวจเหมือนกัน
+      ((d.companyResponseFileUrl || d.companyResponseSubmittedByStudent) && d.companyResponseStatus !== 'ADVISOR_APPROVED' && d.companyResponseStatus !== 'REJECTED')
+    ) {
       respColHtml = `
         <div style="background:#FFFBEB; border:1px solid #FCD34D; border-radius:8px; padding:7px 9px; margin-bottom:4px;">
           <div style="font-size:11.5px; font-weight:800; color:#B45309;">
@@ -5322,7 +5345,12 @@ window.renderDocumentQueueTable = function() {
         <div style="font-size:11px; color:#64748B; margin-top:2px;">รอนิสิตยื่นบริษัทใหม่</div>
       `;
     } else {
-      respColHtml = renderCompanyResponseReviewCell(d);
+      // ออกหนังสือแล้ว แต่นิสิตยังไม่อัปโหลดแบบตอบรับ -> แสดงสถานะอย่างเดียว ไม่มีปุ่มยืนยัน
+      // (BR-41: นิสิตอัปโหลด → อ.ที่ปรึกษาตรวจ → เจ้าหน้าที่ยืนยัน · ปุ่มยืนยันอยู่ในขั้น ADVISOR_APPROVED)
+      respColHtml = `
+        <div style="font-size:11.5px; color:#B45309; font-weight:700;">⏳ รอนิสิตอัปโหลดใบตอบรับจากบริษัท</div>
+        <div style="font-size:10.5px; color:#94A3B8; margin-top:2px;">อ.ที่ปรึกษาตรวจก่อน แล้วจึงยืนยันผลได้</div>
+      `;
     }
 
     // คอลัมน์ 3: หนังสือส่งตัวนิสิตเข้าฝึกงาน
@@ -5430,18 +5458,29 @@ window.renderDocumentQueueTable = function() {
     `;
 
     // รายการฉบับหนังสือที่ออกแล้วของบริษัทนี้ (รายชื่อ ณ วันที่ออก)
+    // ใหม่ -> เก่า · แสดง 3 ฉบับล่าสุด แล้วกด "ดูทั้งหมด" (มีไม่เกิน 4 ฉบับแสดงครบเลย ไม่ต้องกดเพื่อดูอีกแค่ 1 ฉบับ)
+    const newestBatches = [...groupBatches].sort((a, b) => String(b.issuedAt || '').localeCompare(String(a.issuedAt || '')));
+    const canCollapseBatches = newestBatches.length > BATCH_LIST_PREVIEW + 1;
+    const batchesExpanded = !canCollapseBatches || expandedBatchLists.has(gid);
+    const shownBatches = batchesExpanded ? newestBatches : newestBatches.slice(0, BATCH_LIST_PREVIEW);
+    const batchToggleHtml = !canCollapseBatches ? '' : `
+      <button type="button" onclick="event.stopPropagation(); window.toggleBatchList('${gid}')"
+        style="align-self:flex-start; margin-top:2px; background:none; border:none; color:#4338CA; padding:2px 0; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">
+        <span class="material-icons" style="font-size:16px;">${batchesExpanded ? 'expand_less' : 'expand_more'}</span>
+        ${batchesExpanded ? 'ย่อ' : `ดูทั้งหมด (อีก ${newestBatches.length - BATCH_LIST_PREVIEW} ฉบับ)`}
+      </button>`;
     const batchListHtml = groupBatches.length === 0 ? '' : `
       <div style="padding:10px 16px; background:#FAFBFF; border-top:1px solid #E2E8F0;">
         <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:6px;">📚 หนังสือที่ออกแล้ว (${groupBatches.length} ฉบับ)</div>
         <div style="display:flex; flex-direction:column; gap:5px;">
-          ${groupBatches.map(b => `
+          ${shownBatches.map(b => `
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px;">
               <span style="background:${b.type === 'DISPATCH' ? '#DBEAFE' : '#EEF2FF'}; color:${b.type === 'DISPATCH' ? '#1E40AF' : '#3730A3'}; padding:2px 8px; border-radius:999px; font-weight:700; white-space:nowrap;">
                 ${b.type === 'DISPATCH' ? 'ส่งตัว' : 'ขอความอนุเคราะห์'}
               </span>
               <span style="font-weight:700; color:#1E1B4B;">${escapeHtmlText(b.docNo || '-')}</span>
               <span style="color:#64748B;">${thaiDateOf(b.letterDate)}</span>
-              <span style="color:#334155;">${b.students.length} คน: ${b.students.map(s => escapeHtmlText(s.nameTh)).join(', ')}</span>
+              <span style="color:#334155;">${b.students.length} คน: ${batchStudentNamesHtml(b.students)}</span>
               ${b.legacy ? `<span title="สร้างย้อนหลังจากข้อมูลเดิม" style="color:#94A3B8; font-size:11px;">(ข้อมูลเดิม)</span>` : ''}
               <button type="button" onclick='openOfficialLetterPreview("${b.type}", [], "${escapedComp}", "${b.batchId}")'
                 style="margin-left:auto; background:#FFFFFF; color:#312E81; border:1px solid #C7D2FE; padding:3px 9px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">
@@ -5449,6 +5488,7 @@ window.renderDocumentQueueTable = function() {
               </button>
             </div>
           `).join('')}
+          ${batchToggleHtml}
         </div>
       </div>
     `;
