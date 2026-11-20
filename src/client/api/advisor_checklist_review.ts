@@ -173,6 +173,33 @@ function renderCompanyInfoBlock(comp) {
         ${p[value] && String(p[value]).trim() ? escapeHtmlText(p[value]) : '<span style="color:#94A3B8;">-</span>'}
       </div>
     </div>`;
+  // ที่อยู่ + ปุ่ม "ดูแผนที่" (มีหมุดที่นิสิตปัก → เปิดที่พิกัด / ไม่มี → ค้นหาด้วยชื่อบริษัท + ที่อยู่)
+  const mapHelper = window.IctCompanyMap;
+  const mapUrl = mapHelper
+    ? mapHelper.mapUrl(p.companyAddress, p.latitude, p.longitude, mapHelper.coords(p.latitude, p.longitude) ? '' : (p.companyNameTh || comp.name))
+    : '';
+  const hasPin = Boolean(mapHelper && mapHelper.coords(p.latitude, p.longitude));
+  const mapBtn = mapUrl
+    ? `<a href="${escapeHtmlText(mapUrl)}" target="_blank" rel="noopener noreferrer" title="เปิดแผนที่ในแท็บใหม่"
+          style="display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:8px 14px; background:#1D4ED8; color:#FFFFFF; border-radius:8px; font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap;">
+          <span class="material-icons" style="font-size:18px;" aria-hidden="true">location_on</span>ดูแผนที่
+        </a>`
+    : `<span title="ยังไม่มีที่อยู่" style="display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:8px 14px; background:#E2E8F0; color:#94A3B8; border-radius:8px; font-size:13px; font-weight:700; white-space:nowrap;">
+          <span class="material-icons" style="font-size:18px;" aria-hidden="true">location_off</span>ดูแผนที่
+        </span>`;
+  const addressField = `
+    <div style="grid-column: 1 / -1;">
+      <div style="font-size:12px; font-weight:700; color:#334155; margin-bottom:4px;">ที่อยู่สถานประกอบการ / แหล่งฝึกงาน</div>
+      <div style="display:flex; align-items:stretch; gap:8px;">
+        <div style="flex:1 1 auto; min-width:0; padding:8px 12px; font-size:13px; color:#0F172A; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:8px; min-height:36px; word-break:break-word;">
+          ${p.companyAddress && String(p.companyAddress).trim() ? escapeHtmlText(p.companyAddress) : '<span style="color:#94A3B8;">-</span>'}
+        </div>
+        ${mapBtn}
+      </div>
+      ${hasPin ? `<div style="margin-top:4px; font-size:11.5px; color:#047857; display:flex; align-items:center; gap:4px;">
+          <span class="material-icons" style="font-size:14px;" aria-hidden="true">push_pin</span>นิสิตปักหมุดตำแหน่งไว้แล้ว
+        </div>` : ''}
+    </div>`;
   return `
       <div class="px-6 py-3">
         <div style="padding:16px 18px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px;">
@@ -187,7 +214,7 @@ function renderCompanyInfoBlock(comp) {
             ${field('จังหวัดที่ตั้งสถานประกอบการ', 'province')}
             ${field('ชื่อบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์ (เรียน...)', 'contactPersonName')}
             ${field('ตำแหน่งบุคคลที่ให้ทำหนังสือขอความอนุเคราะห์', 'contactPersonPosition')}
-            ${field('ที่อยู่สถานประกอบการ / แหล่งฝึกงาน', 'companyAddress', true)}
+            ${addressField}
             ${field('เบอร์โทรติดต่อสถานประกอบการ', 'companyPhone1')}
             ${field('เบอร์โทรติดต่อ (สำรอง)', 'companyPhone2')}
             ${field('Email สถานประกอบการ', 'companyEmail')}

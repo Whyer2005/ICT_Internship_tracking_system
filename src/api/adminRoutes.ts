@@ -11,7 +11,15 @@ import {
   EventSessionItem,
   EventCheckInItem,
   getStudentRoundState,
+  MasterCompanyRecord,
 } from "../utils/superAdminStore";
+import {
+  ImportedCompanyRow,
+  buildCompanyImportTemplate,
+  classifyCompanyImport,
+  normalizeCompanyName,
+  parseCompanySpreadsheet,
+} from "../utils/companyImportParser";
 import { analyzeAcceptanceForm, fetchFileBuffer } from "../utils/acceptanceOcr";
 import cohortRouter, { getOpenMajorsSummary } from "./cohortRoutes";
 import {
@@ -27,6 +35,9 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
 });
+
+/** จำนวนสถานประกอบการสูงสุดที่นำเข้าจากไฟล์ได้ต่อครั้ง */
+const COMPANY_IMPORT_MAX_ROWS = 2000;
 
 const signatureUpload = multer({
   storage: multer.memoryStorage(),
@@ -3128,6 +3139,127 @@ router.post("/super-admin/companies", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("POST /api/admin/super-admin/companies error:", err);
     res.status(500).json({ success: false, message: "บันทึกข้อมูลสถานประกอบการไม่สำเร็จ" });
+  }
+});
+
+// 9.6.0 ดาวน์โหลดไฟล์ตัวอย่างสำหรับนำเข้าสถานประกอบการ
+router.get("/super-admin/companies/import-template", (_req: Request, res: Response) => {
+  try {
+    const buffer = buildCompanyImportTemplate();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="company_import_template.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    console.error("GET /api/admin/super-admin/companies/import-template error:", err);
+    res.status(500).json({ success: false, message: "สร้างไฟล์ตัวอย่างไม่สำเร็จ" });
+  }
+});
+
+// 9.6.1 พรีวิวการนำเข้าสถานประกอบการจากไฟล์ Excel / CSV (ยังไม่บันทึก)
+router.post("/super-admin/companies/import-preview", upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: "กรุณาเลือกไฟล์ Excel (.xlsx, .xls) หรือ .csv" });
+    }
+    let rows: ImportedCompanyRow[];
+    try {
+      rows = parseCompanySpreadsheet(req.file.buffer);
+    } catch (parseErr: any) {
+      return res.status(400).json({ success: false, message: parseErr?.message || "อ่านไฟล์ไม่สำเร็จ" });
+    }
+    if (rows.length === 0) {
+      return res.status(400).json({ success: false, message: "ไม่พบรายชื่อสถานประกอบการในไฟล์" });
+    }
+    if (rows.length > COMPANY_IMPORT_MAX_ROWS) {
+      return res.status(400).json({
+        success: false,
+        message: `นำเข้าได้ครั้งละไม่เกิน ${COMPANY_IMPORT_MAX_ROWS} รายการ (ไฟล์นี้มี ${rows.length} รายการ)`,
+      });
+    }
+
+    const state = loadSuperAdminState();
+    const items = classifyCompanyImport(rows, state.companyMasterData);
+    const countOf = (s: string) => items.filter((it) => it.status === s).length;
+    res.json({
+      success: true,
+      items,
+      summary: {
+        totalCount: items.length,
+        readyCount: countOf("READY"),
+        existingCount: countOf("EXISTING"),
+        duplicateCount: countOf("DUPLICATE_IN_FILE"),
+      },
+    });
+  } catch (err) {
+    console.error("POST /api/admin/super-admin/companies/import-preview error:", err);
+    res.status(500).json({ success: false, message: "อ่านไฟล์สถานประกอบการไม่สำเร็จ" });
+  }
+});
+
+// 9.6.1b ยืนยันนำเข้าสถานประกอบการ → เพิ่มเฉพาะรายการใหม่ ด้วยสถานะ "คณะ ICT เป็นผู้เพิ่ม" (PARTNER)
+// client ส่งไฟล์เดิมมาอีกครั้ง (multipart) แทนการส่ง JSON รายการ เพราะ express.json() ทั้งระบบจำกัดไว้ 100kb
+router.post("/super-admin/companies/import-confirm", upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: "กรุณาเลือกไฟล์ Excel (.xlsx, .xls) หรือ .csv" });
+    }
+    let rows: ImportedCompanyRow[];
+    try {
+      rows = parseCompanySpreadsheet(req.file.buffer);
+    } catch (parseErr: any) {
+      return res.status(400).json({ success: false, message: parseErr?.message || "อ่านไฟล์ไม่สำเร็จ" });
+    }
+    if (rows.length === 0) {
+      return res.status(400).json({ success: false, message: "ไม่พบรายชื่อสถานประกอบการในไฟล์" });
+    }
+    if (rows.length > COMPANY_IMPORT_MAX_ROWS) {
+      return res.status(400).json({ success: false, message: `นำเข้าได้ครั้งละไม่เกิน ${COMPANY_IMPORT_MAX_ROWS} รายการ` });
+    }
+
+    // ตรวจซ้ำกับ Master Data ล่าสุดอีกครั้ง (กันกดซ้ำ / มีคนเพิ่มระหว่างพรีวิว)
+    const state = loadSuperAdminState();
+    const ready = classifyCompanyImport(rows, state.companyMasterData).filter((it) => it.status === "READY");
+    if (ready.length === 0) {
+      return res.status(400).json({ success: false, message: "ทุกรายการมีอยู่ใน Master Data แล้ว ไม่มีรายการใหม่ให้นำเข้า" });
+    }
+
+    const now = new Date().toISOString();
+    const stamp = Date.now();
+    const newCompanies: MasterCompanyRecord[] = ready.map((row, i) => ({
+      id: `COMP-M${stamp}-${i + 1}`,
+      nameTh: row.nameTh,
+      nameEn: row.nameEn || "-",
+      province: row.province || "-",
+      address: row.address || "-",
+      hrContactName: row.hrContactName || "-",
+      hrPhone: row.hrPhone || "-",
+      hrEmail: row.hrEmail || "-",
+      recommendedPositions: row.recommendedPositions || "-",
+      status: "PARTNER",
+      createdAt: now,
+      verifiedAt: now,
+    }));
+
+    // ชื่อที่นำเข้าใหม่ไม่ควรค้างอยู่ในรายการชื่อที่ถูกซ่อน
+    if (Array.isArray(state.dismissedCompanyNames)) {
+      const added = new Set(newCompanies.map((c) => normalizeCompanyName(c.nameTh)));
+      state.dismissedCompanyNames = state.dismissedCompanyNames.filter((n) => !added.has(n));
+    }
+    state.companyMasterData.unshift(...newCompanies);
+    // นำเข้าทีละมาก → ต้องรู้ถ้าบันทึกไม่สำเร็จ (saveSuperAdminState กลืน error แล้วจะตอบว่าสำเร็จทั้งที่ไม่ได้บันทึก)
+    saveSuperAdminStateOrThrow(state);
+
+    const skipped = rows.length - ready.length;
+    res.json({
+      success: true,
+      addedCount: newCompanies.length,
+      skippedCount: skipped,
+      message: `นำเข้าสถานประกอบการ ${newCompanies.length} รายการ (สถานะ: คณะ ICT เป็นผู้เพิ่ม) เรียบร้อยแล้ว`
+        + (skipped > 0 ? ` — ข้าม ${skipped} รายการที่ซ้ำ` : ""),
+    });
+  } catch (err) {
+    console.error("POST /api/admin/super-admin/companies/import-confirm error:", err);
+    res.status(500).json({ success: false, message: "นำเข้าสถานประกอบการไม่สำเร็จ" });
   }
 });
 

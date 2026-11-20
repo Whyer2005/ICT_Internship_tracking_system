@@ -3977,6 +3977,174 @@ async function processCheckInImportFile(file: File) {
   }
 }
 
+// ===== นำเข้าสถานประกอบการเข้า Master Data จากไฟล์ (สถานะ "คณะ ICT เป็นผู้เพิ่ม") =====
+// เก็บไฟล์ไว้ส่งซ้ำตอนยืนยัน (server อ่านไฟล์ใหม่และตรวจซ้ำกับ Master Data ล่าสุดอีกครั้ง)
+let currentCompanyImportFile: File | null = null;
+
+window.openCompanyImportModal = function() {
+  const modal = document.getElementById('company-import-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    window.resetCompanyImportFile();
+  }
+};
+
+window.closeCompanyImportModal = function() {
+  const modal = document.getElementById('company-import-modal');
+  if (modal) modal.style.display = 'none';
+  window.resetCompanyImportFile();
+};
+
+window.resetCompanyImportFile = function() {
+  currentCompanyImportFile = null;
+  const fileInput = document.getElementById('company-import-file-input') as HTMLInputElement | null;
+  if (fileInput) fileInput.value = '';
+  const show = (id: string, display: string) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = display;
+  };
+  show('company-import-upload-zone', 'block');
+  show('company-import-selected-file-wrap', 'none');
+  show('company-import-preview-wrap', 'none');
+  show('company-import-loading', 'none');
+  show('btn-confirm-company-import', 'none');
+};
+
+window.handleCompanyImportDrop = function(e: DragEvent) {
+  e.preventDefault();
+  const uploadZone = document.getElementById('company-import-upload-zone');
+  if (uploadZone) {
+    uploadZone.style.borderColor = '#CBD5E1';
+    uploadZone.style.background = '#F8FAFC';
+  }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    processCompanyImportFile(e.dataTransfer.files[0]);
+  }
+};
+
+window.handleCompanyImportFileSelect = function(e: any) {
+  if (e.target.files && e.target.files.length > 0) {
+    processCompanyImportFile(e.target.files[0]);
+  }
+};
+
+async function processCompanyImportFile(file: File) {
+  if (!file) return;
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
+    alert('กรุณาเลือกไฟล์ Excel (.xlsx, .xls) หรือ .csv เท่านั้น');
+    return;
+  }
+
+  const uploadZone = document.getElementById('company-import-upload-zone');
+  const fileWrap = document.getElementById('company-import-selected-file-wrap');
+  const fileNameEl = document.getElementById('company-import-selected-file-name');
+  const loading = document.getElementById('company-import-loading');
+  const previewWrap = document.getElementById('company-import-preview-wrap');
+  const btnConfirm = document.getElementById('btn-confirm-company-import');
+  const btnText = document.getElementById('btn-confirm-company-import-text');
+
+  if (uploadZone) uploadZone.style.display = 'none';
+  if (fileWrap) fileWrap.style.display = 'flex';
+  if (fileNameEl) fileNameEl.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  if (loading) loading.style.display = 'block';
+  if (previewWrap) previewWrap.style.display = 'none';
+  if (btnConfirm) btnConfirm.style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/admin/super-admin/companies/import-preview', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (loading) loading.style.display = 'none';
+    if (!data.success) {
+      alert(data.message || 'ไม่สามารถอ่านไฟล์ได้');
+      window.resetCompanyImportFile();
+      return;
+    }
+
+    currentCompanyImportFile = file;
+    const items = data.items || [];
+    const summary = data.summary || {};
+    const setText = (id: string, value: unknown) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value ?? 0);
+    };
+    setText('company-import-stat-total', summary.totalCount ?? items.length);
+    setText('company-import-stat-ready', summary.readyCount);
+    setText('company-import-stat-existing', summary.existingCount);
+    setText('company-import-stat-duplicate', summary.duplicateCount);
+    setText('company-import-preview-count', items.length);
+
+    const esc = escapePendingCompanyHtml;
+    const tbody = document.getElementById('company-import-preview-tbody');
+    if (tbody) {
+      tbody.innerHTML = items.map((item: any) => {
+        let statusHtml = '<span style="color:#059669; font-weight:700;">✅ พร้อมนำเข้า</span>';
+        let rowBg = '';
+        if (item.status === 'EXISTING') {
+          statusHtml = `<span style="color:#D97706; font-weight:600;">🔄 มีแล้ว (${esc(item.existingName)})</span>`;
+          rowBg = 'background:#FFFBEB;';
+        } else if (item.status === 'DUPLICATE_IN_FILE') {
+          statusHtml = '<span style="color:#E11D48; font-weight:600;">⚠️ ชื่อซ้ำกับแถวก่อนหน้าในไฟล์</span>';
+          rowBg = 'background:#FFF1F2;';
+        }
+        const contact = [item.hrContactName, item.hrPhone].filter(Boolean).map(esc).join(' · ') || '-';
+        return `
+          <tr style="border-top:1px solid #F1F5F9; ${rowBg}">
+            <td style="padding:7px 10px; text-align:center; color:#94A3B8;">${esc(item.rowNumber)}</td>
+            <td style="padding:7px 10px; font-weight:600; color:#1E293B;">${esc(item.nameTh)}${item.nameEn ? `<div style="font-weight:400; color:#64748B; font-size:11px;">${esc(item.nameEn)}</div>` : ''}</td>
+            <td style="padding:7px 10px; color:#475569;">${esc(item.province || '-')}</td>
+            <td style="padding:7px 10px; color:#475569;">${contact}</td>
+            <td style="padding:7px 10px;">${statusHtml}</td>
+          </tr>`;
+      }).join('');
+    }
+    if (previewWrap) previewWrap.style.display = 'block';
+
+    const readyCount = Number(summary.readyCount) || 0;
+    if (btnConfirm && readyCount > 0) {
+      btnConfirm.style.display = 'inline-flex';
+      if (btnText) btnText.textContent = `ยืนยันนำเข้า ${readyCount} บริษัท`;
+    }
+  } catch (err) {
+    console.error('Company import preview error:', err);
+    if (loading) loading.style.display = 'none';
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+    window.resetCompanyImportFile();
+  }
+}
+
+window.confirmCompanyImport = async function() {
+  if (!currentCompanyImportFile) return;
+  const btnConfirm = document.getElementById('btn-confirm-company-import') as HTMLButtonElement | null;
+  const btnText = document.getElementById('btn-confirm-company-import-text');
+  const origText = btnText ? btnText.textContent : 'ยืนยันนำเข้า';
+  if (btnConfirm) btnConfirm.disabled = true;
+  if (btnText) btnText.textContent = 'กำลังนำเข้า...';
+
+  const formData = new FormData();
+  formData.append('file', currentCompanyImportFile);
+  try {
+    const res = await fetch('/api/admin/super-admin/companies/import-confirm', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ ' + data.message);
+      window.closeCompanyImportModal();
+      await window.loadSuperAdminOverview();
+    } else {
+      alert('เกิดข้อผิดพลาด: ' + (data.message || 'นำเข้าไม่สำเร็จ'));
+    }
+  } catch (err) {
+    console.error('Confirm company import error:', err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  } finally {
+    if (btnConfirm) btnConfirm.disabled = false;
+    if (btnText) btnText.textContent = origText;
+  }
+};
+
 window.confirmCheckInImport = async function() {
   if (!currentCheckInImportEventId || currentCheckInImportReadyCodes.length === 0) return;
 
