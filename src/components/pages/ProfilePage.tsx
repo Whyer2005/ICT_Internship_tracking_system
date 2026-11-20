@@ -47,11 +47,15 @@ const PAGE_BODY_HTML = `
     </section>
 
     <div class="pf-body">
-      <!-- สรุป 3 ช่อง (วันเริ่มฝึกยังไม่มีแหล่งข้อมูล) -->
+      <!-- สรุป 4 ช่อง (วันเริ่ม/สิ้นสุดฝึกตามรอบออกฝึกที่เจ้าหน้าที่กำหนด) -->
       <div class="pf-stats">
         <div class="pf-stat">
           <span class="pf-stat-icon"><span class="material-icons" aria-hidden="true">co_present</span></span>
           <div><span class="pf-stat-label">อาจารย์ที่ปรึกษา</span><b id="p-advisor">-</b></div>
+        </div>
+        <div class="pf-stat">
+          <span class="pf-stat-icon"><span class="material-icons" aria-hidden="true">event</span></span>
+          <div><span class="pf-stat-label">วันที่เริ่มฝึกงาน</span><b><span class="pf-reg-mini"><span class="material-icons" aria-hidden="true">lock</span>REG</span> <span id="p-start">ข้อมูลจาก REG</span></b></div>
         </div>
         <div class="pf-stat">
           <span class="pf-stat-icon"><span class="material-icons" aria-hidden="true">event_available</span></span>
@@ -110,10 +114,12 @@ const PAGE_BODY_HTML = `
             </div>
             <div class="pf-period">
               <div class="pf-period-row">
-                <small>ระยะเวลาฝึกงานตามหลักสูตร</small>
+                <span><i class="pf-dot pf-dot--blue"></i>วันที่เริ่ม: <b id="p-start-2">ข้อมูลจาก REG</b></span>
                 <span><i class="pf-dot pf-dot--green"></i>วันที่สิ้นสุด: <b id="p-end-2">ข้อมูลจาก REG</b></span>
               </div>
-              <div class="pf-period-bar" aria-hidden="true"></div>
+              <div class="pf-period-bar" id="p-period-bar" role="progressbar" aria-label="ความคืบหน้าการฝึกงาน" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="pf-period-bar-fill" id="p-period-fill"></div>
+              </div>
               <div class="pf-period-row pf-period-row--foot">
                 <span>สถานะ: <b id="p-status-2" class="pf-status">-</b></span>
                 <small>กำหนดการจากระบบ REG</small>

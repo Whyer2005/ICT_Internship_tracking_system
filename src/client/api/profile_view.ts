@@ -26,6 +26,30 @@ function fmtProfileDate(v, empty) {
   return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
+/**
+ * ความคืบหน้าการฝึกงาน (0–100%) = วันนี้เทียบช่วงวันเริ่ม–สิ้นสุด
+ * ยังไม่ถึงวันเริ่ม = 0%, เลยวันสิ้นสุด = 100%, ไม่มีวันใดวันหนึ่ง = 0%
+ * วันที่เก็บเป็นเที่ยงคืน UTC → นับเป็นวัน (UTC) ทั้งสองฝั่ง ไม่ให้เพี้ยนตามโซนเวลา
+ */
+function internshipProgressPct(startValue, endValue, now = new Date()) {
+  const start = startValue ? new Date(startValue).getTime() : NaN;
+  const end = endValue ? new Date(endValue).getTime() : NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const pct = ((today - start) / (end - start)) * 100;
+  return Math.round(Math.min(100, Math.max(0, pct)));
+}
+
+function renderInternshipProgress(win) {
+  const bar = document.getElementById('p-period-bar');
+  const fill = document.getElementById('p-period-fill');
+  if (!bar || !fill) return;
+  const pct = internshipProgressPct(win && win.internStartDate, win && win.internEndDate);
+  fill.style.width = `${pct}%`;
+  bar.setAttribute('aria-valuenow', String(pct));
+  bar.title = `ฝึกงานไปแล้ว ${pct}%`;
+}
+
 function setProfilePhoto(url) {
   [['p-photo', 'p-icon'], ['p-photo-2', 'p-icon-2']].forEach(([imgId, iconId]) => {
     const img = document.getElementById(imgId);
@@ -133,11 +157,15 @@ function renderProfile(data) {
   if (posWrap) posWrap.hidden = !position || position === 'OTHER';
   setProfileText('p-position-chip', position);
 
-  // สรุป + ช่วงฝึกงาน (มีเฉพาะวันสิ้นสุด — วันเริ่มยังไม่มีแหล่งข้อมูล)
+  // สรุป + ช่วงฝึกงาน (วันเริ่ม/สิ้นสุดตามรอบออกฝึก)
   const advisorName = cleanProfileValue(s.advisor && s.advisor.name);
   setProfileText('p-advisor', advisorName || '-');
-  const end = fmtProfileDate(s.internshipWindow && s.internshipWindow.internEndDate, 'ยังไม่กำหนด');
+  const win = s.internshipWindow || null;
+  const start = fmtProfileDate(win && win.internStartDate, 'ยังไม่กำหนด');
+  ['p-start', 'p-start-2'].forEach((id) => setProfileText(id, start));
+  const end = fmtProfileDate(win && win.internEndDate, 'ยังไม่กำหนด');
   ['p-end', 'p-end-2'].forEach((id) => setProfileText(id, end));
+  renderInternshipProgress(win);
   const st = profileStatus(s);
   ['p-status', 'p-status-2'].forEach((id) => {
     const el = document.getElementById(id);
