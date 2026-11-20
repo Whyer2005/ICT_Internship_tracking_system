@@ -2742,13 +2742,159 @@ window.saveBatchWindows = async function() {
   }
 };
 
-window.bulkCohortWindows = async function(action: 'UNLOCK_ALL' | 'LOCK_ALL') {
+// ===== ปลดล็อก / ล็อก รอบออกฝึกตามเทอม (หน้าต่างเลือกเทอม + ดูผลก่อนยืนยัน) =====
+// ทำกับทุกสาขาของเทอมที่เลือกในรุ่นที่เปิดดูอยู่ (ไม่ขึ้นกับช่องติ๊กสาขาของฟอร์มเพิ่มรอบ)
+let cohortBulkAction: 'UNLOCK_ALL' | 'LOCK_ALL' = 'UNLOCK_ALL';
+let cohortBulkTerm = ''; // '' = ทุกเทอมของรุ่น
+
+function cohortTermKey(term: string) {
+  const m = String(term).match(/^\s*(\d)\s*\/\s*(\d{4})/);
+  return m ? parseInt(m[2], 10) * 10 + parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+/** รอบทั้งหมดของรุ่น (แบนเป็นรายการ สาขา+รอบ) */
+function cohortWindowEntries(cohort: any) {
+  return (cohort?.majors || []).flatMap((m: any) => (m.windows || []).map((w: any) => ({ code: m.code, w })));
+}
+
+/** เทอมที่รุ่นนี้มีรอบ เรียงตามเวลา */
+function cohortTermsOf(cohort: any): string[] {
+  return (Array.from(new Set(cohortWindowEntries(cohort).map((e: any) => String(e.w.term)))) as string[])
+    .sort((a, b) => cohortTermKey(a) - cohortTermKey(b));
+}
+
+/** แยกผลของการกด: จะเปลี่ยน / เป็นสถานะนั้นอยู่แล้ว / ข้ามเพราะจบรอบ */
+function cohortBulkPlan(cohort: any, action: 'UNLOCK_ALL' | 'LOCK_ALL', term: string) {
+  const entries = cohortWindowEntries(cohort).filter((e: any) => !term || e.w.term === term);
+  const unlock = action === 'UNLOCK_ALL';
+  const done = entries.filter((e: any) => e.w.status === 'COMPLETED');
+  const live = entries.filter((e: any) => e.w.status !== 'COMPLETED');
+  const change = live.filter((e: any) => (unlock ? !e.w.isUnlocked : e.w.isUnlocked || e.w.extendedOpen));
+  const already = live.filter((e: any) => !change.includes(e));
+  return { entries, change, already, done };
+}
+
+window.bulkCohortWindows = function(action: 'UNLOCK_ALL' | 'LOCK_ALL') {
   const cohort = getSelectedCohort();
   if (!cohort) return;
-  const label = action === 'UNLOCK_ALL' ? 'ปลดล็อก' : 'ล็อก';
-  if (!confirm(`ยืนยัน${label}ทุกรอบออกฝึกของรุ่น ${cohort.code} หรือไม่?`)) return;
-  const data = await cohortApi(`/api/admin/super-admin/cohorts/${cohort.id}/bulk`, 'POST', { action });
+  cohortBulkAction = action;
+  // ค่าเริ่มต้น = เทอมแรก (เรียงตามเวลา) ที่มีรอบให้ทำจริง · ไม่มีเลย = เทอมแรก (หน้าต่างจะแจ้งว่าครบแล้ว)
+  const terms = cohortTermsOf(cohort);
+  cohortBulkTerm = terms.find(t => cohortBulkPlan(cohort, action, t).change.length > 0) ?? terms[0] ?? '';
+  renderCohortBulkModal();
+  const modal = document.getElementById('cohort-bulk-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window.selectCohortBulkTerm = function(term: string) {
+  cohortBulkTerm = term;
+  renderCohortBulkModal();
+};
+
+window.closeCohortBulkModal = function() {
+  const modal = document.getElementById('cohort-bulk-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+function renderCohortBulkModal() {
+  const cohort = getSelectedCohort();
+  if (!cohort) return;
+  const unlock = cohortBulkAction === 'UNLOCK_ALL';
+  const verb = unlock ? 'ปลดล็อก' : 'ล็อก';
+  const color = unlock ? '#059669' : '#DC2626';
+  const termsEl = document.getElementById('cohort-bulk-terms');
+  const previewEl = document.getElementById('cohort-bulk-preview');
+  const btn = document.getElementById('cohort-bulk-confirm') as HTMLButtonElement | null;
+  const icon = document.getElementById('cohort-bulk-icon');
+  const title = document.getElementById('cohort-bulk-title');
+  const subtitle = document.getElementById('cohort-bulk-subtitle');
+  if (icon) { icon.textContent = unlock ? 'lock_open' : 'lock'; icon.style.color = color; }
+  if (title) { title.textContent = `${verb}รอบออกฝึก`; title.style.color = unlock ? '#065F46' : '#991B1B'; }
+  if (subtitle) subtitle.textContent = `รุ่น ${cohort.code}${cohort.classYear ? ` (ปี ${cohort.classYear})` : ''} · มีผลกับทุกสาขาของเทอมที่เลือก`;
+
+  const entries = cohortWindowEntries(cohort);
+  const terms = cohortTermsOf(cohort);
+  // เทอมที่ไม่มีรอบให้ทำ (ล็อก/ปลดล็อกครบแล้ว หรือจบรอบหมด) -> แสดงเป็นเทา เลือกไม่ได้ พร้อมบอกเหตุผล
+  const doneBadge = (value: string) => {
+    const p = cohortBulkPlan(cohort, cohortBulkAction, value);
+    if (p.change.length > 0) return '';
+    if (p.entries.length > 0 && p.done.length === p.entries.length) return 'จบรอบแล้ว';
+    return unlock ? 'ปลดล็อกครบแล้ว' : 'ล็อกครบแล้ว';
+  };
+  const anyActionable = cohortBulkPlan(cohort, cohortBulkAction, '').change.length > 0;
+  const selectedActionable = cohortBulkPlan(cohort, cohortBulkAction, cohortBulkTerm).change.length > 0;
+
+  if (termsEl) {
+    const option = (value: string, label: string, meta: string) => {
+      const badge = doneBadge(value);
+      const enabled = !badge;
+      const on = enabled && cohortBulkTerm === value;
+      return `
+        <label style="display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid ${on ? color : '#E2E8F0'}; background:${on ? (unlock ? '#ECFDF5' : '#FEF2F2') : enabled ? '#FFFFFF' : '#F8FAFC'}; border-radius:10px; cursor:${enabled ? 'pointer' : 'not-allowed'}; ${enabled ? '' : 'opacity:.62;'}" ${enabled ? '' : `title="${badge} — ไม่มีรอบให้${verb}ในเทอมนี้"`}>
+          <input type="radio" name="cohort-bulk-term" ${on ? 'checked' : ''} ${enabled ? '' : 'disabled'} onchange="window.selectCohortBulkTerm('${escapeHtmlText(value)}')" style="width:16px; height:16px; margin:0; accent-color:${color}; cursor:inherit;" />
+          <span style="font-size:13.5px; font-weight:800; color:${enabled ? '#1E1B4B' : '#64748B'}; min-width:96px;">${label}</span>
+          <span style="font-size:12px; color:#64748B; flex:1;">${meta}</span>
+          ${badge ? `<span style="font-size:11px; font-weight:700; color:#475569; background:#E2E8F0; border-radius:999px; padding:2px 9px; white-space:nowrap;">${badge}</span>` : ''}
+        </label>`;
+    };
+    const metaOf = (list: any[]) => {
+      const done = list.filter(e => e.w.status === 'COMPLETED').length;
+      const unlocked = list.filter(e => e.w.status !== 'COMPLETED' && e.w.isUnlocked).length;
+      const locked = list.length - done - unlocked;
+      return [`${list.length} สาขา`, `ปลดล็อกแล้ว ${unlocked}`, `ล็อกอยู่ ${locked}`, done ? `จบรอบ ${done}` : ''].filter(Boolean).join(' · ');
+    };
+    termsEl.innerHTML = terms.length === 0
+      ? '<div style="padding:12px; text-align:center; color:#94A3B8; background:#F8FAFC; border-radius:10px; font-size:12.5px;">รุ่นนี้ยังไม่มีรอบออกฝึก — เพิ่มรอบจากฟอร์มด้านบนก่อน</div>'
+      : terms.map(t => {
+          const list = entries.filter((e: any) => e.w.term === t);
+          const summer = list.some((e: any) => e.w.termType === 'SUMMER') ? ' (Summer)' : '';
+          return option(t, `${escapeHtmlText(t)}${summer}`, metaOf(list));
+        }).join('') + (terms.length > 1 ? option('', 'ทุกเทอมของรุ่นนี้', metaOf(entries).replace('สาขา', 'รอบ')) : '');
+  }
+
+  const plan = cohortBulkPlan(cohort, cohortBulkAction, cohortBulkTerm);
+  // ทุกเทอม: แสดง "สาขา เทอม" · เทอมเดียว: แสดงแค่รหัสสาขา
+  const names = (list: any[]) => list.map(e => escapeHtmlText(cohortBulkTerm ? e.code : `${e.code} ${e.w.term}`)).join(', ');
+  const unit = cohortBulkTerm ? 'สาขา' : 'รอบ';
+  if (previewEl) {
+    previewEl.innerHTML = terms.length === 0 ? '' : !anyActionable || !selectedActionable ? `
+      <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px 14px; font-size:12.5px; color:#475569; display:flex; gap:8px; align-items:center;">
+        <span class="material-icons" style="font-size:18px; color:#64748B;">task_alt</span>
+        ${!anyActionable
+          ? `ทุกเทอมของรุ่นนี้${unlock ? 'ปลดล็อก' : 'ล็อก'}ครบแล้ว (หรือจบรอบแล้ว) — ไม่มีรอบให้${verb}`
+          : `เลือกเทอมที่ยังมีรอบให้${verb}ด้านบน`}
+      </div>` : `
+      <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px 14px; font-size:12.5px; color:#334155; line-height:1.7;">
+        <div><strong style="color:${color};">จะ${verb} ${plan.change.length} ${unit}:</strong> ${plan.change.length ? names(plan.change) : '<span style="color:#94A3B8;">ไม่มี</span>'}</div>
+        ${plan.already.length ? `<div><strong>${unlock ? 'ปลดล็อกอยู่แล้ว' : 'ล็อกอยู่แล้ว'}:</strong> ${names(plan.already)}</div>` : ''}
+        ${plan.done.length ? `<div><strong>ข้าม (จบรอบแล้ว):</strong> ${names(plan.done)}</div>` : ''}
+        ${!unlock && plan.change.some((e: any) => e.w.extendedOpen) ? '<div style="color:#92400E;">* รอบที่ "เปิดต่อพิเศษ" อยู่จะถูกยกเลิกเปิดต่อพิเศษด้วย</div>' : ''}
+      </div>`;
+  }
+
+  if (btn) {
+    const disabled = plan.change.length === 0;
+    btn.disabled = disabled;
+    btn.style.background = disabled ? '#CBD5E1' : color;
+    btn.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    btn.innerHTML = `${unlock ? '🔓' : '🔒'} ${verb} ${cohortBulkTerm ? escapeHtmlText(cohortBulkTerm) : 'ทุกเทอม'}`;
+  }
+}
+
+window.submitCohortBulk = async function() {
+  const cohort = getSelectedCohort();
+  if (!cohort) return;
+  if (cohortBulkPlan(cohort, cohortBulkAction, cohortBulkTerm).change.length === 0) return;
+  const btn = document.getElementById('cohort-bulk-confirm') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+  const data = await cohortApi(`/api/admin/super-admin/cohorts/${cohort.id}/bulk`, 'POST', {
+    action: cohortBulkAction,
+    term: cohortBulkTerm,
+  });
+  if (btn) btn.disabled = false;
   if (data.success) {
+    window.closeCohortBulkModal();
+    alert('✅ ' + data.message);
     await window.loadCohorts();
     if (window.loadSuperAdminOverview) window.loadSuperAdminOverview();
   }
