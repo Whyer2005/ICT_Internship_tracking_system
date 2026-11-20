@@ -284,7 +284,9 @@ router.post("/super-admin/cohorts/:id/restore", requireStaffOnly, async (req: Re
   }
 });
 
-// POST /super-admin/cohorts/:id/bulk — ปลดล็อก / ล็อก ทุกรอบออกฝึกในรุ่น
+// POST /super-admin/cohorts/:id/bulk — ปลดล็อก / ล็อก รอบออกฝึกของรุ่น ทุกสาขา
+// - body.term = "1/2570" -> เฉพาะเทอมนั้น · ว่าง -> ทุกเทอมของรุ่น
+// - ข้ามรอบที่จบแล้ว และนับเฉพาะรอบที่สถานะเปลี่ยนจริง (ตรงกับตัวเลขที่หน้าต่างยืนยันแสดง)
 router.post("/super-admin/cohorts/:id/bulk", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
@@ -292,17 +294,31 @@ router.post("/super-admin/cohorts/:id/bulk", requireStaffOnly, async (req: Reque
     if (action !== "UNLOCK_ALL" && action !== "LOCK_ALL") {
       return res.status(400).json({ success: false, message: "action ไม่ถูกต้อง" });
     }
+    const term = String(req.body.term || "").trim();
+    if (term && !isValidTerm(term)) {
+      return res.status(400).json({ success: false, message: "รูปแบบรอบเทอมไม่ถูกต้อง (เช่น 1/2570)" });
+    }
     const cohort = await prisma.internshipCohort.findUnique({ where: { id } });
     if (!cohort || cohort.status === "ARCHIVED") {
       return res.status(400).json({ success: false, message: "รุ่นนี้ถูกปิดแล้วหรือไม่พบในระบบ" });
     }
-    const result = await prisma.internshipWindow.updateMany({
-      where: { cohortId: id, isCompleted: false },
-      data: action === "UNLOCK_ALL" ? { isUnlocked: true } : { isUnlocked: false, extendedOpen: false },
-    });
+    const today = todayYmdBangkok();
+    const windows = await prisma.internshipWindow.findMany({ where: { cohortId: id, ...(term ? { term } : {}) } });
+    const unlock = action === "UNLOCK_ALL";
+    const targetIds = windows
+      .filter((w) => computeWindowStatus(w, today) !== "COMPLETED")
+      .filter((w) => (unlock ? !w.isUnlocked : w.isUnlocked || w.extendedOpen))
+      .map((w) => w.id);
+    const result = targetIds.length
+      ? await prisma.internshipWindow.updateMany({
+          where: { id: { in: targetIds } },
+          data: unlock ? { isUnlocked: true } : { isUnlocked: false, extendedOpen: false },
+        })
+      : { count: 0 };
     res.json({
       success: true,
-      message: `${action === "UNLOCK_ALL" ? "ปลดล็อก" : "ล็อก"}รอบออกฝึกของรุ่น ${cohort.code} แล้ว ${result.count} รอบ`,
+      count: result.count,
+      message: `${unlock ? "ปลดล็อก" : "ล็อก"}รอบ ${term || "ทุกเทอม"} ของรุ่น ${cohort.code} แล้ว ${result.count} รอบ`,
     });
   } catch (err) {
     console.error("POST /api/admin/super-admin/cohorts/:id/bulk error:", err);

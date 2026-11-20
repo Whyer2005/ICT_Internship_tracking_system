@@ -2230,6 +2230,29 @@ ${majorOptionsHtml("              ")}
     </div>
 
     <!-- Modal: ดรอปนิสิต -->
+    <!-- หน้าต่าง ปลดล็อก/ล็อก รอบออกฝึกตามเทอม (ปุ่มบนหัวการ์ด "รอบออกฝึก & ปลดล็อก") — เนื้อหาเติมโดย admin_dashboard.js -->
+    <div id="cohort-bulk-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+      <div style="background:white; border-radius:20px; padding:22px 26px; width:500px; max-width:92%; max-height:86vh; overflow-y:auto; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons" id="cohort-bulk-icon" style="font-size:24px;">lock_open</span>
+            <h3 id="cohort-bulk-title" style="font-size:17px; font-weight:700; margin:0;">ปลดล็อกรอบออกฝึก</h3>
+          </div>
+          <button type="button" onclick="window.closeCohortBulkModal()" aria-label="ปิดหน้าต่าง" style="background:none; border:none; color:#64748B; cursor:pointer; display:flex; align-items:center;">
+            <span class="material-icons" style="font-size:20px;">close</span>
+          </button>
+        </div>
+        <p id="cohort-bulk-subtitle" style="font-size:12.5px; color:#64748B; margin:4px 0 14px;"></p>
+        <div style="font-size:12.5px; font-weight:700; color:#475569; margin-bottom:6px;">เลือกเทอม</div>
+        <div id="cohort-bulk-terms" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
+        <div id="cohort-bulk-preview"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCohortBulkModal()">ยกเลิก</button>
+          <button type="button" id="cohort-bulk-confirm" onclick="window.submitCohortBulk()" style="color:white; border:none; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px;">ยืนยัน</button>
+        </div>
+      </div>
+    </div>
+
     <div id="drop-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
       <div style="background:white; border-radius:20px; padding:24px 28px; width:440px; max-width:92%; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
