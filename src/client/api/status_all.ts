@@ -409,7 +409,10 @@ function renderTrainingSummary(list) {
   const total = soft + hard;
   const pendingHours = sum(list.filter((t) => t.status !== 'APPROVED' && t.status !== 'REJECTED'));
   const passed = soft >= TRAINING_CRITERIA.soft && hard >= TRAINING_CRITERIA.hard;
-  const pct = (v, max) => (max > 0 ? Math.round((v / max) * 100) : 0);
+  // % เต็มที่ 100 แม้ชั่วโมงเกินเกณฑ์ (ตัวเลขชั่วโมงยังแสดงค่าจริง)
+  const pct = (v, max) => (max > 0 ? Math.min(100, Math.round((v / max) * 100)) : 0);
+  // ภาพรวม: นับแต่ละหมวดไม่เกินเกณฑ์ของหมวดนั้น กัน Soft เกินไปชดเชย Hard ที่ยังขาด
+  const totalCapped = Math.min(soft, TRAINING_CRITERIA.soft) + Math.min(hard, TRAINING_CRITERIA.hard);
   const bar = (v, max, tone) => `<div class="trn-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${v}"><span class="trn-bar-fill trn-bar-fill--${tone}" style="width:${Math.min(100, pct(v, max))}%"></span></div>`;
   const skillCard = (label, tone, value, max, hint) => `
     <div class="trn-stat">
@@ -430,8 +433,8 @@ function renderTrainingSummary(list) {
         <span class="trn-badge trn-badge--${passed ? 'pass' : 'warn'}">${passed ? '<span class="material-icons">check</span>ผ่านเกณฑ์' : 'ยังไม่ผ่านเกณฑ์'}</span>
       </div>
       <div class="trn-stat-value">${total}<span class="trn-stat-unit">/ เกณฑ์ ${TRAINING_CRITERIA_TOTAL} ชม.</span></div>
-      <div class="trn-stat-row"><span>ความคืบหน้าภาพรวม</span><span class="trn-stat-pct trn-stat-pct--green">${pct(total, TRAINING_CRITERIA_TOTAL)}%</span></div>
-      ${bar(total, TRAINING_CRITERIA_TOTAL, 'green')}
+      <div class="trn-stat-row"><span>ความคืบหน้าภาพรวม</span><span class="trn-stat-pct trn-stat-pct--green">${pct(totalCapped, TRAINING_CRITERIA_TOTAL)}%</span></div>
+      ${bar(totalCapped, TRAINING_CRITERIA_TOTAL, 'green')}
       <div class="trn-stat-hint">${pendingHours > 0 ? `มีอีก ${pendingHours} ชม. รออาจารย์ตรวจ (ยังไม่นับรวม)` : `ต้องผ่าน Soft ${TRAINING_CRITERIA.soft} และ Hard ${TRAINING_CRITERIA.hard} ชม. ก่อนยื่นฝึกงาน`}</div>
     </div>
     ${skillCard('ทักษะด้านอารมณ์และสังคม (Soft Skill)', 'indigo', soft, TRAINING_CRITERIA.soft, 'การสื่อสาร การทำงานเป็นทีม เทคนิคการสัมภาษณ์')}
@@ -719,6 +722,9 @@ window.viewTraining = function(id) {
     ${row('แหล่งที่มา', sourceText)}
     ${row('สถานะ', statusText)}
     ${t.note ? row('หมายเหตุ', escapeStudentHtml(t.note)) : ''}
+    ${isHttpLink(t.certificateLink)
+      ? row('ลิงก์ของ Certificate', `<a class="trn-file-link trn-cert-link" href="${escapeStudentHtml(t.certificateLink)}" target="_blank" rel="noopener noreferrer">${escapeStudentHtml(t.certificateLink)}<span class="material-icons">open_in_new</span></a>`)
+      : ''}
     ${certPreview}
   `, '<button type="button" class="trn-btn trn-btn--ghost" onclick="closeTrainingModal()">ปิด</button>');
 };
@@ -755,6 +761,11 @@ window.openTrainingModal = function() {
         <input id="trn-f-hours" class="trn-input" type="number" min="1" step="1" inputmode="numeric" placeholder="เช่น 6" data-field="hours" />
         <div class="trn-field-error" data-error="hours"></div>
       </div>
+    </div>
+    <div class="trn-field">
+      <label for="trn-f-link">ลิงก์ของ Certificate <span class="trn-req">*</span></label>
+      <input id="trn-f-link" class="trn-input" type="url" maxlength="1000" inputmode="url" placeholder="เช่น ลิงก์ตรวจสอบใบรับรอง หรือหน้าประชาสัมพันธ์ของผู้จัด https://..." data-field="link" />
+      <div class="trn-field-error" data-error="link"></div>
     </div>
     <div class="trn-field">
       <label>แนบ Certificate <span class="trn-req">*</span></label>
@@ -797,13 +808,26 @@ window.openTrainingModal = function() {
   (document.getElementById('trn-f-title') as HTMLInputElement)?.focus();
 };
 
+// ลิงก์ที่กดได้อย่างปลอดภัย (http/https เท่านั้น)
+function isHttpLink(value) {
+  try {
+    const u = new URL(String(value || '').trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function validateTrainingModal() {
   const title = (document.getElementById('trn-f-title') as HTMLInputElement)?.value.trim() || '';
   const type = (document.getElementById('trn-f-type') as HTMLSelectElement)?.value || '';
   const hoursRaw = (document.getElementById('trn-f-hours') as HTMLInputElement)?.value.trim() || '';
   const hours = Number(hoursRaw);
-  const errors = { title: '', type: '', hours: '', file: '' };
+  const link = (document.getElementById('trn-f-link') as HTMLInputElement)?.value.trim() || '';
+  const errors = { title: '', type: '', hours: '', link: '', file: '' };
   if (!title) errors.title = 'กรุณากรอกชื่อคอร์ส';
+  if (!link) errors.link = 'กรุณากรอกลิงก์ของ Certificate';
+  else if (!isHttpLink(link)) errors.link = 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://';
   if (!type) errors.type = 'กรุณาเลือกประเภท';
   if (!hoursRaw) errors.hours = 'กรุณากรอกจำนวนชั่วโมง';
   else if (!Number.isInteger(hours) || hours <= 0) errors.hours = 'จำนวนชั่วโมงต้องเป็นจำนวนเต็มมากกว่า 0';
@@ -829,7 +853,7 @@ function validateTrainingModal() {
 }
 
 window.submitTrainingModal = async function() {
-  ['title', 'type', 'hours', 'file'].forEach((k) => trainingModalTouched.add(k));
+  ['title', 'type', 'hours', 'link', 'file'].forEach((k) => trainingModalTouched.add(k));
   if (!validateTrainingModal()) return;
   const submit = document.getElementById('trn-f-submit') as HTMLButtonElement;
   submit.dataset.busy = '1';
@@ -840,6 +864,7 @@ window.submitTrainingModal = async function() {
     formData.append('hours', (document.getElementById('trn-f-hours') as HTMLInputElement).value.trim());
     formData.append('skillType', (document.getElementById('trn-f-type') as HTMLSelectElement).value);
     formData.append('title', (document.getElementById('trn-f-title') as HTMLInputElement).value.trim());
+    formData.append('certificateLink', (document.getElementById('trn-f-link') as HTMLInputElement).value.trim());
     formData.append('certificate', trainingModalFile);
     const res = await fetch('/api/student/trainings', { method: 'POST', body: formData });
     const data = await res.json().catch(() => null);
@@ -2675,7 +2700,7 @@ function checkPlacementUnlock() {
   } else {
     cvStatusDesc = '☐ รอผล (รออาจารย์ตรวจ)';
   }
-  updateRequirementCard('step-req-cv', isCvApproved, '2. กรอกใบ CV', cvStatusDesc);
+  updateRequirementCard('step-req-cv', isCvApproved, '2. Resume (CV)', cvStatusDesc);
 
   if (isChecklistUnlocked) {
     // ปลดล็อกให้แสดงส่วนที่ 4 & 5

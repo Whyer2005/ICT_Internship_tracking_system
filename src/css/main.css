@@ -1722,6 +1722,9 @@ html.status-drawer-scroll-lock body {
 .trn-chip--amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
 .trn-chip--slate { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
 .trn-file-link { font-size: 12px; font-weight: 600; color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+/* ลิงก์ของ Certificate ในรายละเอียดการอบรม: URL ยาวต้องตัดบรรทัดได้ ไม่ดันกล่องจนล้น */
+.trn-cert-link { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
+.trn-cert-link .material-icons { flex: none; font-size: 15px; }
 .trn-status { display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
 .trn-status .material-icons { font-size: 14px; }
 .trn-status--pass { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }

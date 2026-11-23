@@ -399,6 +399,22 @@ router.post("/trainings", upload.single("certificate"), async (req: Request, res
       return res.status(400).json({ success: false, message: "กรุณาระบุจำนวนชั่วโมงให้ถูกต้อง" });
     }
 
+    // ลิงก์ Certificate: รับเฉพาะ http/https (กัน javascript: ฯลฯ เพราะหน้าเว็บนำไปทำเป็นลิงก์ให้กด)
+    const certificateLinkRaw = String(req.body.certificateLink || "").trim();
+    let certificateLink: string | null = null;
+    if (certificateLinkRaw) {
+      let parsedLink: URL | null = null;
+      try {
+        parsedLink = new URL(certificateLinkRaw);
+      } catch {
+        parsedLink = null;
+      }
+      if (!parsedLink || !["http:", "https:"].includes(parsedLink.protocol) || certificateLinkRaw.length > 1000) {
+        return res.status(400).json({ success: false, message: "ลิงก์ Certificate ไม่ถูกต้อง (ต้องขึ้นต้นด้วย http:// หรือ https://)" });
+      }
+      certificateLink = parsedLink.toString();
+    }
+
     let certificateFileUrl: string | null = null;
     if (req.file) {
       certificateFileUrl = await uploadToCloudinary(
@@ -418,6 +434,7 @@ router.post("/trainings", upload.single("certificate"), async (req: Request, res
         skillType: normalizedSkillType,
         hours: parseInt(hours, 10),
         certificateFileUrl,
+        certificateLink,
         source: "STUDENT_UPLOAD",
         status: "PENDING",
       },

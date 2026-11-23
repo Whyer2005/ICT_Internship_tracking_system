@@ -127,11 +127,11 @@ const PAGE_BODY_HTML = `
             </div>
           </section>
 
-          <!-- อื่นๆ -->
+          <!-- ข้อมูลผลงาน -->
           <section class="pf-card">
             <header class="pf-card-head">
               <span class="pf-card-icon"><span class="material-icons" aria-hidden="true">description</span></span>
-              <div><h2>อื่นๆ</h2><p>ข้อมูลบันทึกเพิ่มเติม</p></div>
+              <div><h2>ข้อมูลผลงาน</h2><p>ข้อมูลบันทึกเพิ่มเติม</p></div>
               <a class="pf-tag pf-tag--edit" href="${EDIT_URL}"><span class="material-icons" aria-hidden="true">edit</span>แก้ไขได้</a>
             </header>
             <div id="p-extra"></div>
