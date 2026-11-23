@@ -651,6 +651,83 @@ const PAGE_STYLES: string[] = [`
     color: #FFFFFF !important;
     font-weight: 400 !important;
   }
+
+  /* ===== แถบค้นหา/ตัวกรองรายชื่อนิสิต (แถวบน: ค้นหา + เรียง / แถวล่าง: ตัวกรองแบบการ์ด) ===== */
+  #admin-dashboard .adm-filter { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  #admin-dashboard .adm-filter-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #admin-dashboard .adm-search {
+    flex: 1 1 320px; min-width: 0; height: 44px; display: flex; align-items: center; gap: 8px;
+    padding: 0 10px 0 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; cursor: text;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #admin-dashboard .adm-search:focus-within { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+  #admin-dashboard .adm-search > .material-icons { font-size: 20px; color: #94A3B8; }
+  #admin-dashboard .adm-search input {
+    flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent;
+    font-size: 14px; color: #0F172A; font-family: inherit;
+  }
+  #admin-dashboard .adm-search input::placeholder { color: #94A3B8; }
+  #admin-dashboard .adm-search kbd {
+    min-width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-family: inherit; color: #64748B; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px;
+  }
+  #admin-dashboard .adm-sort {
+    position: relative; flex: 0 0 auto; height: 44px; display: flex; align-items: center; gap: 6px;
+    padding: 0 12px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; cursor: pointer;
+  }
+  #admin-dashboard .adm-sort > .material-icons:first-child { font-size: 18px; color: #E11D48; transform: rotate(-20deg); }
+  #admin-dashboard .adm-sort select {
+    appearance: none; -webkit-appearance: none; border: 0; outline: none; background: transparent;
+    padding-right: 22px; font-size: 13.5px; font-weight: 700; color: #0F172A; font-family: inherit; cursor: pointer;
+  }
+  #admin-dashboard .adm-sort .adm-chevron { position: absolute; right: 10px; font-size: 18px; color: #64748B; pointer-events: none; }
+  #admin-dashboard .adm-clear-link {
+    flex: 0 0 auto; padding: 6px 4px; background: none; border: 0; color: #2563EB;
+    font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  #admin-dashboard .adm-clear-link:hover { text-decoration: underline; }
+
+  #admin-dashboard .adm-filter-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  #admin-dashboard .adm-filter-field {
+    position: relative; flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 12px 6px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  #admin-dashboard .adm-filter-field[data-filter="major-filter"] { flex: 1.8 1 220px; }
+  #admin-dashboard .adm-filter-field:focus-within { border-color: #93C5FD; }
+  #admin-dashboard .adm-filter-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #64748B; }
+  #admin-dashboard .adm-filter-label .material-icons { font-size: 15px; }
+  #admin-dashboard .adm-filter-select {
+    width: 100%; min-height: 26px; padding: 0 22px 0 0; border: 0; outline: none; appearance: none; -webkit-appearance: none;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23475569' stroke-width='1.6' fill='none'/%3E%3C/svg%3E") no-repeat right 2px center;
+    font-size: 14px; font-weight: 700; color: #0F172A; font-family: inherit; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #admin-dashboard .adm-status { position: relative; }
+  #admin-dashboard .adm-status-btn { display: flex; align-items: center; justify-content: space-between; gap: 4px; text-align: left; background-image: none; }
+  #admin-dashboard .adm-status-btn #status-filter-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #admin-dashboard .adm-status-btn .material-icons { font-size: 18px; color: #475569; }
+  #admin-dashboard .adm-status-menu {
+    position: absolute; top: calc(100% + 8px); left: -12px; width: max-content; min-width: calc(100% + 24px); z-index: 1050;
+    padding: 4px 0; max-height: 340px; overflow-y: auto; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px;
+    box-shadow: 0 8px 24px -4px rgba(15,23,42,0.12), 0 2px 6px -1px rgba(15,23,42,0.06);
+  }
+  /* ปุ่ม × แสดงเฉพาะตัวกรองที่ใช้งานอยู่ */
+  #admin-dashboard .adm-filter-x {
+    position: absolute; top: 6px; right: 8px; width: 20px; height: 20px; display: none; align-items: center; justify-content: center;
+    padding: 0; background: none; border: 0; border-radius: 999px; color: #2563EB; cursor: pointer;
+  }
+  #admin-dashboard .adm-filter-x .material-icons { font-size: 16px; }
+  #admin-dashboard .adm-filter-x:hover { background: #DBEAFE; }
+  #admin-dashboard .adm-filter-field.is-active { background: #EFF6FF; border-color: #93C5FD; }
+  #admin-dashboard .adm-filter-field.is-active .adm-filter-label,
+  #admin-dashboard .adm-filter-field.is-active .adm-filter-select { color: #1D4ED8; }
+  #admin-dashboard .adm-filter-field.is-active .adm-filter-x { display: inline-flex; }
+  @media (max-width: 640px) {
+    #admin-dashboard .adm-sort { flex: 1 1 auto; }
+    #admin-dashboard .adm-filter-field { flex-basis: calc(50% - 5px); }
+    #admin-dashboard .adm-filter-field[data-filter="major-filter"] { flex-basis: 100%; }
+  }
 `];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
@@ -810,92 +887,119 @@ ${ictMajorsDataScript()}
           </div>
 
           <!-- Filter & Search Bar (รองรับ 8 สาขาวิชาของคณะ ICT) -->
-          <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px;">
-            <div style="position:relative; flex:1; min-width:190px; max-width:250px;">
-              <span class="material-icons" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#94A3B8; font-size:18px;">search</span>
-              <input type="text" class="input-field" id="student-search" placeholder="ค้นหารหัสนิสิต หรือ ชื่อ..." style="padding-left:34px !important; width:100%; font-size:13px;" />
+          <!-- แถวบน: ค้นหา (กด / เพื่อโฟกัส) + การเรียง + ล้างตัวกรอง / แถวล่าง: ตัวกรองแบบการ์ด (ตัวที่ใช้งานอยู่เป็นสีฟ้า + ปุ่ม × ล้างเฉพาะตัว) -->
+          <div class="adm-filter">
+            <div class="adm-filter-top">
+              <label class="adm-search">
+                <span class="material-icons" aria-hidden="true">search</span>
+                <input type="text" id="student-search" placeholder="ค้นหารหัสนิสิต, ชื่อ หรือบริษัท..." autocomplete="off" />
+                <kbd title="กด / เพื่อค้นหา">/</kbd>
+              </label>
+              <label class="adm-sort">
+                <span class="material-icons" aria-hidden="true">push_pin</span>
+                <select id="sort-by" aria-label="การเรียงลำดับ">
+                  <option value="critical" selected>เรียง: ต้องติดตาม ➔ พร้อมฝึกงาน</option>
+                  <option value="studentCode_desc">เรียง: รหัสนิสิต (มาก ➔ น้อย)</option>
+                  <option value="studentCode_asc">เรียง: รหัสนิสิต (น้อย ➔ มาก)</option>
+                  <option value="name_asc">เรียง: ชื่อ-นามสกุล (ก-ฮ)</option>
+                </select>
+                <span class="material-icons adm-chevron" aria-hidden="true">expand_more</span>
+              </label>
+              <button id="btn-clear-filter" type="button" class="adm-clear-link" onclick="clearAllFilters()">ล้างตัวกรอง</button>
             </div>
 
-            <select id="major-filter" class="input-field" style="width:auto; min-width:170px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="ALL">ทุกสาขาวิชา (คณะ ICT)</option>
-${majorOptionsHtml("              ")}
-            </select>
-
-            <select id="year-filter" class="input-field" style="width:auto; min-width:115px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="">ทุกชั้นปี</option>
-            </select>
-
-            <select id="semester-filter" class="input-field" style="width:auto; min-width:125px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="">ทุกภาคเรียน</option>
-              <option value="1">ภาคเรียนที่ 1</option>
-              <option value="2" selected>ภาคเรียนที่ 2</option>
-              <option value="SUMMER">ภาคฤดูร้อน</option>
-            </select>
-
-            <select id="window-term-filter" class="input-field" title="รอบออกฝึกที่นิสิตผูกไว้" style="width:auto; min-width:135px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="">ทุกรอบออกฝึก</option>
-            </select>
-
-            <!-- Custom Status Filter Dropdown (กางลงด้านล่างเสมอ ขนาด/ฟอนต์ตรงตามมาตรฐานภาพที่ 2) -->
-            <div id="status-dropdown-container" style="position:relative; display:inline-block; width:195px; min-width:195px;">
-              <input type="hidden" id="status-filter" value="" data-label="ทุกสถานะ" />
-              <button type="button" id="status-filter-btn" onclick="window.toggleStatusDropdown ? window.toggleStatusDropdown() : (function(){ var m=document.getElementById('status-dropdown-menu'); if(m) m.style.display=m.style.display==='none'||!m.style.display?'block':'none'; })()" class="input-field" style="width:100%; min-width:195px; height:auto; min-height:36px; display:inline-flex; align-items:center; justify-content:space-between; gap:6px; font-size:13px; font-weight:400; color:#1E1B4B; padding:7px 12px; cursor:pointer; background:#FFFFFF; border:1px solid #CBD5E1; border-radius:8px; box-sizing:border-box;">
-                <span id="status-filter-label" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400;">ทุกสถานะ</span>
-                <span id="status-arrow-icon" class="material-icons" style="font-size:18px; color:#64748B; pointer-events:none;">keyboard_arrow_down</span>
-              </button>
-              <div id="status-dropdown-menu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; width:max-content; min-width:100%; box-sizing:border-box; z-index:1050; background:#FFFFFF; border:1px solid #CBD5E1; border-radius:8px; box-shadow:0 8px 24px -4px rgba(15,23,42,0.12), 0 2px 6px -1px rgba(15,23,42,0.06); padding:4px 0; max-height:340px; overflow-y:auto;">
-                <div class="status-option selected" data-val="" onclick="window.selectStatusFilter('', 'ทุกสถานะ')">ทุกสถานะ</div>
-
-                <!-- ขั้นตอนที่ 1: ตรวจเรซูเม่ (CV) -->
-                <div class="status-group-header">📄 1. ตรวจเรซูเม่ (CV)</div>
-                <div class="status-option" data-val="cv_pending" onclick="window.selectStatusFilter('cv_pending', '⏳ ยังไม่ได้รีวิว CV')">⏳ ยังไม่ได้รีวิว CV</div>
-                <div class="status-option" data-val="cv_approved" onclick="window.selectStatusFilter('cv_approved', '🟢 ตรวจ CV ผ่าน')">🟢 ตรวจ CV ผ่าน</div>
-                <div class="status-option" data-val="cv_rejected" onclick="window.selectStatusFilter('cv_rejected', '🔴 ไม่ผ่าน CV')">🔴 ไม่ผ่าน CV</div>
-                <div class="status-option" data-val="cv_none" onclick="window.selectStatusFilter('cv_none', '🔴 ยังไม่ทำ CV')">🔴 ยังไม่ทำ CV</div>
-
-                <!-- ขั้นตอนที่ 2: Checklist สถานประกอบการ -->
-                <div class="status-group-header">🏢 2. Checklist สถานประกอบการ</div>
-                <div class="status-option" data-val="checklist_pending" onclick="window.selectStatusFilter('checklist_pending', '⏳ รอตรวจ Checklist')">⏳ รอตรวจ Checklist</div>
-                <div class="status-option" data-val="checklist_approved" onclick="window.selectStatusFilter('checklist_approved', '🟢 Checklist ผ่าน')">🟢 Checklist ผ่าน</div>
-
-                <!-- ขั้นตอนที่ 3: ชั่วโมงอบรมเตรียมความพร้อม -->
-                <div class="status-group-header">🎓 3. ชั่วโมงอบรมเตรียมความพร้อม</div>
-                <div class="status-option" data-val="training_not_checked" onclick="window.selectStatusFilter('training_not_checked', '⏳ ชม.ครบ ยังไม่ตรวจ')">⏳ ชม.ครบ ยังไม่ตรวจ</div>
-                <div class="status-option" data-val="training_incomplete" onclick="window.selectStatusFilter('training_incomplete', '⏳ ชั่วโมงยังไม่ครบ')">⏳ ชั่วโมงยังไม่ครบ</div>
-                <div class="status-option" data-val="training_passed" onclick="window.selectStatusFilter('training_passed', '🟢 ผ่านการตรวจชม.ครบ')">🟢 ผ่านการตรวจชม.ครบ</div>
-                <div class="status-option" data-val="training_failed" onclick="window.selectStatusFilter('training_failed', '🔴 ตรวจแล้ว ยังไม่ผ่าน')">🔴 ตรวจแล้ว ยังไม่ผ่าน</div>
-
-                <!-- ขั้นตอนที่ 4: การสัมภาษณ์ & ที่ฝึกงาน -->
-                <div class="status-group-header">💼 4. การสัมภาษณ์ &amp; ที่ฝึกงาน</div>
-                <div class="status-option" data-val="placement_pending" onclick="window.selectStatusFilter('placement_pending', '⏳ รออนุมัติที่ฝึกงาน')">⏳ รออนุมัติที่ฝึกงาน</div>
-                <div class="status-option" data-val="interview_passed" onclick="window.selectStatusFilter('interview_passed', '🟢 สัมภาษณ์ผ่านแล้ว')">🟢 สัมภาษณ์ผ่านแล้ว</div>
-                <div class="status-option" data-val="placement_approved" onclick="window.selectStatusFilter('placement_approved', '🟢 อนุมัติที่ฝึกงานแล้ว')">🟢 อนุมัติที่ฝึกงานแล้ว</div>
-                <div class="status-option" data-val="placement_rejected" onclick="window.selectStatusFilter('placement_rejected', '🔴 ไม่อนุมัติที่ฝึกงาน')">🔴 ไม่อนุมัติที่ฝึกงาน</div>
+            <div class="adm-filter-grid">
+              <div class="adm-filter-field" data-filter="major-filter" data-default="ALL">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">school</span>สาขา</span>
+                <select id="major-filter" class="adm-filter-select" aria-label="สาขา">
+                  <option value="ALL">ทุกสาขา (คณะ ICT)</option>
+                  ${majorOptionsHtml("              ")}
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('major-filter')" aria-label="ล้างตัวกรองสาขา" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="year-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">check_box</span>ชั้นปี</span>
+                <select id="year-filter" class="adm-filter-select" aria-label="ชั้นปี">
+                  <option value="">ทั้งหมด</option>
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('year-filter')" aria-label="ล้างตัวกรองชั้นปี" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="semester-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">calendar_month</span>ภาคเรียน</span>
+                <select id="semester-filter" class="adm-filter-select" aria-label="ภาคเรียน">
+                  <option value="">ทั้งหมด</option>
+                  <option value="1">ภาคเรียนที่ 1</option>
+                  <option value="2" selected>ภาคเรียนที่ 2</option>
+                  <option value="SUMMER">ภาคฤดูร้อน</option>
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('semester-filter')" aria-label="ล้างตัวกรองภาคเรียน" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="window-term-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">event</span>รอบออกฝึก</span>
+                <select id="window-term-filter" class="adm-filter-select" title="รอบออกฝึกที่นิสิตผูกไว้" aria-label="รอบออกฝึก">
+                  <option value="">ทั้งหมด</option>
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('window-term-filter')" aria-label="ล้างตัวกรองรอบออกฝึก" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="status-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">flag</span>สถานะ</span>
+                <div id="status-dropdown-container" class="adm-status">
+                  <input type="hidden" id="status-filter" value="" data-label="ทั้งหมด" />
+                  <button type="button" id="status-filter-btn" class="adm-filter-select adm-status-btn" onclick="window.toggleStatusDropdown && window.toggleStatusDropdown()">
+                    <span id="status-filter-label">ทั้งหมด</span>
+                    <span id="status-arrow-icon" class="material-icons" aria-hidden="true">keyboard_arrow_down</span>
+                  </button>
+                  <div id="status-dropdown-menu" class="adm-status-menu" style="display:none;">
+                    <div class="status-option selected" data-val="" onclick="window.selectStatusFilter('', 'ทั้งหมด')">ทั้งหมด</div>
+                  
+                    <!-- ขั้นตอนที่ 1: ตรวจเรซูเม่ (CV) -->
+                    <div class="status-group-header">📄 1. ตรวจเรซูเม่ (CV)</div>
+                    <div class="status-option" data-val="cv_pending" onclick="window.selectStatusFilter('cv_pending', '⏳ ยังไม่ได้รีวิว CV')">⏳ ยังไม่ได้รีวิว CV</div>
+                    <div class="status-option" data-val="cv_approved" onclick="window.selectStatusFilter('cv_approved', '🟢 ตรวจ CV ผ่าน')">🟢 ตรวจ CV ผ่าน</div>
+                    <div class="status-option" data-val="cv_rejected" onclick="window.selectStatusFilter('cv_rejected', '🔴 ไม่ผ่าน CV')">🔴 ไม่ผ่าน CV</div>
+                    <div class="status-option" data-val="cv_none" onclick="window.selectStatusFilter('cv_none', '🔴 ยังไม่ทำ CV')">🔴 ยังไม่ทำ CV</div>
+                  
+                    <!-- ขั้นตอนที่ 2: Checklist สถานประกอบการ -->
+                    <div class="status-group-header">🏢 2. Checklist สถานประกอบการ</div>
+                    <div class="status-option" data-val="checklist_pending" onclick="window.selectStatusFilter('checklist_pending', '⏳ รอตรวจ Checklist')">⏳ รอตรวจ Checklist</div>
+                    <div class="status-option" data-val="checklist_approved" onclick="window.selectStatusFilter('checklist_approved', '🟢 Checklist ผ่าน')">🟢 Checklist ผ่าน</div>
+                  
+                    <!-- ขั้นตอนที่ 3: ชั่วโมงอบรมเตรียมความพร้อม -->
+                    <div class="status-group-header">🎓 3. ชั่วโมงอบรมเตรียมความพร้อม</div>
+                    <div class="status-option" data-val="training_not_checked" onclick="window.selectStatusFilter('training_not_checked', '⏳ ชม.ครบ ยังไม่ตรวจ')">⏳ ชม.ครบ ยังไม่ตรวจ</div>
+                    <div class="status-option" data-val="training_incomplete" onclick="window.selectStatusFilter('training_incomplete', '⏳ ชั่วโมงยังไม่ครบ')">⏳ ชั่วโมงยังไม่ครบ</div>
+                    <div class="status-option" data-val="training_passed" onclick="window.selectStatusFilter('training_passed', '🟢 ผ่านการตรวจชม.ครบ')">🟢 ผ่านการตรวจชม.ครบ</div>
+                    <div class="status-option" data-val="training_failed" onclick="window.selectStatusFilter('training_failed', '🔴 ตรวจแล้ว ยังไม่ผ่าน')">🔴 ตรวจแล้ว ยังไม่ผ่าน</div>
+                  
+                    <!-- ขั้นตอนที่ 4: การสัมภาษณ์ & ที่ฝึกงาน -->
+                    <div class="status-group-header">💼 4. การสัมภาษณ์ &amp; ที่ฝึกงาน</div>
+                    <div class="status-option" data-val="placement_pending" onclick="window.selectStatusFilter('placement_pending', '⏳ รออนุมัติที่ฝึกงาน')">⏳ รออนุมัติที่ฝึกงาน</div>
+                    <div class="status-option" data-val="interview_passed" onclick="window.selectStatusFilter('interview_passed', '🟢 สัมภาษณ์ผ่านแล้ว')">🟢 สัมภาษณ์ผ่านแล้ว</div>
+                    <div class="status-option" data-val="placement_approved" onclick="window.selectStatusFilter('placement_approved', '🟢 อนุมัติที่ฝึกงานแล้ว')">🟢 อนุมัติที่ฝึกงานแล้ว</div>
+                    <div class="status-option" data-val="placement_rejected" onclick="window.selectStatusFilter('placement_rejected', '🔴 ไม่อนุมัติที่ฝึกงาน')">🔴 ไม่อนุมัติที่ฝึกงาน</div>
+                  </div>
+                </div>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('status-filter')" aria-label="ล้างตัวกรองสถานะ" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="advisor-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">person</span>อาจารย์</span>
+                <select id="advisor-filter" class="adm-filter-select" aria-label="อาจารย์ที่ปรึกษา">
+                  <option value="">ทั้งหมด</option>
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('advisor-filter')" aria-label="ล้างตัวกรองอาจารย์" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
+              </div>
+              <div class="adm-filter-field" data-filter="skill-filter">
+                <span class="adm-filter-label"><span class="material-icons" aria-hidden="true">schedule</span>ชั่วโมง</span>
+                <select id="skill-filter" class="adm-filter-select" aria-label="สถานะชั่วโมง">
+                  <option value="">ทั้งหมด</option>
+                  <option value="pass_all">🟢 ผ่านเกณฑ์ครบ (Soft+Hard)</option>
+                  <option value="lack_soft">⚠️ ขาด Soft Skill (&lt; 12 ชม.)</option>
+                  <option value="lack_hard">⚠️ ขาด Hard Skill (&lt; 18 ชม.)</option>
+                  <option value="lack_both">⚠️ ขาดทั้ง Soft &amp; Hard</option>
+                </select>
+                <button type="button" class="adm-filter-x" onclick="window.clearOneFilter('skill-filter')" aria-label="ล้างตัวกรองชั่วโมง" title="ล้างตัวกรองนี้"><span class="material-icons" aria-hidden="true">close</span></button>
               </div>
             </div>
-
-            <select id="advisor-filter" class="input-field" style="width:auto; min-width:145px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="">ทุกอาจารย์ที่ปรึกษา</option>
-            </select>
-
-            <select id="skill-filter" class="input-field" style="width:auto; min-width:155px; font-size:13px; padding:7px 12px; cursor:pointer;">
-              <option value="">ทุกสถานะชั่วโมง</option>
-              <option value="pass_all">🟢 ผ่านเกณฑ์ครบ (Soft+Hard)</option>
-              <option value="lack_soft">⚠️ ขาด Soft Skill (&lt; 12 ชม.)</option>
-              <option value="lack_hard">⚠️ ขาด Hard Skill (&lt; 18 ชม.)</option>
-              <option value="lack_both">⚠️ ขาดทั้ง Soft &amp; Hard</option>
-            </select>
-
-            <select id="sort-by" class="input-field" style="width:auto; min-width:165px; font-size:13px; padding:7px 12px; cursor:pointer; font-weight:500;">
-              <option value="critical" selected>📌 เรียง: ต้องติดตาม ➔ พร้อมฝึกงาน</option>
-              <option value="studentCode_desc">🔢 เรียง: รหัสนิสิต (มาก ➔ น้อย)</option>
-              <option value="studentCode_asc">🔤 เรียง: รหัสนิสิต (น้อย ➔ มาก)</option>
-              <option value="name_asc">👤 เรียง: ชื่อ-นามสกุล (ก-ฮ)</option>
-            </select>
-
-            <button id="btn-clear-filter" onclick="clearAllFilters()" style="display:none; background:#EF4444; color:white; border:none; font-size:12px; padding:7px 12px; border-radius:10px; cursor:pointer; align-items:center; gap:4px; font-weight:600;">
-              <span class="material-icons" style="font-size:14px;">close</span> ล้างตัวกรอง
-            </button>
           </div>
 
           <div class="admin-student-table-scroll">

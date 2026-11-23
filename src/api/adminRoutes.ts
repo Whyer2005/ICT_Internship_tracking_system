@@ -692,11 +692,22 @@ router.get("/students", async (req: Request, res: Response) => {
     // Filter ตาม search
     if (search) {
       const q = search.toLowerCase();
+      // ชื่อบริษัทของนิสิต (ที่ฝึกงาน + บริษัทใน Checklist) สำหรับค้นหาด้วยชื่อบริษัท
+      const companyTextById = new Map<number, string>(
+        allStudents.map((s: any) => [
+          s.id,
+          [s.placement?.companyNameTh, ...(s.companies || []).map((c: any) => c.name)]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase(),
+        ])
+      );
       mapped = mapped.filter(
         (s) =>
           s.studentCode.toLowerCase().includes(q) ||
           s.nameTh.toLowerCase().includes(q) ||
-          (s.nameEn && s.nameEn.toLowerCase().includes(q))
+          (s.nameEn && s.nameEn.toLowerCase().includes(q)) ||
+          (companyTextById.get(s.id) || "").includes(q)
       );
     }
 

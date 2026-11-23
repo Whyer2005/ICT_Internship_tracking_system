@@ -21,11 +21,34 @@ import {
   saveStudentRoundState,
   StudentRoundState,
 } from "../utils/superAdminStore";
+import { resolveGoogleMapsLink } from "../utils/googleMapsLink";
 
 const router = express.Router();
 
 // ต้อง login ทุก route ภายใต้ /api/student
 router.use(requireLogin);
+
+// แปลงลิงก์ Google Maps / พิกัดที่คัดลอกมา → lat,lng สำหรับปักหมุดสถานประกอบการ
+// (ลิงก์ย่อ maps.app.goo.gl ต้องให้ server ตาม redirect เพราะ browser อ่าน redirect ข้ามโดเมนไม่ได้)
+router.post("/map-link", async (req: Request, res: Response) => {
+  const link = String(req.body?.link || "").trim().slice(0, 2000);
+  if (!link) {
+    return res.status(400).json({ success: false, message: "กรุณาวางลิงก์ Google Maps หรือพิกัด" });
+  }
+  try {
+    const coords = await resolveGoogleMapsLink(link);
+    if (!coords) {
+      return res.status(400).json({
+        success: false,
+        message: "ไม่พบพิกัดในลิงก์นี้ — ใน Google Maps ให้คลิกขวาที่ตำแหน่งบริษัท แล้วกดตัวเลขพิกัดเพื่อคัดลอกมาวางแทน",
+      });
+    }
+    res.json({ success: true, ...coords });
+  } catch (err) {
+    console.error("POST /api/student/map-link error:", err);
+    res.status(502).json({ success: false, message: "เปิดลิงก์ Google Maps ไม่สำเร็จ กรุณาลองใหม่ หรือวางพิกัดแทน" });
+  }
+});
 
 // ==========================================
 // 1. ตั้งค่าการอัปโหลดไฟล์ด้วย Multer (Memory Storage)

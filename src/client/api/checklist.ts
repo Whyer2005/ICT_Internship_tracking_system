@@ -257,7 +257,9 @@ function mapPickerEl(id) {
 
 function ensureMapPickerModal() {
   let modal = mapPickerEl('company-map-modal');
-  if (modal) return modal;
+  // หน้าต่างที่ค้างจากสคริปต์เวอร์ชันเก่า (ไม่มีช่องลิงก์ Google Maps) → สร้างใหม่
+  if (modal && modal.querySelector('#map-picker-gmaps-link')) return modal;
+  if (modal) modal.remove();
   modal = document.createElement('div');
   modal.id = 'company-map-modal';
   modal.className = 'map-picker-overlay';
@@ -278,6 +280,21 @@ function ensureMapPickerModal() {
         <button type="submit" class="addr-map-btn" aria-label="ค้นหา"><span class="material-icons" aria-hidden="true">search</span><span class="addr-map-btn-text">ค้นหา</span></button>
       </form>
       <div id="map-picker-results" class="map-picker-results" role="listbox" hidden></div>
+      <form class="map-picker-gmaps" onsubmit="event.preventDefault(); window.applyGoogleMapsLink();">
+        <label for="map-picker-gmaps-link">
+          <span class="material-icons" aria-hidden="true">add_location_alt</span>
+          บริษัทมีหลายสาขา? วางลิงก์ Google Maps หรือพิกัดของสาขาที่ไปฝึก
+        </label>
+        <div class="map-picker-gmaps-row">
+          <input type="text" id="map-picker-gmaps-link" class="input-field" placeholder="เช่น https://maps.app.goo.gl/... หรือ 13.7563, 100.5018" autocomplete="off" />
+          <button type="submit" id="map-picker-gmaps-btn" class="addr-map-btn"><span class="material-icons" aria-hidden="true">push_pin</span><span class="addr-map-btn-text">ปักหมุด</span></button>
+          <a class="map-picker-gmaps-open" id="map-picker-gmaps-open" href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" title="เปิด Google Maps เพื่อหาตำแหน่ง">
+            <span class="material-icons" aria-hidden="true">open_in_new</span>Google Maps
+          </a>
+        </div>
+        <small>ใน Google Maps: กด "แชร์" แล้วคัดลอกลิงก์ หรือคลิกขวาที่ตำแหน่งบริษัทแล้วกดตัวเลขพิกัดเพื่อคัดลอก</small>
+        <div id="map-picker-gmaps-msg" class="map-picker-gmaps-msg" role="status"></div>
+      </form>
       <div id="map-picker-map" class="map-picker-map"></div>
       <div class="map-picker-hint">คลิกบนแผนที่ หรือลากหมุด เพื่อปรับตำแหน่งให้ตรงกับสถานประกอบการ</div>
       <div id="map-picker-selected" class="map-picker-selected">ยังไม่ได้เลือกตำแหน่ง</div>
@@ -354,6 +371,13 @@ window.openCompanyMapPicker = async function(index) {
   const name = document.querySelectorAll('.company-name-input')[index]?.value || '';
   const q = mapPickerEl('map-picker-query');
   q.value = hasRealAddress(addr) ? addr : name;
+  // ช่องลิงก์ Google Maps: ล้างค่ารอบก่อน + ปุ่ม "Google Maps" เปิดค้นหาชื่อบริษัทให้เลย
+  const gmapsInput = mapPickerEl('map-picker-gmaps-link');
+  const gmapsMsg = mapPickerEl('map-picker-gmaps-msg');
+  const gmapsOpen = mapPickerEl('map-picker-gmaps-open');
+  if (gmapsInput) gmapsInput.value = '';
+  if (gmapsMsg) gmapsMsg.textContent = '';
+  if (gmapsOpen) gmapsOpen.href = window.IctCompanyMap.mapUrl(addr, null, null, name) || 'https://www.google.com/maps';
   mapPickerEl('map-picker-results').hidden = true;
   mapPickerEl('map-picker-results').innerHTML = '';
   if (mapPicker?.map) mapPicker.map.remove(); // กันเปิดซ้อนโดยไม่ได้ปิด
@@ -442,6 +466,44 @@ window.pickCompanyMapResult = function(i) {
   reverseSeq++;
   mapPicker.picked = { lat, lng, ...nominatimToAddress(it) };
   showPicked();
+};
+
+// ลิงก์ Google Maps / พิกัด → ให้ server แปลงเป็น lat,lng (รองรับลิงก์ย่อ maps.app.goo.gl) แล้วปักหมุด + หาที่อยู่
+window.applyGoogleMapsLink = async function() {
+  const input = mapPickerEl('map-picker-gmaps-link');
+  const msg = mapPickerEl('map-picker-gmaps-msg');
+  const btn = mapPickerEl('map-picker-gmaps-btn');
+  const link = (input?.value || '').trim();
+  if (!link || !mapPicker?.map) return;
+  const pSeq = mapPicker.seq;
+  const setMsg = (text, isError) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.classList.toggle('is-error', Boolean(isError));
+  };
+  setMsg('กำลังอ่านพิกัดจากลิงก์...', false);
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/student/map-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link }),
+    });
+    const data = await res.json();
+    if (!isActivePicker(pSeq)) return;
+    if (!data.success) {
+      setMsg(data.message || 'ไม่พบพิกัดในลิงก์นี้', true);
+      return;
+    }
+    mapPickerEl('map-picker-results').hidden = true;
+    placePickerMarker(data.lat, data.lng, 17);
+    reverseGeocodePick(data.lat, data.lng);
+    setMsg(`ปักหมุดจาก Google Maps แล้ว (${Number(data.lat).toFixed(5)}, ${Number(data.lng).toFixed(5)}) — ตรวจที่อยู่ด้านล่างก่อนกด "ใช้ตำแหน่งนี้"`, false);
+  } catch (err) {
+    if (isActivePicker(pSeq)) setMsg('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 };
 
 window.confirmCompanyMapPicker = function() {

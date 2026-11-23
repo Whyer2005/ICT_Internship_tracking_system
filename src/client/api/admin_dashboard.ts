@@ -300,6 +300,7 @@ function updateTableHeader() {
 // 2. โหลดรายชื่อนิสิต
 // ==========================================
 async function loadStudents() {
+  syncFilterChips(); // ค่าตัวกรองอาจถูกตั้งจากโค้ด (ค่าเริ่มต้นชั้นปี, กราฟ, ล้างตัวกรอง) → ไฮไลต์การ์ดให้ตรงทุกครั้ง
   try {
     const searchInput = document.getElementById('student-search');
     const searchVal = searchInput ? searchInput.value.trim() : '';
@@ -1243,7 +1244,7 @@ if (windowTermFilterEl) {
       const terms = new Set<string>();
       (data.cohorts || []).forEach(c => (c.majors || []).forEach(m => (m.windows || []).forEach(w => terms.add(w.term))));
       const sorted = Array.from(terms).sort((a, b) => windowTermKey(b) - windowTermKey(a));
-      windowTermFilterEl.innerHTML = '<option value="">ทุกรอบออกฝึก</option>' +
+      windowTermFilterEl.innerHTML = '<option value="">ทั้งหมด</option>' +
         sorted.map(t => `<option value="${t}">${windowTermLabel(t)}</option>`).join('') +
         '<option value="NONE">ยังไม่ผูกรอบ</option>';
     })
@@ -1329,7 +1330,7 @@ async function populateYearFilter(apiUrl) {
     select.innerHTML = '';
     const allYearsOption = document.createElement('option');
     allYearsOption.value = '';
-    allYearsOption.textContent = 'ทุกชั้นปี';
+    allYearsOption.textContent = 'ทั้งหมด';
     allYearsOption.selected = !years.includes(currentVal);
     select.appendChild(allYearsOption);
     years.forEach(y => {
@@ -1339,6 +1340,7 @@ async function populateYearFilter(apiUrl) {
       if (y === currentVal) opt.selected = true;
       select.appendChild(opt);
     });
+    syncFilterChips();
   } catch (err) {
     console.error('Populate year filter error:', err);
   }
@@ -1363,7 +1365,7 @@ async function populateAdvisorFilter(targetMajor?: string) {
     const data = await res.json();
     if (!data.success || !Array.isArray(data.advisors)) return;
 
-    select.innerHTML = '<option value="">ทุกอาจารย์</option>';
+    select.innerHTML = '<option value="">ทั้งหมด</option>';
     let advisorFound = false;
 
     data.advisors.forEach((a: any) => {
@@ -1437,7 +1439,46 @@ window.selectStatusFilter = function(value: string, label: string) {
   loadStudents();
 };
 
+// ===== การ์ดตัวกรอง: ตัวที่ใช้งานอยู่ (ไม่ใช่ "ทั้งหมด") เป็นสีฟ้า + มีปุ่ม × =====
+function syncFilterChips() {
+  document.querySelectorAll<HTMLElement>('#admin-dashboard .adm-filter-field[data-filter]').forEach(field => {
+    const id = field.dataset.filter || '';
+    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+    const defaultVal = field.dataset.default ?? '';
+    field.classList.toggle('is-active', Boolean(el && el.value && el.value !== defaultVal));
+  });
+}
+
+// ล้างตัวกรองเฉพาะการ์ด (ส่ง change event ให้ listener เดิมโหลดข้อมูลใหม่เหมือนผู้ใช้เลือกเอง)
+window.clearOneFilter = function(id: string) {
+  if (id === 'status-filter') {
+    window.selectStatusFilter('', 'ทั้งหมด');
+    return;
+  }
+  const el = document.getElementById(id) as HTMLSelectElement | null;
+  if (!el) return;
+  const field = el.closest<HTMLElement>('.adm-filter-field');
+  el.value = field?.dataset.default ?? '';
+  el.dispatchEvent(new Event('change'));
+  syncFilterChips();
+};
+
+// กด "/" เพื่อโฟกัสช่องค้นหา (ยกเว้นตอนพิมพ์อยู่ในช่องอื่น) — ผูกครั้งเดียว กันซ้ำเมื่อสคริปต์ถูกโหลดใหม่แบบ SPA
+if (!(window as any).__adminSearchSlashBound) {
+  (window as any).__adminSearchSlashBound = true;
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const target = e.target as HTMLElement | null;
+    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+    const search = document.getElementById('student-search') as HTMLInputElement | null;
+    if (!search || search.offsetParent === null) return; // ไม่ได้อยู่หน้าภาพรวม
+    e.preventDefault();
+    search.focus();
+  });
+}
+
 function updateFilterUI() {
+  syncFilterChips();
   const badge = document.getElementById('active-filter-badge');
   const btn = document.getElementById('btn-clear-filter');
 
@@ -1474,13 +1515,13 @@ window.clearAllFilters = function() {
     const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
     if (el) {
       el.value = '';
-      if ('dataset' in el && el.dataset) el.dataset.label = 'ทุกสถานะ';
+      if ('dataset' in el && el.dataset) el.dataset.label = 'ทั้งหมด';
     }
   });
   const sortEl = document.getElementById('sort-by') as HTMLSelectElement | null;
   if (sortEl) sortEl.value = 'critical';
   const statusLabelEl = document.getElementById('status-filter-label');
-  if (statusLabelEl) statusLabelEl.textContent = 'ทุกสถานะ';
+  if (statusLabelEl) statusLabelEl.textContent = 'ทั้งหมด';
   const statusMenu = document.getElementById('status-dropdown-menu');
   if (statusMenu) {
     statusMenu.querySelectorAll('.status-option').forEach(it => {
