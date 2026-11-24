@@ -293,6 +293,7 @@ model ChecklistVersion {
   versionName String                 // เช่น "v1.0 (ปีการศึกษา 2567)", "v2.0 (ปีการศึกษา 2568)"
   description String?
   status      ChecklistVersionStatus @default(DRAFT)
+  majorCodes  String[]               @default([]) // สาขาที่ใช้แบบฟอร์มนี้ (รหัสใน src/utils/majors.ts) — ว่าง = แบบฟอร์มกลาง (สาขาที่ไม่มีแบบฟอร์มเฉพาะ)
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 

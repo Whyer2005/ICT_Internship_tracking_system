@@ -764,8 +764,8 @@ ${thaiProvincesDataScript()}
           </button>
           <button type="button" id="ws-tab-checklist" aria-current="false" onclick="switchAdminWorkspace('checklist')">
             <span class="material-icons" aria-hidden="true">fact_check</span>
-            <span>ตั้งค่า Checklist บริษัท</span>
-            <span id="badge-checklist-version" class="admin-nav-badge">v1.0</span>
+            <span>แบบฟอร์มเลือกสถานประกอบการ</span>
+            <span id="badge-checklist-version" class="admin-nav-badge">แยกสาขา</span>
           </button>
           <button type="button" id="ws-tab-companies" aria-current="false" onclick="switchAdminWorkspace('companies')">
             <span class="material-icons" aria-hidden="true">business</span>
@@ -2005,7 +2005,7 @@ ${majorOptionsHtml("              ")}
     </div>
 
     <!-- =====================================================================
-         WORKSPACE 7: ตั้งค่า Checklist บริษัท (สำหรับ Super Admin / Staff)
+         WORKSPACE 7: แบบฟอร์มการเลือกสถานประกอบการแยกตามสาขา (เดิม "ตั้งค่า Checklist บริษัท") — แก้ได้เฉพาะ Staff
          ===================================================================== -->
     <div id="workspace-checklist" style="display:none;">
       <section class="card" style="margin-bottom:20px;">
@@ -2013,27 +2013,35 @@ ${majorOptionsHtml("              ")}
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="material-icons header-icon">fact_check</span>
             <div>
-              <h2 class="card-title" style="margin:0;">ตั้งค่า Checklist บริษัท (สำหรับนิสิตประเมินก่อนยื่นฝึกงาน)</h2>
+              <h2 class="card-title" style="margin:0;">แบบฟอร์มการเลือกสถานประกอบการ (แยกตามสาขา)</h2>
               <p style="margin:2px 0 0 0; font-size:12px; color:#E0E7FF;">
-                จัดการเวอร์ชัน หัวข้อหลัก และเกณฑ์คำถามที่นิสิตต้องตรวจสอบความน่าเชื่อถือของบริษัทก่อนยื่นสมัครฝึกงาน
+                ตั้งหัวข้อและคำถามที่นิสิตต้องตรวจสอบบริษัทก่อนยื่น · แต่ละสาขาใช้แบบฟอร์มของตัวเองได้ สาขาที่ยังไม่มีแบบฟอร์มเฉพาะใช้ "แบบฟอร์มกลาง"
               </p>
             </div>
           </div>
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div id="checklist-create-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <button type="button" onclick="window.openCreateVersionModal ? window.openCreateVersionModal(true) : null" style="background:#0D6EFD; color:white; border:none; padding:8px 14px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-              <span class="material-icons" style="font-size:17px;">content_copy</span> คัดลอกสร้างเวอร์ชันใหม่
+              <span class="material-icons" style="font-size:17px;">content_copy</span> คัดลอกเป็นแบบฟอร์มใหม่
             </button>
             <button type="button" onclick="window.openCreateVersionModal ? window.openCreateVersionModal(false) : null" style="background:#475569; color:white; border:none; padding:8px 14px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-              <span class="material-icons" style="font-size:17px;">add</span> สร้างเวอร์ชันเปล่า
+              <span class="material-icons" style="font-size:17px;">add</span> สร้างแบบฟอร์มเปล่า
             </button>
           </div>
         </div>
 
         <div class="card-body">
-          <!-- แถบเลือกเวอร์ชัน & สถานะ -->
+          <!-- ตาราง 8 สาขา -> แบบฟอร์มที่ใช้อยู่ -->
+          <div style="margin-bottom:18px;">
+            <div style="font-size:13.5px; font-weight:700; color:#1E293B; margin-bottom:8px;">สาขาไหนใช้แบบฟอร์มชุดไหน <span style="font-weight:500; font-size:12px; color:#64748B;">(คลิกชื่อแบบฟอร์มเพื่อเปิดดู)</span></div>
+            <div id="checklist-coverage" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:8px;">
+              <div style="color:#94A3B8; font-size:12.5px;">กำลังโหลด...</div>
+            </div>
+          </div>
+
+          <!-- แถบเลือกแบบฟอร์ม & สถานะ -->
           <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:14px 18px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
             <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-              <label style="font-size:13px; font-weight:700; color:#334155;">เลือกเวอร์ชัน:</label>
+              <label for="checklist-version-select" style="font-size:13px; font-weight:700; color:#334155;">เลือกแบบฟอร์ม:</label>
               <select id="checklist-version-select" onchange="window.switchChecklistVersion ? window.switchChecklistVersion(this.value) : null" class="input-field" style="width:auto; min-width:260px; height:44px; min-height:44px; line-height:1.6; font-size:13.5px; padding:6px 36px 6px 14px; background:#FFFFFF; border:1px solid #CBD5E1; border-radius:8px; cursor:pointer; box-sizing:border-box; overflow:visible;">
                 <!-- dynamic options -->
               </select>
@@ -2046,6 +2054,9 @@ ${majorOptionsHtml("              ")}
               <!-- dynamic action buttons: Activate, Edit Info, Delete -->
             </div>
           </div>
+
+          <!-- สาขาที่ใช้แบบฟอร์มที่เลือก -->
+          <div id="checklist-version-majors" style="margin-bottom:12px; font-size:12.5px; color:#334155;"></div>
 
           <!-- กล่องคำอธิบายเวอร์ชัน -->
           <div id="checklist-version-desc-box" style="margin-bottom:16px; font-size:12.5px; color:#475569; padding:10px 14px; background:#F1F5F9; border-radius:8px; border-left:4px solid #3B82F6; display:none;"></div>
@@ -2074,17 +2085,24 @@ ${majorOptionsHtml("              ")}
     <!-- Modal: สร้าง/แก้ไขเวอร์ชัน Checklist -->
     <div id="checklist-version-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
       <div style="background:white; border-radius:20px; padding:24px 28px; width:500px; max-width:94%; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
-        <h3 style="font-size:17px; font-weight:700; margin-bottom:14px; color:#1E293B;" id="cv-modal-title">สร้างเวอร์ชันใหม่</h3>
+        <h3 style="font-size:17px; font-weight:700; margin-bottom:14px; color:#1E293B;" id="cv-modal-title">สร้างแบบฟอร์มใหม่</h3>
         <input type="hidden" id="cv-mode" value="create" />
         <input type="hidden" id="cv-version-id" value="" />
         <div style="margin-bottom:12px;">
-          <label style="font-size:12.5px; font-weight:700; color:#475569;">ชื่อเวอร์ชัน *</label>
-          <input type="text" id="cv-version-name" class="input-field" placeholder="เช่น v2.0 (ปีการศึกษา 2568)" style="margin-top:4px;" />
+          <label for="cv-version-name" style="font-size:12.5px; font-weight:700; color:#475569;">ชื่อแบบฟอร์ม *</label>
+          <input type="text" id="cv-version-name" class="input-field" placeholder="เช่น แบบฟอร์ม SE ปีการศึกษา 2569" style="margin-top:4px;" />
         </div>
         <div style="margin-bottom:12px;">
-          <label style="font-size:12.5px; font-weight:700; color:#475569;">คำอธิบายเวอร์ชัน</label>
-          <input type="text" id="cv-description" class="input-field" placeholder="เช่น ปรับเกณฑ์ความน่าเชื่อถือและ Tech Stack สำหรับปี 68" style="margin-top:4px;" />
+          <label for="cv-description" style="font-size:12.5px; font-weight:700; color:#475569;">คำอธิบาย</label>
+          <input type="text" id="cv-description" class="input-field" placeholder="เช่น เพิ่มคำถามเรื่อง Tech Stack สำหรับสาย Software" style="margin-top:4px;" />
         </div>
+        <fieldset style="margin:0 0 12px; border:1px solid #E2E8F0; border-radius:10px; padding:10px 12px;">
+          <legend style="font-size:12.5px; font-weight:700; color:#475569; padding:0 4px;">ใช้กับสาขา</legend>
+          <div id="cv-majors" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:4px 10px;">
+${ICT_MAJORS.map((m) => `            <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:#334155; cursor:pointer;"><input type="checkbox" name="cv-major" value="${m.code}" style="width:15px; height:15px; accent-color:#2563EB;" /> ${m.code} · ${m.name}</label>`).join("\n")}
+          </div>
+          <div id="cv-majors-hint" style="font-size:11.5px; color:#64748B; margin-top:6px;">ไม่ติ๊กสาขาใดเลย = <strong>แบบฟอร์มกลาง</strong> (ใช้กับสาขาที่ยังไม่มีแบบฟอร์มเฉพาะ)</div>
+        </fieldset>
         <div id="cv-clone-wrap" style="margin-bottom:16px;">
           <label style="font-size:12.5px; font-weight:700; color:#475569;">คัดลอกหมวดและคำถามจาก</label>
           <select id="cv-clone-select" class="input-field" style="margin-top:4px; cursor:pointer;">

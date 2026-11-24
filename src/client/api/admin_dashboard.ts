@@ -6925,10 +6925,40 @@ window.addEventListener('app:data-updated', () => {
 
 
 // =====================================================================
-// 10. ระบบตั้งค่าและจัดการ CHECKLIST บริษัท (Super Admin / Staff)
+// 10. แบบฟอร์มการเลือกสถานประกอบการแยกตามสาขา (เดิม "ตั้งค่า Checklist บริษัท") — แก้ได้เฉพาะ Staff
+// แบบฟอร์ม = ChecklistVersion · majorCodes ว่าง = แบบฟอร์มกลาง (กติกา: src/utils/checklistForms.ts)
 // =====================================================================
 
 let allChecklistVersions: any[] = [];
+let checklistCoverageRows: any[] = [];
+let checklistCanEdit = true;
+
+/** ป้ายสาขาของแบบฟอร์ม */
+function checklistFormMajorsText(v: any): string {
+  return !v?.majorCodes?.length ? 'แบบฟอร์มกลาง' : v.majorCodes.join(', ');
+}
+
+function renderChecklistCoverage() {
+  const el = document.getElementById('checklist-coverage');
+  if (!el) return;
+  if (!checklistCoverageRows.length) {
+    el.innerHTML = '<div style="color:#94A3B8; font-size:12.5px;">ยังไม่มีข้อมูลสาขา</div>';
+    return;
+  }
+  el.innerHTML = checklistCoverageRows.map((r: any) => {
+    const missing = !r.formId;
+    const border = missing ? '#FCA5A5' : r.isDefault ? '#E2E8F0' : '#BFDBFE';
+    const bg = missing ? '#FEF2F2' : r.isDefault ? '#F8FAFC' : '#EFF6FF';
+    const form = missing
+      ? '<span style="color:#B91C1C; font-weight:700;">ไม่มีแบบฟอร์มที่เปิดใช้</span>'
+      : `<button type="button" onclick="window.switchChecklistVersion('${r.formId}')" style="background:none; border:none; padding:0; color:#1D4ED8; font-weight:700; cursor:pointer; text-align:left; font-size:12.5px;">${escapeHtmlText(r.formName)}</button>
+         <span style="font-size:11px; color:${r.isDefault ? '#64748B' : '#1E40AF'};">${r.isDefault ? '(แบบฟอร์มกลาง)' : '(เฉพาะสาขา)'}</span>`;
+    return `<div style="border:1px solid ${border}; background:${bg}; border-radius:10px; padding:8px 10px; font-size:12.5px; line-height:1.5;">
+      <div style="font-weight:800; color:#1E293B;">${escapeHtmlText(r.code)} <span style="font-weight:500; color:#64748B;">${escapeHtmlText(r.name)}</span></div>
+      <div>${form}</div>
+    </div>`;
+  }).join('');
+}
 let currentChecklistVersion: any = null;
 let originalChecklistSectionsSnapshot: any[] = [];
 let isChecklistDirty = false;
@@ -7116,6 +7146,10 @@ window.loadChecklistSettings = async function(targetVersionId?: number) {
     }
 
     allChecklistVersions = data.versions || [];
+    checklistCoverageRows = data.coverage || [];
+    checklistCanEdit = data.canEdit !== false;
+    const createActions = document.getElementById('checklist-create-actions');
+    if (createActions) createActions.style.display = checklistCanEdit ? 'flex' : 'none';
 
     // หาเวอร์ชันเป้าหมายที่จะแสดง
     const targetId = targetVersionId || currentChecklistVersion?.id;
@@ -7127,14 +7161,13 @@ window.loadChecklistSettings = async function(targetVersionId?: number) {
       currentChecklistVersion = allChecklistVersions.find(v => v.status === 'ACTIVE') || allChecklistVersions[0];
     }
 
-    // อัปเดต badge บนเมนูข้างซ้าย
-    const activeVer = allChecklistVersions.find(v => v.status === 'ACTIVE');
+    // อัปเดต badge บนเมนูข้างซ้าย: จำนวนแบบฟอร์มที่เปิดใช้
+    const activeCount = allChecklistVersions.filter(v => v.status === 'ACTIVE').length;
     const badgeSidebar = document.getElementById('badge-checklist-version');
-    if (badgeSidebar && activeVer) {
-      badgeSidebar.textContent = activeVer.versionName.split(' ')[0] || 'v1.0';
-    }
+    if (badgeSidebar) badgeSidebar.textContent = `${activeCount} แบบฟอร์ม`;
 
     resetChecklistDraftBaseline();
+    renderChecklistCoverage();
     renderChecklistVersionHeader();
     renderChecklistSections();
   } catch (err) {
@@ -7152,8 +7185,8 @@ function renderChecklistVersionHeader() {
 
   if (selectEl) {
     selectEl.innerHTML = allChecklistVersions.map(v => {
-      const isAct = v.status === 'ACTIVE' ? ' (ใช้งานอยู่)' : v.status === 'DRAFT' ? ' (ฉบับร่าง)' : ' (ประวัติเก่า)';
-      return `<option value="${v.id}" ${currentChecklistVersion && currentChecklistVersion.id === v.id ? 'selected' : ''}>${v.versionName}${isAct}</option>`;
+      const isAct = v.status === 'ACTIVE' ? ' — ใช้งานอยู่' : v.status === 'DRAFT' ? ' — ฉบับร่าง' : ' — เลิกใช้';
+      return `<option value="${v.id}" ${currentChecklistVersion && currentChecklistVersion.id === v.id ? 'selected' : ''}>${escapeHtmlText(v.versionName)} [${escapeHtmlText(checklistFormMajorsText(v))}]${isAct}</option>`;
     }).join('');
   }
 
@@ -7164,8 +7197,18 @@ function renderChecklistVersionHeader() {
       } else if (currentChecklistVersion.status === 'DRAFT') {
         badgeWrap.innerHTML = '<span style="background:#FEF3C7; color:#92400E; font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; display:inline-flex; align-items:center; gap:4px;"><span class="material-icons" style="font-size:14px;">edit_note</span> ฉบับร่าง (Draft)</span>';
       } else {
-        badgeWrap.innerHTML = '<span style="background:#F1F5F9; color:#475569; font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; display:inline-flex; align-items:center; gap:4px;"><span class="material-icons" style="font-size:14px;">archive</span> ประวัติเก่า (Archived)</span>';
+        badgeWrap.innerHTML = '<span style="background:#F1F5F9; color:#475569; font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; display:inline-flex; align-items:center; gap:4px;"><span class="material-icons" style="font-size:14px;">archive</span> เลิกใช้ (Archived)</span>';
       }
+    }
+
+    const majorsBox = document.getElementById('checklist-version-majors');
+    if (majorsBox) {
+      const v = currentChecklistVersion;
+      const chips = v.majorCodes?.length
+        ? v.majorCodes.map((c: string) => `<span style="display:inline-block; background:#DBEAFE; color:#1E40AF; border-radius:999px; padding:2px 9px; font-size:11.5px; font-weight:700; margin:0 4px 4px 0;">${escapeHtmlText(c)}</span>`).join('')
+        : '<span style="display:inline-block; background:#F1F5F9; color:#334155; border:1px solid #CBD5E1; border-radius:999px; padding:2px 9px; font-size:11.5px; font-weight:700;">แบบฟอร์มกลาง — ใช้กับสาขาที่ยังไม่มีแบบฟอร์มเฉพาะ</span>';
+      const note = v.status === 'ACTIVE' ? '' : ' <span style="color:#64748B;">(มีผลเมื่อกด "เปิดใช้งาน")</span>';
+      majorsBox.innerHTML = `<strong>ใช้กับสาขา:</strong> ${chips}${note}`;
     }
 
     if (descBox) {
@@ -7181,7 +7224,7 @@ function renderChecklistVersionHeader() {
       let btnsHtml = '';
       if (currentChecklistVersion.status !== 'ACTIVE') {
         btnsHtml += `<button type="button" onclick="window.activateChecklistVersion(${currentChecklistVersion.id})" style="background:#16A34A; color:white; border:none; padding:6px 14px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-          <span class="material-icons" style="font-size:16px;">verified</span> เปิดใช้งานเวอร์ชันนี้
+          <span class="material-icons" style="font-size:16px;">verified</span> เปิดใช้งานแบบฟอร์มนี้
         </button>`;
       }
       btnsHtml += `<button type="button" onclick="window.openEditVersionModal()" style="background:#FFFFFF; color:#334155; border:1px solid #CBD5E1; padding:6px 12px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
@@ -7191,13 +7234,13 @@ function renderChecklistVersionHeader() {
       const usageCount = currentChecklistVersion._count?.companies || 0;
       if (currentChecklistVersion.status !== 'ACTIVE' && usageCount === 0) {
         btnsHtml += `<button type="button" onclick="window.deleteChecklistVersion(${currentChecklistVersion.id})" style="background:#FFFFFF; color:#DC2626; border:1px solid #FCA5A5; padding:6px 12px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:background-color 0.15s ease;" onmouseover="this.style.background='#FEE2E2'" onmouseout="this.style.background='#FFFFFF'">
-          <span class="material-icons" style="font-size:18px; color:#DC2626;">delete_outline</span> ลบเวอร์ชัน
+          <span class="material-icons" style="font-size:18px; color:#DC2626;">delete_outline</span> ลบแบบฟอร์ม
         </button>`;
       } else if (usageCount > 0) {
         btnsHtml += `<span style="font-size:11.5px; color:#64748B;">(มีนิสิตใช้ ${usageCount} บริษัท)</span>`;
       }
 
-      actionsWrap.innerHTML = btnsHtml;
+      actionsWrap.innerHTML = checklistCanEdit ? btnsHtml : '<span style="font-size:12px; color:#64748B;">ดูได้อย่างเดียว (แก้ได้เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน)</span>';
     }
   }
 }
@@ -7208,7 +7251,7 @@ window.switchChecklistVersion = function(versionIdStr: string) {
   if (currentChecklistVersion && currentChecklistVersion.id === vId) return;
 
   if (isChecklistDirty) {
-    if (!window.confirm('คุณมีการแก้ไขเกณฑ์ Checklist ที่ยังไม่ได้กดบันทึก\nหากเปลี่ยนเวอร์ชัน การแก้ไขที่ทำค้างไว้จะถูกยกเลิก ต้องการเปลี่ยนเวอร์ชันหรือไม่?')) {
+    if (!window.confirm('คุณมีการแก้ไขแบบฟอร์มที่ยังไม่ได้กดบันทึก\nหากเปลี่ยนไปดูแบบฟอร์มอื่น การแก้ไขที่ทำค้างไว้จะถูกยกเลิก ต้องการเปลี่ยนหรือไม่?')) {
       const selectEl = document.getElementById('checklist-version-select') as HTMLSelectElement | null;
       if (selectEl && currentChecklistVersion) {
         selectEl.value = String(currentChecklistVersion.id);
@@ -7704,15 +7747,16 @@ window.openCreateVersionModal = function(isClone: boolean) {
   const cloneWrap = document.getElementById('cv-clone-wrap');
   const cloneSelect = document.getElementById('cv-clone-select') as HTMLSelectElement | null;
 
-  if (titleEl) titleEl.textContent = isClone ? 'คัดลอกสร้างเวอร์ชันใหม่' : 'สร้างเวอร์ชันเปล่า';
+  if (titleEl) titleEl.textContent = isClone ? 'คัดลอกเป็นแบบฟอร์มใหม่' : 'สร้างแบบฟอร์มเปล่า';
   if (modeEl) modeEl.value = 'create';
   if (nameEl) nameEl.value = '';
   if (descEl) descEl.value = '';
+  setChecklistModalMajors([]);
 
   if (cloneWrap && cloneSelect) {
     if (isClone && allChecklistVersions.length > 0) {
       cloneWrap.style.display = 'block';
-      cloneSelect.innerHTML = allChecklistVersions.map(v => `<option value="${v.id}">${v.versionName} (${(v.sections || []).length} หมวด)</option>`).join('');
+      cloneSelect.innerHTML = allChecklistVersions.map(v => `<option value="${v.id}">${escapeHtmlText(v.versionName)} [${escapeHtmlText(checklistFormMajorsText(v))}] (${(v.sections || []).length} หมวด)</option>`).join('');
       if (currentChecklistVersion) cloneSelect.value = String(currentChecklistVersion.id);
     } else {
       cloneWrap.style.display = 'none';
@@ -7733,15 +7777,40 @@ window.openEditVersionModal = function() {
   const descEl = document.getElementById('cv-description') as HTMLInputElement | null;
   const cloneWrap = document.getElementById('cv-clone-wrap');
 
-  if (titleEl) titleEl.textContent = 'แก้ไขข้อมูลเวอร์ชัน';
+  if (titleEl) titleEl.textContent = 'แก้ไขข้อมูลแบบฟอร์ม';
   if (modeEl) modeEl.value = 'edit';
   if (idEl) idEl.value = String(currentChecklistVersion.id);
   if (nameEl) nameEl.value = currentChecklistVersion.versionName || '';
   if (descEl) descEl.value = currentChecklistVersion.description || '';
   if (cloneWrap) cloneWrap.style.display = 'none';
+  setChecklistModalMajors(currentChecklistVersion.majorCodes || []);
 
   if (modal) modal.style.display = 'flex';
 };
+
+function setChecklistModalMajors(codes: string[]) {
+  document.querySelectorAll<HTMLInputElement>('#cv-majors input[name="cv-major"]').forEach(cb => {
+    cb.checked = codes.includes(cb.value);
+  });
+}
+
+function getChecklistModalMajors(): string[] {
+  return Array.from(document.querySelectorAll<HTMLInputElement>('#cv-majors input[name="cv-major"]:checked')).map(cb => cb.value);
+}
+
+/** สาขาที่จะถูกย้ายออกจากแบบฟอร์มอื่น เมื่อแบบฟอร์ม id ใช้กับ majors (แสดงใน confirm ให้เจ้าหน้าที่เห็นก่อน) */
+function describeChecklistTakeover(id: number, majors: string[]): string {
+  const others = allChecklistVersions.filter(v => v.id !== id && v.status === 'ACTIVE');
+  if (!majors.length) {
+    const oldDefault = others.find(v => !v.majorCodes?.length);
+    return oldDefault ? `\n\nแบบฟอร์มกลางเดิม "${oldDefault.versionName}" จะเปลี่ยนเป็นเลิกใช้` : '';
+  }
+  const lines = others
+    .map(v => ({ v, overlap: (v.majorCodes || []).filter((c: string) => majors.includes(c)) }))
+    .filter(x => x.overlap.length)
+    .map(x => `• ${x.overlap.join(', ')} ย้ายออกจาก "${x.v.versionName}"${x.overlap.length === x.v.majorCodes.length ? ' (แบบฟอร์มนั้นจะเลิกใช้)' : ''}`);
+  return lines.length ? `\n\nสาขาที่จะย้ายมาใช้แบบฟอร์มนี้:\n${lines.join('\n')}` : '';
+}
 
 window.saveChecklistVersion = async function() {
   const modeEl = document.getElementById('cv-mode') as HTMLInputElement | null;
@@ -7755,9 +7824,10 @@ window.saveChecklistVersion = async function() {
   const description = descEl?.value?.trim();
 
   if (!versionName) {
-    alert('กรุณากรอกชื่อเวอร์ชัน เช่น v2.0 (ปีการศึกษา 2568)');
+    alert('กรุณากรอกชื่อแบบฟอร์ม เช่น แบบฟอร์ม SE ปีการศึกษา 2569');
     return;
   }
+  const majorCodes = getChecklistModalMajors();
 
   try {
     if (mode === 'create') {
@@ -7765,29 +7835,35 @@ window.saveChecklistVersion = async function() {
       const res = await fetch('/api/admin/checklist-versions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ versionName, description, cloneFromVersionId }),
+        body: JSON.stringify({ versionName, description, cloneFromVersionId, majorCodes }),
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.message || 'สร้างเวอร์ชันไม่สำเร็จ');
+        alert(data.message || 'สร้างแบบฟอร์มไม่สำเร็จ');
         return;
       }
-      alert('สร้างเวอร์ชันเรียบร้อยแล้ว');
+      alert(data.message || 'สร้างแบบฟอร์มเรียบร้อยแล้ว');
       document.getElementById('checklist-version-modal')!.style.display = 'none';
       await window.loadChecklistSettings(data.version.id);
     } else {
       const vId = parseInt(idEl?.value || '0', 10);
+      const editing = allChecklistVersions.find(v => v.id === vId);
+      const majorsChanged = JSON.stringify(editing?.majorCodes || []) !== JSON.stringify(majorCodes);
+      if (editing?.status === 'ACTIVE' && majorsChanged) {
+        const takeover = describeChecklistTakeover(vId, majorCodes);
+        if (!confirm(`เปลี่ยนสาขาของแบบฟอร์มที่เปิดใช้อยู่ "${editing.versionName}" เป็น ${majorCodes.join(', ')} ?${takeover}\n\nสาขาที่เอาออกจะกลับไปใช้แบบฟอร์มกลาง`)) return;
+      }
       const res = await fetch(`/api/admin/checklist-versions/${vId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ versionName, description }),
+        body: JSON.stringify({ versionName, description, majorCodes }),
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.message || 'แก้ไขเวอร์ชันไม่สำเร็จ');
+        alert(data.message || 'แก้ไขแบบฟอร์มไม่สำเร็จ');
         return;
       }
-      alert('แก้ไขข้อมูลเวอร์ชันเรียบร้อยแล้ว');
+      alert(data.message || 'แก้ไขข้อมูลแบบฟอร์มเรียบร้อยแล้ว');
       document.getElementById('checklist-version-modal')!.style.display = 'none';
       await window.loadChecklistSettings(vId);
     }
@@ -7798,7 +7874,10 @@ window.saveChecklistVersion = async function() {
 };
 
 window.activateChecklistVersion = async function(versionId: number) {
-  if (!confirm('ยืนยันเปิดใช้งานเวอร์ชันนี้เป็นเกณฑ์หลักของคณะ ICT?\n(นิสิตที่เริ่มทำ Checklist ใหม่จะใช้เกณฑ์ชุดนี้ทันที)')) return;
+  const target = allChecklistVersions.find(v => v.id === versionId);
+  const majors = target?.majorCodes || [];
+  const scope = majors.length ? `สาขา ${majors.join(', ')}` : 'แบบฟอร์มกลาง (สาขาที่ยังไม่มีแบบฟอร์มเฉพาะ)';
+  if (!confirm(`ยืนยันเปิดใช้งาน "${target?.versionName || ''}" สำหรับ ${scope}?\n(นิสิตที่ยื่นใหม่จะใช้แบบฟอร์มนี้ทันที · Checklist ที่ยื่นไปแล้วไม่เปลี่ยน)${describeChecklistTakeover(versionId, majors)}`)) return;
 
   try {
     const res = await fetch(`/api/admin/checklist-versions/${versionId}/activate`, {
@@ -7818,7 +7897,7 @@ window.activateChecklistVersion = async function(versionId: number) {
 };
 
 window.deleteChecklistVersion = async function(versionId: number) {
-  if (!confirm('ยืนยันลบเวอร์ชันนี้หรือไม่? ข้อมูลหมวดและเกณฑ์ในเวอร์ชันนี้จะถูกลบทั้งหมด')) return;
+  if (!confirm('ยืนยันลบแบบฟอร์มนี้หรือไม่? หมวดและคำถามในแบบฟอร์มนี้จะถูกลบทั้งหมด')) return;
 
   try {
     const res = await fetch(`/api/admin/checklist-versions/${versionId}`, {

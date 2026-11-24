@@ -26,6 +26,7 @@ import {
 import { resolveGoogleMapsLink } from "../utils/googleMapsLink";
 import { studentCoopRouter } from "./coopRoutes";
 import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
+import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
 
 const router = express.Router();
 
@@ -787,39 +788,27 @@ router.post("/acceptance-form", upload.single("file"), async (req: Request, res:
 // ==========================================
 // 5. Checklist แม่แบบและประเมินบริษัท
 // ==========================================
-router.get("/checklist-template", async (_req: Request, res: Response) => {
+router.get("/checklist-template", async (req: Request, res: Response) => {
   try {
-    let activeVersion = await prisma.checklistVersion.findFirst({
-      where: { status: "ACTIVE" },
-      include: {
-        sections: {
-          orderBy: { order: "asc" },
+    // แบบฟอร์มตามสาขาของนิสิต (ไม่มีแบบฟอร์มเฉพาะสาขา -> แบบฟอร์มกลาง) — src/utils/checklistForms.ts
+    const me = await prisma.student.findUnique({ where: { userId: req.session.user!.id }, select: { major: true } });
+    const formId = await getChecklistFormIdForMajor(me?.major);
+    const activeVersion = formId
+      ? await prisma.checklistVersion.findUnique({
+          where: { id: formId },
           include: {
-            items: {
-              where: { isActive: true },
+            sections: {
               orderBy: { order: "asc" },
-            },
-          },
-        },
-      },
-    });
-
-    if (!activeVersion) {
-      activeVersion = await prisma.checklistVersion.findFirst({
-        orderBy: { id: "asc" },
-        include: {
-          sections: {
-            orderBy: { order: "asc" },
-            include: {
-              items: {
-                where: { isActive: true },
-                orderBy: { order: "asc" },
+              include: {
+                items: {
+                  where: { isActive: true },
+                  orderBy: { order: "asc" },
+                },
               },
             },
           },
-        },
-      });
-    }
+        })
+      : null;
 
     const sections = activeVersion ? activeVersion.sections : [];
     res.json({ success: true, version: activeVersion, sections });
@@ -1192,12 +1181,13 @@ router.post("/companies", async (req: Request, res: Response) => {
     saveSuperAdminState(state);
 
     // สร้างบริษัทใหม่
-    const activeVer = await prisma.checklistVersion.findFirst({ where: { status: "ACTIVE" } });
+    // ผูกแบบฟอร์มตามสาขาของนิสิต ณ วันที่ยื่น (แก้แบบฟอร์มภายหลังไม่กระทบ Checklist ที่ยื่นแล้ว)
+    const formId = await getChecklistFormIdForMajor(student.major);
     const company = await prisma.company.create({
       data: {
         studentId: student.id,
         name: matchedMaster ? matchedMaster.nameTh : cleanName,
-        checklistVersionId: activeVer ? activeVer.id : 1,
+        checklistVersionId: formId ?? 1,
         checklistStatus: "PENDING",
         submission: {
           create: {

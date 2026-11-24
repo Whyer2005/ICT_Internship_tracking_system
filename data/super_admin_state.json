@@ -1114,73 +1114,73 @@
             {
               "itemId": 9,
               "description": "1. Google Maps: ปักหมุดแล้วจอสถานที่จริงไหม?",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 10,
               "description": "2. ดู Street View แล้วเป็นตึกออฟฟิศ หรือเป็นบ้าน คน/ทาวน์เฮาส์ ?",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 11,
               "description": "3. ไม่แนะนำ Remote 100% หรือ Work from Home 100%",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 12,
               "description": "4. สลับวันเข้า Office (Hybrid) ได้",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 13,
               "description": "5. มีโต๊ะทำงานให้ทำงานเป็นสัดส่วน",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 14,
               "description": "6. ที่ตั้งชัดเจน + จดทะเบียนถูกต้อง + มีทีมงานเกิน 10 คน",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 15,
               "description": "1. ใช้เครื่องมือ/ภาษาที่เป็นนิยมในตลาดแรงงาน",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 16,
               "description": "2. เครื่องมือมีความเป็น Professional (Jira, Git, Cloud, Docker)",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 17,
               "description": "1. มี Senior Dev ดูแลประกบ (อัตราส่วนพี่เลี้ยงต่อน้องไม่ควรเกิน 1:3)",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 18,
               "description": "2. มีเวลาสอนงาน ไม่ยุ่งจนทิ้งน้อง",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 19,
               "description": "3. มีแผนการสอนงานชัดเจน เช่น มี Time Sheet",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
               "itemId": 20,
               "description": "1. ได้ทำงานจริงเกี่ยวข้องกับการพัฒนาซอฟต์แวร์",
-              "checked": true,
+              "checked": false,
               "detail": ""
             },
             {
@@ -1203,11 +1203,11 @@
           "companyResponseFileUrl": "https://res.cloudinary.com/j5ccelrs/image/upload/v1795070177/se_internship/acceptance_forms/1795070174193-____________________test.pdf",
           "companyResponseFileName": "แบบตอบรับนิสิตฝึกงานtest.pdf",
           "dispatchLetterIssued": false,
-          "completedAt": "2026-11-24T04:20:23.799Z"
+          "completedAt": "2026-11-24T07:44:58.248Z"
         }
       ],
       "isSameCompanyAsRound1": false,
-      "round1CompletedAt": "2026-11-24T04:20:23.799Z"
+      "round1CompletedAt": "2026-11-24T07:44:58.248Z"
     }
   },
   "companyInfoEditUnlocks": {},

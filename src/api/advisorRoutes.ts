@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import prisma from "../db";
 import { coopSummaryForProfile } from "./coopRoutes";
+import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
 import requireAdvisor from "../auth/requireAdvisor";
 import { loadSuperAdminState, saveSuperAdminState, getStudentRoundState } from "../utils/superAdminStore";
 
@@ -652,8 +653,10 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       : null;
 
     if (!targetVersion) {
+      // ยังไม่ได้ยื่น -> แบบฟอร์มตามสาขาของนิสิต (ไม่มีแบบฟอร์มเฉพาะสาขา -> แบบฟอร์มกลาง)
+      const formId = await getChecklistFormIdForMajor(student.major);
       targetVersion = await prisma.checklistVersion.findFirst({
-        where: { status: "ACTIVE" },
+        where: formId ? { id: formId } : { status: "ACTIVE" },
         include: {
           sections: {
             orderBy: { order: "asc" },

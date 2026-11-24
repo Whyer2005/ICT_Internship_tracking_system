@@ -24,6 +24,13 @@ import { analyzeAcceptanceForm, fetchFileBuffer } from "../utils/acceptanceOcr";
 import cohortRouter, { getOpenMajorsSummary } from "./cohortRoutes";
 import { adminCoopRouter, buildCoopExportRows, coopSummaryForProfile } from "./coopRoutes";
 import {
+  activeFormMajorsChangeError,
+  checklistCoverage,
+  formMajorsLabel,
+  normalizeFormMajorCodes,
+  planChecklistActivation,
+} from "../utils/checklistForms";
+import {
   backfillLegacyBatches,
   findIneligibleForLetter,
   newBatchId,
@@ -3884,27 +3891,51 @@ router.post("/super-admin/documents/toggle-lock", async (req: Request, res: Resp
 
 
 // =====================================================================
-// 10. ระบบตั้งค่าและจัดการ CHECKLIST บริษัท (สำหรับ Super Admin / Staff)
+// 10. แบบฟอร์มการเลือกสถานประกอบการแยกตามสาขา (เดิม "ตั้งค่า Checklist บริษัท")
+// ตาราง ChecklistVersion = 1 แบบฟอร์ม · majorCodes = สาขาที่ใช้ (ว่าง = แบบฟอร์มกลาง) — กติกาใน src/utils/checklistForms.ts
 // =====================================================================
 
-// ตรวจสอบสิทธิ์เฉพาะ Staff / Super Admin
+// แก้แบบฟอร์มได้เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) — อาจารย์ประจำวิชาดูได้อย่างเดียว (ยืนยัน 24 พ.ย. 2569)
 function requireSuperAdminStaff(req: Request, res: Response, next: Function) {
-  const isSuperAdmin = Boolean(
-    req.staff?.isStaff ||
-    req.session.user?.role === "STAFF" ||
-    req.session.user?.role === "ADMIN"
-  );
-  if (!isSuperAdmin) {
+  const isStaff = Boolean(req.staff?.isStaff || req.session.user?.role === "STAFF");
+  if (!isStaff) {
     return res.status(403).json({
       success: false,
-      message: "เฉพาะเจ้าหน้าที่คณะ (Staff/Super Admin) เท่านั้นที่สามารถจัดการตั้งค่า Checklist ได้",
+      message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่แก้แบบฟอร์มการเลือกสถานประกอบการได้",
     });
   }
   next();
 }
 
-// 10.1 ดึงรายการเวอร์ชันทั้งหมด
-router.get("/checklist-versions", requireSuperAdminStaff, async (_req: Request, res: Response) => {
+// ดูแบบฟอร์มได้: เจ้าหน้าที่ + อาจารย์ประจำวิชา
+function requireChecklistViewer(req: Request, res: Response, next: Function) {
+  const ok = Boolean(
+    req.staff?.isStaff || req.staff?.isCourseAdmin || req.session.user?.role === "STAFF" || req.session.user?.role === "ADMIN"
+  );
+  if (!ok) {
+    return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ดูแบบฟอร์มการเลือกสถานประกอบการ" });
+  }
+  next();
+}
+
+/** ใช้แผนเปิดใช้งาน/ย้ายสาขา (เลิกใช้แบบฟอร์มที่ไม่เหลือสาขา + เอาสาขาที่ซ้ำออกจากแบบฟอร์มอื่น) */
+function checklistPlanOps(plan: ReturnType<typeof planChecklistActivation>) {
+  return [
+    ...(plan.archive.length
+      ? [prisma.checklistVersion.updateMany({ where: { id: { in: plan.archive } }, data: { status: "ARCHIVED" } })]
+      : []),
+    ...plan.updateMajors.map((u) => prisma.checklistVersion.update({ where: { id: u.id }, data: { majorCodes: u.majorCodes } })),
+  ];
+}
+
+function checklistPlanMessage(plan: ReturnType<typeof planChecklistActivation>, names: Map<number, string>): string {
+  const moved = plan.moved.map((m) => `ย้าย ${m.codes.join(", ")} ออกจาก "${names.get(m.fromId) || m.fromId}"`);
+  const archived = plan.archive.map((id) => `"${names.get(id) || id}" เลิกใช้`);
+  return [...moved, ...archived].join(" · ");
+}
+
+// 10.1 ดึงรายการแบบฟอร์มทั้งหมด + ตารางสาขา -> แบบฟอร์มที่ใช้อยู่
+router.get("/checklist-versions", requireChecklistViewer, async (req: Request, res: Response) => {
   try {
     const versions = await prisma.checklistVersion.findMany({
       orderBy: [{ status: "asc" }, { id: "desc" }],
@@ -3926,7 +3957,12 @@ router.get("/checklist-versions", requireSuperAdminStaff, async (_req: Request, 
       },
     });
 
-    res.json({ success: true, versions });
+    res.json({
+      success: true,
+      versions,
+      coverage: checklistCoverage(versions),
+      canEdit: Boolean(req.staff?.isStaff || req.session.user?.role === "STAFF"),
+    });
   } catch (err) {
     console.error("GET /api/admin/checklist-versions error:", err);
     res.status(500).json({ success: false, message: "ดึงรายการเวอร์ชัน Checklist ไม่สำเร็จ" });
@@ -3938,18 +3974,21 @@ router.post("/checklist-versions", requireSuperAdminStaff, async (req: Request, 
   try {
     const { versionName, description, cloneFromVersionId } = req.body;
     if (!versionName || !String(versionName).trim()) {
-      return res.status(400).json({ success: false, message: "กรุณาระบุชื่อเวอร์ชัน เช่น v2.0 (ปีการศึกษา 2568)" });
+      return res.status(400).json({ success: false, message: "กรุณาระบุชื่อแบบฟอร์ม เช่น แบบฟอร์ม SE ปีการศึกษา 2569" });
     }
+    const majors = normalizeFormMajorCodes(req.body.majorCodes);
+    if (majors.error) return res.status(400).json({ success: false, message: majors.error });
 
     const cleanName = String(versionName).trim();
     const cleanDesc = description ? String(description).trim() : null;
 
-    // สร้าง Version ใหม่
+    // สร้างแบบฟอร์มใหม่ (ฉบับร่าง — กด "เปิดใช้งาน" แล้วจึงมีผลกับสาขาที่เลือก)
     const newVersion = await prisma.checklistVersion.create({
       data: {
         versionName: cleanName,
         description: cleanDesc,
         status: "DRAFT",
+        majorCodes: majors.codes,
       },
     });
 
@@ -3989,7 +4028,7 @@ router.post("/checklist-versions", requireSuperAdminStaff, async (req: Request, 
 
     res.json({
       success: true,
-      message: `สร้างเวอร์ชัน ${newVersion.versionName} สำเร็จ`,
+      message: `สร้างแบบฟอร์ม ${newVersion.versionName} (ฉบับร่าง) สำเร็จ — กด "เปิดใช้งาน" เพื่อให้มีผลกับ ${formMajorsLabel(newVersion)}`,
       version: newVersion,
     });
   } catch (err) {
@@ -4015,21 +4054,20 @@ router.put("/checklist-versions/:id/activate", requireSuperAdminStaff, async (re
       return res.status(400).json({ success: false, message: "ไม่สามารถเปิดใช้งานเวอร์ชันที่ไม่มีหมวดคำถามได้" });
     }
 
-    // อัปเดตเวอร์ชันเดิมที่เป็น ACTIVE ให้เป็น ARCHIVED
-    await prisma.checklistVersion.updateMany({
-      where: { status: "ACTIVE" },
-      data: { status: "ARCHIVED" },
-    });
-
-    // ตั้งเวอร์ชันเป้าหมายเป็น ACTIVE
-    const updated = await prisma.checklistVersion.update({
-      where: { id: versionId },
-      data: { status: "ACTIVE" },
-    });
+    // แยกตามสาขา: เอาสาขาที่ซ้ำออกจากแบบฟอร์มอื่นที่เปิดใช้อยู่ (ไม่เหลือสาขา = เลิกใช้) / แบบฟอร์มกลางชุดเก่า = เลิกใช้
+    const all = await prisma.checklistVersion.findMany({ select: { id: true, status: true, majorCodes: true, versionName: true } });
+    const plan = planChecklistActivation(all, versionId, target.majorCodes);
+    const [updated] = await prisma.$transaction([
+      prisma.checklistVersion.update({ where: { id: versionId }, data: { status: "ACTIVE" } }),
+      ...checklistPlanOps(plan),
+    ]);
+    const changes = checklistPlanMessage(plan, new Map(all.map((v) => [v.id, v.versionName])));
 
     res.json({
       success: true,
-      message: `เปิดใช้งาน ${updated.versionName} เรียบร้อยแล้ว นิสิตที่เริ่มทำ Checklist ใหม่จะใช้เกณฑ์ชุดนี้`,
+      message:
+        `เปิดใช้งาน "${updated.versionName}" สำหรับ ${formMajorsLabel(updated)} แล้ว — นิสิตที่ยื่นใหม่จะใช้แบบฟอร์มนี้ (Checklist ที่ยื่นไปแล้วไม่เปลี่ยน)` +
+        (changes ? ` · ${changes}` : ""),
       version: updated,
     });
   } catch (err) {
@@ -4043,16 +4081,40 @@ router.put("/checklist-versions/:id", requireSuperAdminStaff, async (req: Reques
   try {
     const versionId = parseInt(String(req.params.id), 10);
     const { versionName, description } = req.body;
+    const current = await prisma.checklistVersion.findUnique({ where: { id: versionId } });
+    if (!current) return res.status(404).json({ success: false, message: "ไม่พบแบบฟอร์ม" });
 
-    const updated = await prisma.checklistVersion.update({
-      where: { id: versionId },
-      data: {
-        versionName: versionName ? String(versionName).trim() : undefined,
-        description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
-      },
-    });
+    // เปลี่ยนสาขา (ส่ง majorCodes มาเท่านั้น) — แบบฟอร์มที่เปิดใช้อยู่ต้องคงประเภท กลาง/เฉพาะสาขา และย้ายสาขาที่ซ้ำจากแบบฟอร์มอื่น
+    let majorCodes: string[] | undefined;
+    let plan: ReturnType<typeof planChecklistActivation> | null = null;
+    let names = new Map<number, string>();
+    if (req.body.majorCodes !== undefined) {
+      const majors = normalizeFormMajorCodes(req.body.majorCodes);
+      if (majors.error) return res.status(400).json({ success: false, message: majors.error });
+      const err = activeFormMajorsChangeError(current, majors.codes);
+      if (err) return res.status(400).json({ success: false, message: err });
+      majorCodes = majors.codes;
+      if (current.status === "ACTIVE") {
+        const all = await prisma.checklistVersion.findMany({ select: { id: true, status: true, majorCodes: true, versionName: true } });
+        plan = planChecklistActivation(all, versionId, majors.codes);
+        names = new Map(all.map((v) => [v.id, v.versionName]));
+      }
+    }
 
-    res.json({ success: true, message: "แก้ไขข้อมูลเวอร์ชันเรียบร้อยแล้ว", version: updated });
+    const [updated] = await prisma.$transaction([
+      prisma.checklistVersion.update({
+        where: { id: versionId },
+        data: {
+          versionName: versionName ? String(versionName).trim() : undefined,
+          description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
+          majorCodes,
+        },
+      }),
+      ...(plan ? checklistPlanOps(plan) : []),
+    ]);
+    const changes = plan ? checklistPlanMessage(plan, names) : "";
+
+    res.json({ success: true, message: "แก้ไขข้อมูลแบบฟอร์มเรียบร้อยแล้ว" + (changes ? ` · ${changes}` : ""), version: updated });
   } catch (err) {
     console.error("PUT /api/admin/checklist-versions/:id error:", err);
     res.status(500).json({ success: false, message: "แก้ไขข้อมูลเวอร์ชันไม่สำเร็จ" });

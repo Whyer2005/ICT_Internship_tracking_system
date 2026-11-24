@@ -171,6 +171,7 @@ erDiagram
         TEXT versionName "ชื่อเวอร์ชัน"
         TEXT description "คำอธิบาย (null ได้)"
         ChecklistVersionStatus status "DRAFT/ACTIVE/ARCHIVED"
+        TEXT_ARRAY majorCodes "สาขาที่ใช้ (ว่าง = แบบฟอร์มกลาง)"
         TIMESTAMP createdAt "วันที่สร้าง"
         TIMESTAMP updatedAt "วันที่แก้ไข"
     }
@@ -452,14 +453,15 @@ erDiagram
 | `updatedAt` | TIMESTAMP |  |  | วันที่แก้ไข |
 
 
-### ChecklistVersion — เวอร์ชันแบบประเมิน
+### ChecklistVersion — แบบฟอร์มการเลือกสถานประกอบการ (แยกตามสาขา)
 
 | คอลัมน์ | ชนิด | คีย์ | Null | คำอธิบาย |
 |---|---|:---:|:---:|---|
 | `id` | INT | PK |  | รหัส |
-| `versionName` | TEXT |  |  | ชื่อเวอร์ชัน |
+| `versionName` | TEXT |  |  | ชื่อแบบฟอร์ม |
 | `description` | TEXT |  | ✓ | คำอธิบาย |
-| `status` | ChecklistVersionStatus |  |  | DRAFT/ACTIVE/ARCHIVED |
+| `status` | ChecklistVersionStatus |  |  | DRAFT (ฉบับร่าง) / ACTIVE (เปิดใช้) / ARCHIVED (เลิกใช้) — เปิดใช้ได้หลายชุดพร้อมกัน แต่ 1 สาขาใช้ได้ 1 ชุด |
+| `majorCodes` | TEXT[] |  |  | สาขาที่ใช้แบบฟอร์มนี้ (รหัสใน `src/utils/majors.ts`) · ว่าง = แบบฟอร์มกลาง (สาขาที่ไม่มีแบบฟอร์มเฉพาะ) |
 | `createdAt` | TIMESTAMP |  |  | วันที่สร้าง |
 | `updatedAt` | TIMESTAMP |  |  | วันที่แก้ไข |
 
