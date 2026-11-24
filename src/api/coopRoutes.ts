@@ -559,7 +559,7 @@ function utf8Name(name: string): string {
 
 /**
  * สถานะการสมัครสหกิจของนิสิต (ใช้ทั้งตอนแสดงหน้าจอ และตรวจซ้ำตอนกดสมัคร)
- * เงื่อนไขเดียวกับการเลือกสถานประกอบการ: CV ผ่าน + ชั่วโมงอบรมครบ + สาขาเปิดรอบอยู่ · เลือกได้ทางเดียว · ทีละ 1 ใบ
+ * เงื่อนไขเดียวกับการเลือกสถานประกอบการ: อัปโหลด CV แล้ว + ชั่วโมงอบรมครบ + สาขาเปิดรอบอยู่ · เลือกได้ทางเดียว · ทีละ 1 ใบ
  */
 async function getStudentCoopContext(userId: number) {
   const student = await prisma.student.findUnique({
@@ -587,8 +587,8 @@ async function getStudentCoopContext(userId: number) {
   if (student.isDropped) reasons.push("คุณถูกดรอปจากรายวิชา — ติดต่อเจ้าหน้าที่");
   if (active) reasons.push("คุณมีใบสมัครสหกิจอยู่แล้ว (สมัครได้ทีละ 1 ที่)");
   if (internshipCompany) reasons.push(`คุณเลือกฝึกงานแล้ว (ยื่นสถานประกอบการ "${internshipCompany.name}") — เลือกได้ทางเดียว`);
+  // CV: อัปโหลดแล้วพอ (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ)
   if (!student.cv?.fileUrl) reasons.push("ยังไม่ได้อัปโหลด Resume (CV)");
-  else if (student.cv.status !== "APPROVED") reasons.push("Resume (CV) ยังไม่ผ่านการตรวจของอาจารย์");
   if (soft < 12 || hard < 18) reasons.push(`ชั่วโมงอบรมยังไม่ครบ (Soft ${soft}/12 · Hard ${hard}/18)`);
   if (!openWindows.length) {
     const next = elig.windows.find((w) => w.status === "NOT_YET_OPEN");

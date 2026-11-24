@@ -79,6 +79,7 @@ model Student {
   droppedAt       DateTime?
 
   cv              StudentCV?
+  cvComments      CvComment[]
   trainingRecords TrainingRecord[]
   companies       Company[]
   placement       InternshipPlacement?
@@ -238,13 +239,32 @@ model StudentCV {
   fileUrl    String
   fileName   String?
 
-  status     ApprovalStatus @default(PENDING)
-  note       String?        // หมายเหตุ กรณีไม่ผ่าน
+  status     ApprovalStatus @default(PENDING) // ⚠️ เลิกใช้ (24 พ.ย. 2569: อาจารย์ไม่อนุมัติ CV แล้ว — คอมเมนต์อย่างเดียว ดู CvComment)
+  note       String?        // ⚠️ เลิกใช้ — หมายเหตุเดิมย้ายไปเป็นคอมเมนต์แรกใน CvComment แล้ว
 
   reviewedById Int?
   reviewedAt   DateTime?
 
   uploadedAt DateTime       @default(now())
+
+  lastCommentAt  DateTime? // เวลาคอมเมนต์ล่าสุดของอาจารย์ (ใช้บอกสถานะ "รอคอมเมนต์" / "คอมเมนต์แล้ว")
+  commentsSeenAt DateTime? // นิสิตเปิดอ่านคอมเมนต์ล่าสุดเมื่อไร (ป้าย "มีคอมเมนต์ใหม่")
+}
+
+/// คอมเมนต์ CV จากอาจารย์ที่ปรึกษา (เฉพาะนิสิตของตน) / อาจารย์ประจำวิชา — ไม่มีการอนุมัติ นิสิตอ่านอย่างเดียว
+model CvComment {
+  id           Int       @id @default(autoincrement())
+  studentId    Int
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  authorUserId Int? // User.id ของผู้เขียน
+  authorName   String
+  authorRole   String // ADVISOR | COURSE_ADMIN
+  message      String
+  cvFileName   String? // ไฟล์ CV ตอนที่คอมเมนต์
+  cvUploadedAt DateTime? // เวลาอัปโหลดของไฟล์ CV ตอนที่คอมเมนต์ (ไว้บอกว่าเขียนถึงไฟล์เก่า)
+  createdAt    DateTime  @default(now())
+
+  @@index([studentId])
 }
 
 // =====================================================================

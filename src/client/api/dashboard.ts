@@ -346,16 +346,14 @@ updateStageWithDetails(currentStepIdx, data);
       if (pdfPreview) pdfPreview.style.display = 'none';
 
       // ⬇️ ย้าย cvStatusEl เข้ามาไว้ข้างในนี้ด้วย ปิด { ตรงนี้แทน
+      // CV ไม่มีการอนุมัติแล้ว — อาจารย์คอมเมนต์อย่างเดียว (คอมเมนต์ไฟล์ล่าสุดแล้ว = lastCommentAt >= uploadedAt)
       const cvStatusEl = document.getElementById('display-cv-status');
-      if (data.cv.status === 'APPROVED') {
-        cvStatusEl.innerHTML = '<span class="text-xs font-semibold text-green-700 bg-green-100 border border-green-300 px-2 py-0.5 rounded-md inline-block">CVตรวจแล้ว / ผ่าน</span>';
-      } else if (data.cv.status === 'REJECTED') {
-        cvStatusEl.innerHTML = `
-          <span class="text-xs font-semibold text-red-700 bg-red-100 border border-red-300 px-2 py-0.5 rounded-md inline-block">CVไม่ผ่าน / ทำใหม่</span>
-          ${data.cv.note ? `<div class="text-xs text-red-600 mt-1 font-normal" style="word-break: break-all;">(${escapeDashHtml(data.cv.note)})</div>` : ''}
-        `;
+      const commentedAt = data.cv.lastCommentAt ? new Date(data.cv.lastCommentAt).getTime() : 0;
+      const uploadedAt = data.cv.uploadedAt ? new Date(data.cv.uploadedAt).getTime() : 0;
+      if (commentedAt && commentedAt >= uploadedAt) {
+        cvStatusEl.innerHTML = '<a href="/status-all?tab=cv" class="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-300 px-2 py-0.5 rounded-md inline-block" style="text-decoration:none;">อาจารย์คอมเมนต์แล้ว — ดูคอมเมนต์</a>';
       } else {
-        cvStatusEl.innerHTML = '<span class="text-xs font-semibold text-amber-700 bg-yellow-100 border border-yellow-400 px-2 py-0.5 rounded-md inline-block">รอผล (รออาจารย์ตรวจ)</span>';
+        cvStatusEl.innerHTML = '<span class="text-xs font-semibold text-green-700 bg-green-100 border border-green-300 px-2 py-0.5 rounded-md inline-block">อัปโหลดแล้ว • รอคอมเมนต์</span>';
       }
     } // ← ปิด if ตรงนี้เท่านั้น ไม่ปิดก่อนหน้านี้
 

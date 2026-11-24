@@ -61,6 +61,10 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
       if (req.method === "PUT" && targetUrl.includes("/placement-status")) {
         return next();
       }
+      // 3. คอมเมนต์ CV ของนิสิตในความดูแล (route ตรวจซ้ำว่าเป็นอาจารย์ที่ปรึกษาของนิสิตคนนี้)
+      if ((req.method === "POST" || req.method === "DELETE") && targetUrl.includes("/cv-comments")) {
+        return next();
+      }
     }
 
     if (!isCourseAdmin && !isStaff && role !== "STAFF" && role !== "ADMIN" && (role as string) !== "COURSE_INSTRUCTOR") {

@@ -169,7 +169,7 @@ function renderDashboardCharts(checklistStats, readinessStats, totalStudents) {
   const r = readinessStats;
   renderPieChart('chart-readiness', 'readiness', [
     { key: 'registered', label: 'ยื่นสมัครสำเร็จ', value: r.registered, color: '#00C3D0' },
-    { key: 'cvApproved', label: 'ตรวจCVผ่าน', value: r.cvApproved, color: '#8B5CF6' },
+    { key: 'cvUploaded', label: 'มี CV แล้ว', value: r.cvUploaded || 0, color: '#8B5CF6' },
     { key: 'noData', label: 'ยังไม่มีข้อมูล', value: r.noData, color: '#FF3EA5' },
     { key: 'hoursIncomplete', label: 'ชั่วโมงอบรมยังไม่ครบ', value: r.hoursIncomplete, color: '#FFD233' },
     { key: 'trainingComplete', label: 'ตรวจชม.อบรมครบ', value: r.trainingComplete, color: '#10B981' },
@@ -374,7 +374,7 @@ function renderStudentTable(students, total, page, totalPages) {
       alertTags.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-amber-50 text-amber-800 border border-amber-200">
         <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ขาด Soft (${softHours}/12) + Hard (${hardHours}/18)
       </span>`);
-    } else if (!s.isTrainingComplete && (s.checklistStatusCode === 'APPROVED' || s.cvStatus === 'APPROVED' || s.placementStatus === 'APPROVED')) {
+    } else if (!s.isTrainingComplete && (s.checklistStatusCode === 'APPROVED' || s.hasCv || s.placementStatus === 'APPROVED')) {
       if (softLack && hardLack) {
         alertTags.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-rose-50 text-rose-700 border border-rose-200" title="Soft: ${softHours}/12, Hard: ${hardHours}/18 ชม.">
           ⚠️ ตกเกณฑ์อบรม (Soft ${softHours}/12, Hard ${hardHours}/18)

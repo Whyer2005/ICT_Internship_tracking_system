@@ -23,6 +23,7 @@ import {
 import { analyzeAcceptanceForm, fetchFileBuffer } from "../utils/acceptanceOcr";
 import cohortRouter, { getOpenMajorsSummary } from "./cohortRoutes";
 import { adminCoopRouter, buildCoopExportRows, coopSummaryForProfile } from "./coopRoutes";
+import { CV_CATEGORY, CV_COMMENT_ROLE_LABEL, CV_STATE_LABEL, CvCommentRole, cvCommentError, cvCommentRole, cvState, hasCv, isCommentForOlderFile, uploadedAfterLastComment } from "../utils/cvReview";
 import {
   activeFormMajorsChangeError,
   checklistCoverage,
@@ -88,9 +89,8 @@ router.use(adminCoopRouter);
 const STATUS_LABELS: Record<string, Record<string, string>> = {
   readiness: {
     approvedPlacement: "อนุมัติที่ฝึกงานแล้ว",
-    cvApproved: "ตรวจCVผ่าน",
+    cvUploaded: "มี CV แล้ว",
     trainingComplete: "ผ่านการตรวจชม.ครบ",
-    cvNotReviewed: "ยังไม่ได้รีวิว CV",
     noDataOrHoursLack: "ไม่มีข้อมูล/ชม.ไม่ครบ",
   },
   training: {
@@ -99,11 +99,11 @@ const STATUS_LABELS: Record<string, Record<string, string>> = {
     checkedNotPass: "ตรวจแล้ว ยังไม่ผ่าน",
     hoursNotComplete: "ชั่วโมงยังไม่ครบ",
   },
+  // CV: อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ (src/utils/cvReview.ts)
   cv: {
-    reviewed: "รีวิวCVแล้ว",
-    notReviewed: "ยังไม่ได้รีวิว CV",
-    failed: "ไม่ผ่าน CV",
-    noCv: "ยังไม่ทำ CV",
+    commented: CV_STATE_LABEL.COMMENTED,
+    waiting: CV_STATE_LABEL.WAITING,
+    noCv: CV_STATE_LABEL.NONE,
   },
   placement: {
     approved: "อนุมัติที่ฝึกงานแล้ว",
@@ -138,17 +138,9 @@ function categorizeStudent(s: any) {
     trainingCategory = "hoursNotComplete";
   }
 
-  // 2. สถานะ CV
-  let cvCategory = "noCv";
-  if (!s.cv) {
-    cvCategory = "noCv";
-  } else if (s.cv.status === "APPROVED") {
-    cvCategory = "reviewed";
-  } else if (s.cv.status === "REJECTED") {
-    cvCategory = "failed";
-  } else {
-    cvCategory = "notReviewed";
-  }
+  // 2. สถานะ CV (ไม่มีการอนุมัติ: ยังไม่อัปโหลด / รอคอมเมนต์ / คอมเมนต์แล้ว)
+  const studentHasCv = hasCv(s.cv);
+  const cvCategory: string = CV_CATEGORY[cvState(s.cv)];
 
   // 3. สถานะอนุมัติฝึกงาน (Placement)
   let placementCategory: string | null = null;
@@ -166,12 +158,10 @@ function categorizeStudent(s: any) {
   let readinessCategory = "noDataOrHoursLack";
   if (s.placement && s.placement.status === "APPROVED") {
     readinessCategory = "approvedPlacement";
-  } else if (s.cv && s.cv.status === "APPROVED") {
-    readinessCategory = "cvApproved";
+  } else if (studentHasCv) {
+    readinessCategory = "cvUploaded";
   } else if (isTrainingComplete) {
     readinessCategory = "trainingComplete";
-  } else if (s.cv && s.cv.status === "PENDING") {
-    readinessCategory = "cvNotReviewed";
   } else {
     readinessCategory = "noDataOrHoursLack";
   }
@@ -192,18 +182,12 @@ function categorizeStudent(s: any) {
   } else if (s.companies && s.companies.some((c: any) => c.submission && c.submission.status === "INTERVIEW_PASSED")) {
     overallStatus = "สัมภาษณ์ผ่านแล้ว";
     statusCategory = "interview_passed";
-  } else if (s.cv && s.cv.status === "APPROVED" && isTrainingComplete) {
-    overallStatus = "ตรวจCVผ่าน + ชม.ครบ";
+  } else if (studentHasCv && isTrainingComplete) {
+    overallStatus = "มี CV + ชม.ครบ";
     statusCategory = "ready";
-  } else if (s.cv && s.cv.status === "APPROVED") {
-    overallStatus = "รีวิวCVผ่านแล้ว";
-    statusCategory = "cv_approved";
-  } else if (s.cv && s.cv.status === "REJECTED") {
-    overallStatus = "CVไม่ผ่าน";
-    statusCategory = "cv_rejected";
-  } else if (s.cv && s.cv.status === "PENDING") {
-    overallStatus = "ยังไม่ได้รีวิว CV";
-    statusCategory = "cv_pending";
+  } else if (studentHasCv) {
+    overallStatus = "มี CV แล้ว (ชม.อบรมยังไม่ครบ)";
+    statusCategory = "cv_uploaded";
   } else if (isTrainingComplete && !hasRejectedTraining) {
     overallStatus = "ผ่านการตรวจชม.ครบ";
     statusCategory = "training_complete";
@@ -273,9 +257,6 @@ function getStudentRiskPriority(s: any): number {
     s.placementCategory === "rejected" ||
     s.statusCategory === "placement_rejected" ||
     s.isMatchedWithChecklist === false ||
-    s.cvStatus === "REJECTED" ||
-    s.cvCategory === "failed" ||
-    s.statusCategory === "cv_rejected" ||
     s.trainingCategory === "checkedNotPass" ||
     s.statusCategory === "training_rejected";
   if (hasIssue) return 2;
@@ -294,9 +275,7 @@ function getStudentRiskPriority(s: any): number {
     s.placementCategory === "pending" ||
     s.statusCategory === "placement_pending" ||
     s.statusCategory === "interview_passed" ||
-    s.cvStatus === "PENDING" ||
-    s.cvCategory === "notReviewed" ||
-    s.statusCategory === "cv_pending" ||
+    s.cvCategory === "waiting" ||
     s.trainingCategory === "completeNotChecked";
   if (isPending) return 4;
 
@@ -439,10 +418,9 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
     // --- กราฟ 1: สถานะความพร้อม ---
     const readinessStats: Record<string, number> = {
       approvedPlacement: 0,
-      cvApproved: 0,
+      cvUploaded: 0,
       noDataOrHoursLack: 0,
       trainingComplete: 0,
-      cvNotReviewed: 0,
     };
 
     // --- กราฟ 2: สถานะการอบรม ---
@@ -453,11 +431,10 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
       hoursNotComplete: 0,
     };
 
-    // --- กราฟ 3: สถานะการตรวจ CV ---
+    // --- กราฟ 3: สถานะ CV (คอมเมนต์อย่างเดียว) ---
     const cvStats: Record<string, number> = {
-      reviewed: 0,
-      notReviewed: 0,
-      failed: 0,
+      commented: 0,
+      waiting: 0,
       noCv: 0,
     };
 
@@ -651,7 +628,9 @@ router.get("/students", async (req: Request, res: Response) => {
         cvCategory: cats.cvCategory,
         placementCategory: cats.placementCategory,
         readinessCategory: cats.readinessCategory,
-        cvStatus: s.cv ? s.cv.status : null,
+        cvStatus: hasCv(s.cv) ? cvState(s.cv) : null, // WAITING | COMMENTED | null (ยังไม่อัปโหลด)
+        hasCv: hasCv(s.cv),
+        cvUploadedAfterComment: uploadedAfterLastComment(s.cv),
         isDropped: s.isDropped,
         dropReason: s.dropReason,
         droppedAt: s.droppedAt,
@@ -769,19 +748,22 @@ router.get("/students", async (req: Request, res: Response) => {
         case "training_incomplete":
           mapped = mapped.filter((s) => s.trainingCategory === "hoursNotComplete");
           break;
+        // CV: ไม่มีการอนุมัติ (cv_approved / cv_pending คงไว้รองรับลิงก์เดิม)
+        case "cv_uploaded":
         case "cv_approved":
         case "cv_passed":
-          mapped = mapped.filter((s) => s.cvStatus === "APPROVED");
+          mapped = mapped.filter((s) => s.hasCv);
           break;
+        case "cv_waiting":
         case "cv_pending":
-          mapped = mapped.filter((s) => s.cvStatus === "PENDING" || s.cvCategory === "notReviewed");
+          mapped = mapped.filter((s) => s.cvCategory === "waiting");
           break;
-        case "cv_rejected":
-        case "cv_failed":
-          mapped = mapped.filter((s) => s.cvStatus === "REJECTED");
+        case "cv_commented":
+          mapped = mapped.filter((s) => s.cvCategory === "commented");
           break;
         case "cv_none":
-          mapped = mapped.filter((s) => !s.cvStatus || s.cvCategory === "noCv");
+        case "cv_failed":
+          mapped = mapped.filter((s) => !s.hasCv);
           break;
         case "checklist_approved":
         case "checklist_passed":
@@ -837,9 +819,9 @@ router.get("/students", async (req: Request, res: Response) => {
       placementStats: Record<string, number>;
     } = {
       totalStudents: mapped.length,
-      readinessStats: { approvedPlacement: 0, cvApproved: 0, noDataOrHoursLack: 0, trainingComplete: 0, cvNotReviewed: 0 },
+      readinessStats: { approvedPlacement: 0, cvUploaded: 0, noDataOrHoursLack: 0, trainingComplete: 0 },
       trainingStats: { passedComplete: 0, completeNotChecked: 0, checkedNotPass: 0, hoursNotComplete: 0 },
-      cvStats: { reviewed: 0, notReviewed: 0, failed: 0, noCv: 0 },
+      cvStats: { commented: 0, waiting: 0, noCv: 0 },
       placementStats: { pending: 0, approved: 0, rejected: 0 },
     };
     mapped.forEach((s) => {
@@ -904,6 +886,7 @@ router.get("/students/:studentId", async (req: Request, res: Response) => {
         advisor: { include: { user: true } },
         supervisor: { include: { user: true } },
         coopApplications: true,
+        cvComments: { orderBy: { createdAt: "desc" } },
       },
     });
 
@@ -954,7 +937,26 @@ router.get("/students/:studentId", async (req: Request, res: Response) => {
         dropReason: student.dropReason,
         droppedAt: student.droppedAt,
       },
-      cv: student.cv,
+      cv: student.cv
+        ? {
+            ...student.cv,
+            state: cvState(student.cv),
+            stateLabel: CV_STATE_LABEL[cvState(student.cv)],
+            uploadedAfterComment: uploadedAfterLastComment(student.cv),
+          }
+        : null,
+      cvComments: student.cvComments.map((c) => ({
+        id: c.id,
+        authorName: c.authorName,
+        authorRoleLabel: CV_COMMENT_ROLE_LABEL[c.authorRole as CvCommentRole] || c.authorRole,
+        message: c.message,
+        createdAt: c.createdAt,
+        cvFileName: c.cvFileName,
+        forOlderFile: isCommentForOlderFile(c.cvUploadedAt, student.cv?.uploadedAt),
+        mine: c.authorUserId === req.session.user!.id,
+      })),
+      // คอมเมนต์ได้: อาจารย์ที่ปรึกษาของนิสิตคนนี้ / อาจารย์ประจำวิชา (เจ้าหน้าที่ดูอย่างเดียว)
+      canCommentCv: Boolean(cvCommentRoleFor(req, student)),
       trainings: student.trainingRecords,
       trainingSummary: { totalSoft, totalHard, approvedSoft, approvedHard },
       companies: student.companies,
@@ -976,40 +978,79 @@ router.get("/students/:studentId", async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 4. ตั้งสถานะ CV ของนิสิต (อาจารย์ประจำวิชา / Course Admin)
+// 4. CV: อาจารย์ไม่อนุมัติแล้ว — คอมเมนต์อย่างเดียว (ยืนยัน 24 พ.ย. 2569 · src/utils/cvReview.ts)
+//    คอมเมนต์ได้: อาจารย์ที่ปรึกษา (เฉพาะนิสิตของตน) + อาจารย์ประจำวิชา · เจ้าหน้าที่ดูอย่างเดียว
 // ==========================================
-router.put("/students/:studentId/cv-status", async (req: Request, res: Response) => {
-  const isPureStaff = Boolean(
-    (req.staff?.isStaff || req.session.user!.role === "STAFF") &&
-      !req.staff?.isCourseAdmin &&
-      req.session.user!.role !== "ADMIN"
-  );
-  if (isPureStaff) {
-    return res.status(403).json({ success: false, message: "เจ้าหน้าที่ไม่มีสิทธิ์ตรวจอนุมัติ CV" });
-  }
+router.put("/students/:studentId/cv-status", (_req: Request, res: Response) => {
+  res.status(410).json({ success: false, message: "เลิกใช้การอนุมัติ CV แล้ว — ใช้คอมเมนต์แทน" });
+});
+
+/** บทบาทที่ใช้คอมเมนต์ CV ของนิสิตคนนี้ (null = ไม่มีสิทธิ์) */
+function cvCommentRoleFor(req: Request, student: { advisorId: number | null }) {
+  return cvCommentRole({
+    isAdvisorOfStudent: Boolean(req.staff && student.advisorId === req.staff.id),
+    isCourseAdmin: Boolean(req.staff?.isCourseAdmin || req.session.user?.role === "ADMIN"),
+  });
+}
+
+// เพิ่มคอมเมนต์ CV: body = { message }
+router.post("/students/:studentId/cv-comments", async (req: Request, res: Response) => {
   try {
-    const studentId = parseInt(req.params.studentId as string, 10);
-    const { status, note } = req.body; // APPROVED or REJECTED
-
-    const cv = await prisma.studentCV.findUnique({ where: { studentId } });
-    if (!cv) {
-      return res.status(404).json({ success: false, message: "ไม่พบ CV ของนิสิต" });
-    }
-
-    const updated = await prisma.studentCV.update({
-      where: { studentId },
-      data: {
-        status,
-        note: note || null,
-        reviewedById: req.session.user!.id,
-        reviewedAt: new Date(),
-      },
+    const studentId = parseInt(String(req.params.studentId), 10);
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { id: true, advisorId: true, cv: { select: { fileUrl: true, fileName: true, uploadedAt: true } } },
     });
+    if (!student) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
+    const role = cvCommentRoleFor(req, student);
+    if (!role) {
+      return res.status(403).json({ success: false, message: "คอมเมนต์ CV ได้เฉพาะอาจารย์ที่ปรึกษาของนิสิตคนนี้ หรืออาจารย์ประจำวิชา" });
+    }
+    if (!hasCv(student.cv)) return res.status(400).json({ success: false, message: "นิสิตยังไม่ได้อัปโหลด CV" });
+    const err = cvCommentError(req.body?.message);
+    if (err) return res.status(400).json({ success: false, message: err });
 
-    res.json({ success: true, cv: updated });
+    const now = new Date();
+    const [comment] = await prisma.$transaction([
+      prisma.cvComment.create({
+        data: {
+          studentId,
+          authorUserId: req.session.user!.id,
+          authorName: req.staff?.name || req.session.user?.username || "อาจารย์",
+          authorRole: role,
+          message: String(req.body.message).trim(),
+          cvFileName: student.cv!.fileName,
+          cvUploadedAt: student.cv!.uploadedAt,
+          createdAt: now,
+        },
+      }),
+      prisma.studentCV.update({ where: { studentId }, data: { lastCommentAt: now } }),
+    ]);
+    res.json({ success: true, message: "บันทึกคอมเมนต์แล้ว — นิสิตจะเห็นในหน้า Resume (CV)", comment });
   } catch (err) {
-    console.error("PUT /api/admin/students/:id/cv-status error:", err);
-    res.status(500).json({ success: false, message: "อัพเดตสถานะ CV ไม่สำเร็จ" });
+    console.error("POST /api/admin/students/:id/cv-comments error:", err);
+    res.status(500).json({ success: false, message: "บันทึกคอมเมนต์ไม่สำเร็จ" });
+  }
+});
+
+// ลบคอมเมนต์ของตัวเอง (เผื่อพิมพ์ผิด)
+router.delete("/students/:studentId/cv-comments/:commentId", async (req: Request, res: Response) => {
+  try {
+    const studentId = parseInt(String(req.params.studentId), 10);
+    const commentId = parseInt(String(req.params.commentId), 10);
+    const comment = await prisma.cvComment.findFirst({ where: { id: commentId, studentId } });
+    if (!comment) return res.status(404).json({ success: false, message: "ไม่พบคอมเมนต์" });
+    if (comment.authorUserId !== req.session.user!.id) {
+      return res.status(403).json({ success: false, message: "ลบได้เฉพาะคอมเมนต์ของตัวเอง" });
+    }
+    await prisma.cvComment.delete({ where: { id: commentId } });
+    // เวลาคอมเมนต์ล่าสุด = คอมเมนต์ที่เหลือล่าสุด
+    const latest = await prisma.cvComment.findFirst({ where: { studentId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+    await prisma.studentCV.updateMany({ where: { studentId }, data: { lastCommentAt: latest?.createdAt ?? null } });
+    res.json({ success: true, message: "ลบคอมเมนต์แล้ว" });
+  } catch (err) {
+    console.error("DELETE /api/admin/students/:id/cv-comments/:id error:", err);
+    res.status(500).json({ success: false, message: "ลบคอมเมนต์ไม่สำเร็จ" });
   }
 });
 
@@ -1190,11 +1231,8 @@ router.put("/students/batch-status", async (req: Request, res: Response) => {
     let updatedCount = 0;
 
     if (statusType === "cv") {
-      const result = await prisma.studentCV.updateMany({
-        where: { studentId: { in: studentIds.map(Number) } },
-        data: reviewData,
-      });
-      updatedCount = result.count;
+      // CV ไม่มีการอนุมัติแล้ว (คอมเมนต์รายคนในหน้า Profile นิสิต)
+      return res.status(400).json({ success: false, message: "เลิกใช้การตั้งสถานะ CV แล้ว — อาจารย์คอมเมนต์ CV ได้ในหน้า Profile นิสิต" });
     } else if (statusType === "training") {
       const result = await prisma.trainingRecord.updateMany({
         where: {
@@ -1658,13 +1696,8 @@ router.get("/export", async (req: Request, res: Response) => {
         ? `ผ่านครบ ${totalHours} ชม. (Soft ${softHours}/12, Hard ${hardHours}/18)`
         : `ยังไม่ครบ (Soft ${softHours}/12, Hard ${hardHours}/18)`;
 
-      // 6. สถานะ CV
-      let cvStatus = "ยังไม่ส่ง CV";
-      if (s.cv) {
-        if (s.cv.status === "APPROVED") cvStatus = "ผ่าน";
-        else if (s.cv.status === "REJECTED") cvStatus = "ไม่ผ่าน";
-        else cvStatus = "รอตรวจ";
-      }
+      // 6. สถานะ CV (คอมเมนต์อย่างเดียว ไม่มีผ่าน/ไม่ผ่าน)
+      const cvStatus = CV_STATE_LABEL[cvState(s.cv)];
 
       // 7. สถานะ Checklist
       const companies = s.companies || [];
@@ -1791,10 +1824,12 @@ router.get("/export", async (req: Request, res: Response) => {
             exportData = exportData.filter((s) => !s.isTrainingComplete);
             break;
           case "cv_passed":
-            exportData = exportData.filter((s) => s.cvStatus === "ผ่าน");
+          case "cv_uploaded":
+            exportData = exportData.filter((s) => s.cvStatus !== CV_STATE_LABEL.NONE);
             break;
           case "cv_failed":
-            exportData = exportData.filter((s) => s.cvStatus !== "ผ่าน");
+          case "cv_none":
+            exportData = exportData.filter((s) => s.cvStatus === CV_STATE_LABEL.NONE);
             break;
           case "checklist_passed":
             exportData = exportData.filter((s) => s.checklistStatus === "ผ่าน");
@@ -2306,7 +2341,7 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         supervisorName: s.supervisor?.name || "ยังไม่ระบุ",
         softHours: cat.softHours,
         hardHours: cat.hardHours,
-        cvStatus: s.cv?.status || "NONE",
+        cvStatus: cvState(s.cv),
         cvFileUrl: s.cv?.fileUrl || null,
         companyId: activeCompany?.id || null,
         companyName: companyName || "ยังไม่ยื่นบริษัท",

@@ -487,10 +487,11 @@ async function loadData() {
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
     const isTrainingComplete = approvedSoftHours >= 12 && approvedHardHours >= 18;
-    const isCvApproved = cvData.success && cvData.cv && cvData.cv.status === 'APPROVED';
+    // CV: อัปโหลดแล้วพอ (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ)
+    const hasCvFile = Boolean(cvData.success && cvData.cv && cvData.cv.fileUrl);
 
-    if (!isDroppedStudent && (!isTrainingComplete || !isCvApproved)) {
-      alert('⚠️ ยังไม่สามารถเข้าใช้งานหน้า Checklist บริษัทได้ เนื่องจากยังไม่ผ่านเงื่อนไขการอบรม (Soft >= 12, Hard >= 18 ชม.) หรือ CV ยังไม่ได้รับการอนุมัติ');
+    if (!isDroppedStudent && (!isTrainingComplete || !hasCvFile)) {
+      alert('⚠️ ยังไม่สามารถเข้าใช้งานหน้าสถานประกอบการได้ เนื่องจากชั่วโมงอบรมยังไม่ครบ (Soft >= 12, Hard >= 18 ชม.) หรือยังไม่ได้อัปโหลด Resume (CV)');
       window.location.href = '/status-all';
       return;
     }

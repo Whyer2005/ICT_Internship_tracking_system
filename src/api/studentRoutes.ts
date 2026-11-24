@@ -27,6 +27,7 @@ import { resolveGoogleMapsLink } from "../utils/googleMapsLink";
 import { studentCoopRouter } from "./coopRoutes";
 import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
 import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
+import { CV_COMMENT_ROLE_LABEL, CV_STATE_LABEL, CvCommentRole, cvState, hasCv, isCommentForOlderFile, unseenCommentCount } from "../utils/cvReview";
 
 const router = express.Router();
 
@@ -521,28 +522,32 @@ router.get("/cv", async (req: Request, res: Response) => {
     }
     const internshipLock = await getStudentInternshipLock(student);
 
-    // ชื่อ/บทบาทผู้ตรวจ CV (reviewedById = User.id ของอาจารย์/เจ้าหน้าที่)
-    let reviewerName: string | null = null;
-    let reviewerRole: string | null = null;
-    if (student.cv?.reviewedById) {
-      const reviewer = await prisma.staff.findUnique({
-        where: { userId: student.cv.reviewedById },
-        select: { name: true, isAdvisor: true, isCourseAdmin: true, isSupervisor: true, isStaff: true },
-      });
-      if (reviewer) {
-        reviewerName = reviewer.name;
-        const roles: string[] = [];
-        if (reviewer.isAdvisor) roles.push("อาจารย์ที่ปรึกษา");
-        if (reviewer.isCourseAdmin) roles.push("อาจารย์ประจำวิชา");
-        if (reviewer.isSupervisor) roles.push("อาจารย์นิเทศก์");
-        if (reviewer.isStaff) roles.push("เจ้าหน้าที่");
-        reviewerRole = roles.length ? roles.join(" / ") : null;
-      }
-    }
+    // อาจารย์ไม่อนุมัติ CV แล้ว — คอมเมนต์อย่างเดียว (นิสิตอ่านอย่างเดียว) · src/utils/cvReview.ts
+    const comments = await prisma.cvComment.findMany({
+      where: { studentId: student.id },
+      orderBy: { createdAt: "desc" },
+    });
+    const state = cvState(student.cv);
 
     res.json({
       success: true,
-      cv: student.cv ? { ...student.cv, reviewerName, reviewerRole } : null,
+      cv: student.cv
+        ? {
+            ...student.cv,
+            state,
+            stateLabel: CV_STATE_LABEL[state],
+            unseenComments: unseenCommentCount(comments, student.cv.commentsSeenAt),
+          }
+        : null,
+      comments: comments.map((c) => ({
+        id: c.id,
+        authorName: c.authorName,
+        authorRoleLabel: CV_COMMENT_ROLE_LABEL[c.authorRole as CvCommentRole] || c.authorRole,
+        message: c.message,
+        createdAt: c.createdAt,
+        cvFileName: c.cvFileName,
+        forOlderFile: isCommentForOlderFile(c.cvUploadedAt, student.cv?.uploadedAt),
+      })),
       internshipLock: { locked: internshipLock.locked, message: internshipLock.message },
     });
   } catch (err) {
@@ -600,6 +605,19 @@ router.post("/cv", upload.single("cv"), async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("POST /api/student/cv error:", err);
     res.status(500).json({ success: false, message: "อัปโหลด CV ไม่สำเร็จ: " + err.message });
+  }
+});
+
+// นิสิตเปิดอ่านคอมเมนต์ CV แล้ว -> ลบป้าย "มีคอมเมนต์ใหม่"
+router.post("/cv/comments/seen", async (req: Request, res: Response) => {
+  try {
+    const student = await prisma.student.findUnique({ where: { userId: req.session.user!.id }, select: { id: true } });
+    if (!student) return res.json({ success: true });
+    await prisma.studentCV.updateMany({ where: { studentId: student.id }, data: { commentsSeenAt: new Date() } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("POST /api/student/cv/comments/seen error:", err);
+    res.status(500).json({ success: false, message: "บันทึกไม่สำเร็จ" });
   }
 });
 
@@ -1027,7 +1045,7 @@ router.post("/companies", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: resolvedWindow.error, needWindowSelection: true });
     }
 
-    // 🔒 ตรวจสอบว่าชั่วโมงการอบรมครบ และ CV ผ่านการอนุมัติแล้วหรือยัง
+    // 🔒 ตรวจสอบว่าชั่วโมงการอบรมครบ และอัปโหลด CV แล้ว (อาจารย์คอมเมนต์อย่างเดียว ไม่ต้องรออนุมัติ)
     const approvedTrainings = (student.trainingRecords || []).filter((t) => t.status === "APPROVED");
     const approvedSoft = approvedTrainings
       .filter((t) => t.skillType === "SOFT")
@@ -1036,12 +1054,10 @@ router.post("/companies", async (req: Request, res: Response) => {
       .filter((t) => t.skillType === "HARD")
       .reduce((sum, t) => sum + t.hours, 0);
     const isTrainingComplete = approvedSoft >= 12 && approvedHard >= 18;
-    const isCvApproved = student.cv && student.cv.status === "APPROVED";
-
-    if (!isTrainingComplete || !isCvApproved) {
+    if (!isTrainingComplete || !hasCv(student.cv)) {
       return res.status(400).json({
         success: false,
-        message: "ยังไม่สามารถทำ Checklist ได้ เนื่องจากชั่วโมงการอบรมยังไม่ครบ หรือ CV ยังไม่ผ่านการอนุมัติ",
+        message: "ยังยื่นสถานประกอบการไม่ได้ เนื่องจากชั่วโมงการอบรมยังไม่ครบ หรือยังไม่ได้อัปโหลด Resume (CV)",
       });
     }
 

@@ -14,6 +14,7 @@ erDiagram
     InternshipCohort ||--o{ InternshipWindow : "มี (has)"
     InternshipWindow |o--o{ Student : "ผูกกับ (assigned to)"
     Student ||--o| StudentCV : "อัปโหลด (uploads)"
+    Student ||--o{ CvComment : "ได้รับคอมเมนต์ CV (receives)"
     Student ||--o{ TrainingRecord : "บันทึก (records)"
     Student ||--o{ Company : "ยื่น (submits)"
     Student ||--o| InternshipPlacement : "ได้ (gets)"
@@ -66,11 +67,24 @@ erDiagram
         INT studentId FK,UK "นิสิต (Student)"
         TEXT fileUrl "ที่อยู่ไฟล์"
         TEXT fileName "ชื่อไฟล์ (null ได้)"
-        ApprovalStatus status "ผลตรวจ PENDING/APPROVED/REJECTED"
-        TEXT note "ความเห็นผู้ตรวจ (null ได้)"
+        ApprovalStatus status "เลิกใช้ (เดิม: ผลตรวจ)"
+        TEXT note "เลิกใช้ (ย้ายเป็นคอมเมนต์แล้ว)"
         INT reviewedById "ผู้ตรวจ (null ได้)"
         TIMESTAMP reviewedAt "วันที่ตรวจ (null ได้)"
         TIMESTAMP uploadedAt "วันที่อัปโหลด"
+        TIMESTAMP lastCommentAt "คอมเมนต์ล่าสุด (null ได้)"
+        TIMESTAMP commentsSeenAt "นิสิตอ่านคอมเมนต์ล่าสุดเมื่อ (null ได้)"
+    }
+    CvComment {
+        INT id PK "รหัส"
+        INT studentId FK "นิสิต (Student)"
+        INT authorUserId "ผู้เขียน User.id (null ได้)"
+        TEXT authorName "ชื่อผู้เขียน"
+        TEXT authorRole "ADVISOR / COURSE_ADMIN"
+        TEXT message "ข้อความ"
+        TEXT cvFileName "ไฟล์ CV ตอนคอมเมนต์ (null ได้)"
+        TIMESTAMP cvUploadedAt "เวลาอัปโหลดไฟล์ตอนคอมเมนต์ (null ได้)"
+        TIMESTAMP createdAt "วันที่คอมเมนต์"
     }
     Student {
         INT id PK "รหัส"
@@ -330,11 +344,28 @@ erDiagram
 | `studentId` | INT | FK,UK |  | นิสิต (Student) |
 | `fileUrl` | TEXT |  |  | ที่อยู่ไฟล์ |
 | `fileName` | TEXT |  | ✓ | ชื่อไฟล์ |
-| `status` | ApprovalStatus |  |  | ผลตรวจ PENDING/APPROVED/REJECTED |
-| `note` | TEXT |  | ✓ | ความเห็นผู้ตรวจ |
-| `reviewedById` | INT |  | ✓ | ผู้ตรวจ |
-| `reviewedAt` | TIMESTAMP |  | ✓ | วันที่ตรวจ |
+| `status` | ApprovalStatus |  |  | ⚠️ เลิกใช้ (24 พ.ย. 2569 อาจารย์ไม่อนุมัติ CV แล้ว — คอมเมนต์แทน) |
+| `note` | TEXT |  | ✓ | ⚠️ เลิกใช้ — ย้ายเป็นคอมเมนต์แรกใน `CvComment` แล้ว |
+| `reviewedById` | INT |  | ✓ | ผู้ตรวจ (ข้อมูลเดิม) |
+| `reviewedAt` | TIMESTAMP |  | ✓ | วันที่ตรวจ (ข้อมูลเดิม) |
 | `uploadedAt` | TIMESTAMP |  |  | วันที่อัปโหลด |
+| `lastCommentAt` | TIMESTAMP |  | ✓ | คอมเมนต์ล่าสุด — ≥ uploadedAt = "คอมเมนต์แล้ว" / ไม่มีหรือเก่ากว่า = "รอคอมเมนต์" |
+| `commentsSeenAt` | TIMESTAMP |  | ✓ | นิสิตเปิดอ่านคอมเมนต์ล่าสุดเมื่อไร (ป้าย "มีคอมเมนต์ใหม่") |
+
+### CvComment — คอมเมนต์ CV จากอาจารย์
+
+| คอลัมน์ | ชนิด | คีย์ | Null | คำอธิบาย |
+|---|---|:---:|:---:|---|
+| `id` | INT | PK |  | รหัส |
+| `studentId` | INT | FK |  | นิสิต (Student) — ลบนิสิตแล้วคอมเมนต์ถูกลบตาม |
+| `authorUserId` | INT |  | ✓ | ผู้เขียน (User.id) — ลบได้เฉพาะคอมเมนต์ของตัวเอง |
+| `authorName` | TEXT |  |  | ชื่อผู้เขียน ณ วันที่คอมเมนต์ |
+| `authorRole` | TEXT |  |  | ADVISOR (อาจารย์ที่ปรึกษาของนิสิต) / COURSE_ADMIN (อาจารย์ประจำวิชา) |
+| `message` | TEXT |  |  | ข้อความ (≤ 2,000 ตัวอักษร) |
+| `cvFileName` / `cvUploadedAt` | TEXT / TIMESTAMP |  | ✓ | ไฟล์ CV ตอนที่คอมเมนต์ (ไว้บอกว่าเขียนถึงไฟล์ก่อนหน้า) |
+| `createdAt` | TIMESTAMP |  |  | วันที่คอมเมนต์ |
+
+> ดัชนี: `studentId`
 
 
 ### Student — นิสิต

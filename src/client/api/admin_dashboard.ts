@@ -413,7 +413,7 @@ function renderStudentTable(students, total, page, totalPages) {
         alertTags.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-amber-50 text-amber-800 border border-amber-200">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ขาด Soft (${softHours}/12) + Hard (${hardHours}/18)
         </span>`);
-      } else if (!s.isTrainingComplete && (s.statusCategory === 'placement_approved' || s.statusCategory === 'ready' || s.hasChecklistApproved || s.cvStatus === 'APPROVED')) {
+      } else if (!s.isTrainingComplete && (s.statusCategory === 'placement_approved' || s.statusCategory === 'ready' || s.hasChecklistApproved || s.hasCv)) {
         // ประเด็นข้อ 3: ขั้นตอนอื่นผ่านแล้วแต่ชั่วโมงอบรมตกเกณฑ์ / ขาด
         if (softLack && hardLack) {
           alertTags.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-rose-50 text-rose-700 border border-rose-200" title="Soft: ${softHours}/12, Hard: ${hardHours}/18 ชม.">
@@ -514,13 +514,13 @@ function updateSelectAllCheckbox() {
 }
 
 function getStatusBadgeColor(category, displayStatus) {
-  if (displayStatus === 'ยังไม่ได้รีวิว CV' || displayStatus === 'รอผล' || displayStatus === 'ชม.ครบ ยังไม่ตรวจ' || displayStatus === 'รออนุมัติที่ฝึกงาน') {
+  if (displayStatus === 'อัปโหลดแล้ว รอคอมเมนต์' || displayStatus === 'รอผล' || displayStatus === 'ชม.ครบ ยังไม่ตรวจ' || displayStatus === 'รออนุมัติที่ฝึกงาน') {
     return 'bg-yellow-100 text-yellow-700';
   }
-  if (displayStatus === 'ไม่ผ่าน CV' || displayStatus === 'ไม่อนุมัติที่ฝึกงาน' || displayStatus === 'ตรวจแล้ว ยังไม่ผ่าน' || displayStatus === 'ชั่วโมงยังไม่ครบ' || displayStatus === 'ยังไม่ทำ CV' || displayStatus === 'ชั่วโมงอบรมไม่ผ่าน') {
+  if (displayStatus === 'ไม่ผ่าน CV' || displayStatus === 'ไม่อนุมัติที่ฝึกงาน' || displayStatus === 'ตรวจแล้ว ยังไม่ผ่าน' || displayStatus === 'ชั่วโมงยังไม่ครบ' || displayStatus === 'ยังไม่อัปโหลด CV' || displayStatus === 'ชั่วโมงอบรมไม่ผ่าน') {
     return 'bg-red-100 text-red-600';
   }
-  if (displayStatus === 'รีวิวCVแล้ว' || displayStatus === 'อนุมัติที่ฝึกงานแล้ว' || displayStatus === 'ผ่านการตรวจชม.ครบ' || displayStatus === 'ตรวจCVผ่าน' || displayStatus === 'สัมภาษณ์ผ่านแล้ว' || displayStatus === 'ตรวจCVผ่าน + ชม.ครบ') {
+  if (displayStatus === 'อาจารย์คอมเมนต์แล้ว' || displayStatus === 'อนุมัติที่ฝึกงานแล้ว' || displayStatus === 'ผ่านการตรวจชม.ครบ' || displayStatus === 'มี CV แล้ว' || displayStatus === 'สัมภาษณ์ผ่านแล้ว' || displayStatus === 'มี CV + ชม.ครบ') {
     return 'bg-green-100 text-green-700';
   }
   const colors = {
@@ -529,9 +529,7 @@ function getStatusBadgeColor(category, displayStatus) {
     placement_pending: 'bg-yellow-100 text-yellow-700',
     interview_passed: 'bg-green-100 text-green-700',
     ready: 'bg-green-100 text-green-700',
-    cv_approved: 'bg-green-100 text-green-700',
-    cv_rejected: 'bg-red-100 text-red-600',
-    cv_pending: 'bg-yellow-100 text-yellow-700',
+    cv_uploaded: 'bg-blue-100 text-blue-700', // มี CV แล้ว (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ)
     training_complete: 'bg-green-100 text-green-700',
     training_rejected: 'bg-red-100 text-red-600',
     training_incomplete: 'bg-yellow-100 text-yellow-700',

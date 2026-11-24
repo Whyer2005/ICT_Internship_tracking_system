@@ -143,10 +143,10 @@ ${ictMajorsDataScript()}
 
           <select id="status-filter" class="input-field" style="width:auto; min-width:175px; font-size:13px; padding:7px 12px; cursor:pointer;">
             <option value="">ทุกสถานะ</option>
-            <optgroup label="📄 1. ตรวจเรซูเม่ (CV)">
-              <option value="cv_pending">⏳ ยังไม่ได้รีวิว CV</option>
-              <option value="cv_approved">🟢 ตรวจ CV ผ่าน</option>
-              <option value="cv_rejected">🔴 ไม่ผ่าน CV</option>
+            <optgroup label="📄 1. เรซูเม่ (CV) — คอมเมนต์อย่างเดียว">
+              <option value="cv_waiting">⏳ อัปโหลดแล้ว รอคอมเมนต์</option>
+              <option value="cv_commented">💬 คอมเมนต์แล้ว</option>
+              <option value="cv_none">🔴 ยังไม่อัปโหลด CV</option>
             </optgroup>
             <optgroup label="🏢 2. Checklist สถานประกอบการ">
               <option value="checklist_pending">⏳ รอตรวจ Checklist</option>

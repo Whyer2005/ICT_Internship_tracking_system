@@ -232,11 +232,11 @@ ${ictMajorsDataScript()}
       </div>
     </section>
 
-    <!-- 3. กรอกใบ CV (admin ตรวจได้) -->
+    <!-- 3. ใบ CV — อาจารย์ที่ปรึกษา/อาจารย์ประจำวิชาคอมเมนต์ได้ (ไม่มีการอนุมัติ) -->
     <section class="card">
       <div class="card-header">
         <span class="material-icons header-icon">description</span>
-        <h2 class="card-title">เรซูเม่ / ใบ CV (ตรวจสอบความพร้อมก่อนยื่นบริษัท)</h2>
+        <h2 class="card-title">เรซูเม่ / ใบ CV (อาจารย์คอมเมนต์ — ไม่มีการอนุมัติ)</h2>
       </div>
       <div class="card-body" id="admin-cv-section">
         <p class="text-gray-400 text-center py-4">กำลังโหลด...</p>

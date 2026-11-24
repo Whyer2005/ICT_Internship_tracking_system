@@ -962,12 +962,12 @@ ${thaiProvincesDataScript()}
                   <div id="status-dropdown-menu" class="adm-status-menu" style="display:none;">
                     <div class="status-option selected" data-val="" onclick="window.selectStatusFilter('', 'ทั้งหมด')">ทั้งหมด</div>
                   
-                    <!-- ขั้นตอนที่ 1: ตรวจเรซูเม่ (CV) -->
-                    <div class="status-group-header">📄 1. ตรวจเรซูเม่ (CV)</div>
-                    <div class="status-option" data-val="cv_pending" onclick="window.selectStatusFilter('cv_pending', '⏳ ยังไม่ได้รีวิว CV')">⏳ ยังไม่ได้รีวิว CV</div>
-                    <div class="status-option" data-val="cv_approved" onclick="window.selectStatusFilter('cv_approved', '🟢 ตรวจ CV ผ่าน')">🟢 ตรวจ CV ผ่าน</div>
-                    <div class="status-option" data-val="cv_rejected" onclick="window.selectStatusFilter('cv_rejected', '🔴 ไม่ผ่าน CV')">🔴 ไม่ผ่าน CV</div>
-                    <div class="status-option" data-val="cv_none" onclick="window.selectStatusFilter('cv_none', '🔴 ยังไม่ทำ CV')">🔴 ยังไม่ทำ CV</div>
+                    <!-- ขั้นตอนที่ 1: เรซูเม่ (CV) — อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ -->
+                    <div class="status-group-header">📄 1. เรซูเม่ (CV)</div>
+                    <div class="status-option" data-val="cv_waiting" onclick="window.selectStatusFilter('cv_waiting', '⏳ อัปโหลดแล้ว รอคอมเมนต์')">⏳ อัปโหลดแล้ว รอคอมเมนต์</div>
+                    <div class="status-option" data-val="cv_commented" onclick="window.selectStatusFilter('cv_commented', '💬 อาจารย์คอมเมนต์แล้ว')">💬 อาจารย์คอมเมนต์แล้ว</div>
+                    <div class="status-option" data-val="cv_uploaded" onclick="window.selectStatusFilter('cv_uploaded', '🟢 มี CV แล้ว (ทั้งหมด)')">🟢 มี CV แล้ว (ทั้งหมด)</div>
+                    <div class="status-option" data-val="cv_none" onclick="window.selectStatusFilter('cv_none', '🔴 ยังไม่อัปโหลด CV')">🔴 ยังไม่อัปโหลด CV</div>
                   
                     <!-- ขั้นตอนที่ 2: Checklist สถานประกอบการ -->
                     <div class="status-group-header">🏢 2. Checklist สถานประกอบการ</div>
@@ -2251,7 +2251,6 @@ ${ICT_MAJORS.map((m) => `            <label style="display:flex; align-items:cen
         <div style="margin-bottom:12px;">
           <label style="font-size:13px; font-weight:600; color:#475569;">ประเภทสถานะ</label>
           <select id="batch-status-type" class="input-field" style="margin-top:4px;">
-            <option value="cv">สถานะ CV</option>
             <option value="training">สถานะชั่วโมงอบรม</option>
             <option value="placement">สถานะอนุมัติที่ฝึกงาน</option>
           </select>

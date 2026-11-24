@@ -894,8 +894,10 @@ async function loadCv() {
     if (data.success) applyInternshipLock(data.internshipLock);
     if (data.success && data.cv) {
       currentCvData = data.cv;
+      currentCvComments = Array.isArray(data.comments) ? data.comments : [];
       if (data.cv.fileUrl) {
-        renderCvPreview(data.cv.fileUrl, data.cv.fileName, data.cv.status, data.cv.note);
+        renderCvPreview(data.cv.fileUrl, data.cv.fileName, data.cv.state, null);
+        markCvCommentsSeenIfVisible();
       } else {
         showCvUploadZone();
       }
@@ -913,6 +915,34 @@ async function loadCv() {
     checkPlacementUnlock();
   }
 }
+
+// คอมเมนต์ CV จากอาจารย์ (อาจารย์ไม่อนุมัติ CV แล้ว — นิสิตอ่านอย่างเดียว)
+var currentCvComments: any[] = []; // var: loadCv อาจถูกเรียกก่อนบรรทัดนี้
+
+function escapeCvText(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+// เปิดแท็บ CV แล้ว = อ่านคอมเมนต์แล้ว -> ลบป้าย "มีคอมเมนต์ใหม่"
+async function markCvCommentsSeenIfVisible() {
+  if (!currentCvData || !(currentCvData.unseenComments > 0)) return;
+  const panel = document.querySelector('.status-all-panel[data-panel="cv"]');
+  if (!panel || !panel.classList.contains('is-active')) return;
+  try {
+    await fetch('/api/student/cv/comments/seen', { method: 'POST' });
+    currentCvData.unseenComments = 0;
+    checkPlacementUnlock();
+  } catch {
+    // ไม่เป็นไร — ครั้งหน้าที่เปิดแท็บจะลองใหม่
+  }
+}
+
+window.addEventListener('status-all:tab-shown', (e) => {
+  if ((e as CustomEvent).detail?.tab === 'cv') {
+    // แสดงป้าย "ใหม่" ในรอบนี้ไว้ก่อน แล้วค่อยบันทึกว่าอ่านแล้ว
+    setTimeout(markCvCommentsSeenIfVisible, 1500);
+  }
+});
 
 // แสดงช่องอัปโหลด (ยังไม่มี CV)
 function showCvUploadZone() {
@@ -1003,22 +1033,34 @@ function renderCvDetails(cv, fileUrl, rawFileName, status, note) {
   }
   setText('cv-uploaded-at', formatThaiDateTime(cv && cv.uploadedAt));
 
-  if (status === 'PENDING' || !status) {
-    setText('cv-reviewer', 'รออาจารย์ตรวจ');
-  } else if (cv && cv.reviewerName) {
-    setText('cv-reviewer', cv.reviewerRole ? `${cv.reviewerName} (${cv.reviewerRole})` : cv.reviewerName);
+  // คอมเมนต์จากอาจารย์ (ไม่มีผ่าน/ไม่ผ่าน) — ใหม่สุดอยู่บน · คอมเมนต์ที่เขียนถึงไฟล์เก่าติดป้ายไว้
+  const comments = currentCvComments || [];
+  const unseen = (cv && cv.unseenComments) || 0;
+  if (!comments.length) {
+    setText('cv-reviewer', 'ยังไม่มีคอมเมนต์');
   } else {
-    setText('cv-reviewer', '-');
+    const latest = comments[0];
+    setText('cv-reviewer', `${comments.length} คอมเมนต์ · ล่าสุด ${latest.authorName} (${latest.authorRoleLabel})`);
   }
 
   const noteBox = document.getElementById('cv-note-box');
   if (noteBox) {
-    const noteText = status === 'REJECTED' ? (note || 'กรุณาอัปโหลดใหม่') : note;
-    if (noteText) {
+    noteBox.classList.remove('cv-doc-note--fail');
+    if (comments.length) {
       noteBox.style.display = 'flex';
-      noteBox.classList.toggle('cv-doc-note--fail', status === 'REJECTED');
-      setText('cv-note-label', status === 'REJECTED' ? 'เหตุผลที่ไม่ผ่าน / สิ่งที่ต้องแก้ไข:' : 'ข้อเสนอแนะจากผู้ตรวจ:');
-      setText('cv-note-text', `"${noteText}"`);
+      setText('cv-note-label', 'คอมเมนต์จากอาจารย์ (อ่านอย่างเดียว):');
+      const box = document.getElementById('cv-note-text');
+      if (box) {
+        box.innerHTML = comments.map((c, i) => `
+          <div style="padding:${i ? '8px' : '0'} 0 0; margin-top:${i ? '8px' : '0'}; border-top:${i ? '1px solid #E2E8F0' : 'none'};">
+            <div style="font-size:12px; color:#64748B; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              <strong style="color:#334155;">${escapeCvText(c.authorName)}</strong> (${escapeCvText(c.authorRoleLabel)}) · ${escapeCvText(formatThaiDateTime(c.createdAt))}
+              ${i < unseen ? '<span style="background:#4338CA; color:#fff; border-radius:999px; padding:0 7px; font-size:10.5px; font-weight:700;">ใหม่</span>' : ''}
+              ${c.forOlderFile ? `<span style="background:#F1F5F9; color:#475569; border:1px solid #CBD5E1; border-radius:999px; padding:0 7px; font-size:10.5px;" title="${escapeCvText(c.cvFileName || '')}">เขียนถึงไฟล์ก่อนหน้า</span>` : ''}
+            </div>
+            <div style="white-space:pre-wrap; color:#1E293B;">${escapeCvText(c.message)}</div>
+          </div>`).join('');
+      }
     } else {
       noteBox.style.display = 'none';
     }
@@ -1040,15 +1082,12 @@ function renderCvPreview(fileUrl, fileName, status, note) {
   if (cvUploadZone) cvUploadZone.style.display = 'none';
   cvPreviewContainer.style.display = 'block';
 
-  // สถานะ CV: CVตรวจแล้ว / ผ่าน & รอผล & CVไม่ผ่าน / ทำใหม่
-  if (status === 'APPROVED') {
-    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">verified</span> ตรวจแล้ว • ผ่าน';
+  // สถานะ CV (ไม่มีการอนุมัติ): อัปโหลดแล้ว รอคอมเมนต์ / อาจารย์คอมเมนต์แล้ว
+  if (status === 'COMMENTED') {
+    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">forum</span> อาจารย์คอมเมนต์แล้ว';
     cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--pass';
-  } else if (status === 'REJECTED') {
-    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">cancel</span> ไม่ผ่าน • ทำใหม่';
-    cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--fail';
   } else {
-    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">schedule</span> รอผล • รออาจารย์ตรวจ';
+    cvStatusBadge.innerHTML = '<span class="cv-doc-badge-dot"></span><span class="material-icons">check_circle</span> อัปโหลดแล้ว • รอคอมเมนต์';
     cvStatusBadge.className = 'cv-doc-badge cv-doc-badge--wait';
   }
 
@@ -1092,10 +1131,9 @@ if (cvInput) {
         });
         const data = await res.json();
         if (data.success && data.cv) {
-          currentCvData = data.cv;
-          renderCvPreview(data.cv.fileUrl, data.cv.fileName, data.cv.status, data.cv.note);
           alert('✅ อัปโหลดไฟล์ CV สำเร็จ');
-          checkPlacementUnlock();
+          // โหลดใหม่ให้ได้สถานะ + คอมเมนต์ (คอมเมนต์เดิมยังอยู่ ติดป้ายว่าเขียนถึงไฟล์ก่อนหน้า)
+          await loadCv();
         } else {
           alert('เกิดข้อผิดพลาด: ' + (data.message || 'อัปโหลดไม่สำเร็จ'));
         }
@@ -2656,8 +2694,9 @@ function checkPlacementUnlock() {
   const submissionSection = document.getElementById('submission-section');
   const checklistLockedCard = document.getElementById('checklist-locked-card');
 
-  // 1. เงื่อนไข CV: ได้รับการตรวจผ่านแล้ว (APPROVED)
-  const isCvApproved = currentCvData && currentCvData.status === 'APPROVED';
+  // 1. เงื่อนไข CV: อัปโหลดแล้ว (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ)
+  // CV: อัปโหลดแล้วพอ (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ) — ชื่อตัวแปรเดิมคงไว้
+  const isCvApproved = Boolean(currentCvData && currentCvData.fileUrl);
 
   // 2. เงื่อนไข ชั่วโมงอบรม: ที่ผ่านแล้ว Soft Skill >= 12 และ Hard Skill >= 18 (รวม >= 30 ชม.)
   const approvedSoftHours = currentTrainingsData
@@ -2690,16 +2729,9 @@ function checkPlacementUnlock() {
     `Soft ${approvedSoftHours}/${TRAINING_CRITERIA.soft} ชม. | Hard ${approvedHardHours}/${TRAINING_CRITERIA.hard} ชม.` + (isTrainingComplete ? ' (ผ่านครบ)' : '')
   );
 
-  let cvStatusDesc = 'รออาจารย์ตรวจผ่าน';
-  if (!currentCvData || !currentCvData.fileUrl) {
-    cvStatusDesc = 'ยังไม่ได้อัปโหลด CV';
-  } else if (currentCvData.status === 'APPROVED') {
-    cvStatusDesc = '✓ CVตรวจแล้ว / ผ่าน';
-  } else if (currentCvData.status === 'REJECTED') {
-    cvStatusDesc = '✗ CVไม่ผ่าน / ทำใหม่';
-  } else {
-    cvStatusDesc = '☐ รอผล (รออาจารย์ตรวจ)';
-  }
+  const cvStatusDesc = !isCvApproved
+    ? 'ยังไม่ได้อัปโหลด CV'
+    : `✓ อัปโหลดแล้ว (${currentCvData.stateLabel || 'รอคอมเมนต์'})`;
   updateRequirementCard('step-req-cv', isCvApproved, '2. Resume (CV)', cvStatusDesc);
 
   if (isChecklistUnlocked) {
@@ -2709,7 +2741,7 @@ function checkPlacementUnlock() {
     if (submissionSection) submissionSection.style.display = 'block';
 
   } else {
-    // ถ้ายังไม่ผ่านชั่วโมงการอบรม หรือ CV ยังไม่ผ่าน -> ซ่อนส่วนที่ 4, 5
+    // ถ้ายังไม่ผ่านชั่วโมงการอบรม หรือยังไม่อัปโหลด CV -> ซ่อนส่วนที่ 4, 5
     if (checklistLockedCard) checklistLockedCard.style.display = 'block';
     if (checklistSection) checklistSection.style.display = 'none';
     if (submissionSection) submissionSection.style.display = 'none';
@@ -2722,8 +2754,9 @@ function checkPlacementUnlock() {
     detail: {
       ready: statusAllDataReady,
       cvHasFile: Boolean(currentCvData && currentCvData.fileUrl),
-      cvStatus: currentCvData ? currentCvData.status : null,
+      cvStatus: currentCvData ? currentCvData.state || null : null,
       isCvApproved: Boolean(isCvApproved),
+      cvUnseenComments: currentCvData ? currentCvData.unseenComments || 0 : 0,
       approvedSoftHours,
       approvedHardHours,
       requiredSoftHours: 12,

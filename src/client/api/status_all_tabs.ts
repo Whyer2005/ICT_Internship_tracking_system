@@ -16,8 +16,9 @@ type BadgeTone = "done" | "todo" | "pending" | "fail" | "locked" | "muted";
 interface UnlockState {
   ready: boolean;
   cvHasFile: boolean;
-  cvStatus: string | null;
-  isCvApproved: boolean;
+  cvStatus: string | null; // NONE | WAITING (รอคอมเมนต์) | COMMENTED
+  isCvApproved: boolean; // = อัปโหลด CV แล้ว (อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ)
+  cvUnseenComments?: number;
   approvedSoftHours: number;
   approvedHardHours: number;
   requiredSoftHours: number;
@@ -82,9 +83,7 @@ type UrlMode = "push" | "replace" | null;
   }
 
   function cvReason(s: UnlockState): string {
-    if (!s.cvHasFile) return "ยังไม่ได้ส่ง CV";
-    if (s.cvStatus === "REJECTED") return "CV ไม่ผ่าน ต้องแก้ไขและส่งใหม่";
-    return "CV ยังไม่ผ่านการตรวจ";
+    return s.cvHasFile ? "" : "ยังไม่ได้อัปโหลด Resume (CV)";
   }
 
   function describe(tab: string): TabInfo {
@@ -107,15 +106,16 @@ type UrlMode = "push" | "replace" | null;
         return { done: false, locked: false, badge: `${s.approvedSoftHours + s.approvedHardHours}/${s.requiredSoftHours + s.requiredHardHours} ชม.`, tone: "todo", reasons: [] };
       }
       case "cv": {
-        if (s.isCvApproved) return { done: true, locked: false, badge: "ผ่านแล้ว", tone: "done", reasons: [] };
+        // อาจารย์ไม่อนุมัติ CV แล้ว — อัปโหลดแล้ว = ผ่านขั้นนี้ · มีคอมเมนต์ที่ยังไม่อ่าน = ป้ายเตือน
         if (!s.cvHasFile) return { done: false, locked: false, badge: "ยังไม่ส่ง", tone: "todo", reasons: [] };
-        if (s.cvStatus === "REJECTED") return { done: false, locked: false, badge: "ต้องแก้ไข", tone: "fail", reasons: [] };
-        return { done: false, locked: false, badge: "กำลังรอตรวจ", tone: "pending", reasons: [] };
+        if ((s.cvUnseenComments || 0) > 0) return { done: true, locked: false, badge: "มีคอมเมนต์ใหม่", tone: "pending", reasons: [] };
+        if (s.cvStatus === "COMMENTED") return { done: true, locked: false, badge: "มีคอมเมนต์", tone: "done", reasons: [] };
+        return { done: true, locked: false, badge: "ส่งแล้ว", tone: "done", reasons: [] };
       }
       case "checklist-locked": {
         const reasons: string[] = [];
         if (!s.isTrainingComplete) reasons.push(trainingReason(s));
-        if (!s.isCvApproved) reasons.push(cvReason(s));
+        if (!s.cvHasFile) reasons.push(cvReason(s));
         return { done: false, locked: !s.isChecklistUnlocked, badge: "ล็อก", tone: "locked", reasons };
       }
       case "checklist": {
@@ -207,6 +207,8 @@ type UrlMode = "push" | "replace" | null;
     });
 
     if (urlMode) writeUrl(tab, urlMode);
+    // แจ้ง status_all.js ว่าเปิดแท็บไหน (เช่น เปิดแท็บ CV = อ่านคอมเมนต์แล้ว)
+    window.dispatchEvent(new CustomEvent("status-all:tab-shown", { detail: { tab } }));
     if (scroll && window.scrollY > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }

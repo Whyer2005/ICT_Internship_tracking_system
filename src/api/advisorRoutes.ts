@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import prisma from "../db";
 import { coopSummaryForProfile } from "./coopRoutes";
 import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
+import { CV_STATE_LABEL, cvState, hasCv, uploadedAfterLastComment } from "../utils/cvReview";
 import requireAdvisor from "../auth/requireAdvisor";
 import { loadSuperAdminState, saveSuperAdminState, getStudentRoundState } from "../utils/superAdminStore";
 
@@ -45,8 +46,9 @@ function getStudentReadinessStatus(s: any) {
 
   if (hasPlacement || hasPassedInterview) {
     return { key: "registered", label: "ยื่นสมัครสำเร็จ" };
-  } else if (s.cv && s.cv.status === "APPROVED") {
-    return { key: "cvApproved", label: "ตรวจCVผ่าน" };
+  } else if (hasCv(s.cv)) {
+    // CV: อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ -> อัปโหลดแล้วนับว่าพร้อมส่วน CV
+    return { key: "cvUploaded", label: "มี CV แล้ว" };
   } else if (isTrainingComplete) {
     return { key: "trainingComplete", label: "ตรวจชม.อบรมครบ" };
   } else if (s.trainingRecords && s.trainingRecords.length > 0) {
@@ -79,7 +81,7 @@ function checkPlacementMatchesChecklist(placement: any, companies: any[]): boole
 function getStudentRiskPriority(s: any): number {
   // Rank 1: วิกฤตสูงสุด - ยังไม่มีข้อมูลใดๆ หรือยังไม่เริ่มทำอะไรเลย
   const isNoData = s.readinessStatusKey === "noData" ||
-    (!s.cvStatus &&
+    (!s.hasCv &&
       (s.trainingApprovedSoft || 0) === 0 &&
       (s.trainingApprovedHard || 0) === 0 &&
       s.checklistStatusCode !== "APPROVED" &&
@@ -89,7 +91,6 @@ function getStudentRiskPriority(s: any): number {
   // Rank 2: มีปัญหา / ติดขัด / ถูกปฏิเสธ / บริษัทไม่ตรง Checklist [REQ-06]
   const hasIssue = s.placementStatus === "REJECTED" ||
     s.isMatchedWithChecklist === false ||
-    s.cvStatus === "REJECTED" ||
     s.checklistStatusCode === "REJECTED";
   if (hasIssue) return 2;
 
@@ -98,14 +99,14 @@ function getStudentRiskPriority(s: any): number {
     (s.trainingApprovedSoft || 0) < 12 ||
     (s.trainingApprovedHard || 0) < 18 ||
     s.readinessStatusKey === "hoursIncomplete" ||
-    !s.cvStatus;
+    !s.hasCv;
   if (isLacking) return 3;
 
   // Rank 4: อยู่ระหว่างรอดำเนินการ / รอตรวจ
   const isPending = s.placementStatus === "PENDING" ||
     s.hasPendingPlacement ||
     s.hasPendingChecklist ||
-    s.cvStatus === "PENDING" ||
+    s.cvStatus === "WAITING" || // อัปโหลด CV แล้ว รอคอมเมนต์
     s.checklistStatusCode === "PENDING";
   if (isPending) return 4;
 
@@ -147,10 +148,10 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
       failed: 0,   // ไม่ผ่าน / ทำ checklist เพิ่ม
     };
 
-    // กราฟ 2: สถานะความพร้อม (ยื่นสมัครสำเร็จ, ตรวจCVผ่าน, ยังไม่มีข้อมูล, ชั่วโมงอบรมยังไม่ครบ, ตรวจชม.อบรมครบ)
+    // กราฟ 2: สถานะความพร้อม (ยื่นสมัครสำเร็จ, มี CV แล้ว, ยังไม่มีข้อมูล, ชั่วโมงอบรมยังไม่ครบ, ตรวจชม.อบรมครบ)
     const readinessStats: Record<string, number> = {
       registered: 0,
-      cvApproved: 0,
+      cvUploaded: 0,
       noData: 0,
       hoursIncomplete: 0,
       trainingComplete: 0,
@@ -248,7 +249,8 @@ router.get("/students", async (req: Request, res: Response) => {
         .filter((t) => t.skillType === "HARD")
         .reduce((sum, t) => sum + t.hours, 0);
       const isTrainingComplete = softHours >= 12 && hardHours >= 18;
-      const cvStatus = s.cv ? s.cv.status : "NONE";
+      // CV: NONE | WAITING (รอคอมเมนต์) | COMMENTED — ไม่มีการอนุมัติ
+      const cvStatus = cvState(s.cv);
       const placementStatus = s.placement ? s.placement.status : "NONE";
       const isMatchedWithChecklist = s.placement
         ? checkPlacementMatchesChecklist(s.placement, s.companies || [])
@@ -278,6 +280,9 @@ router.get("/students", async (req: Request, res: Response) => {
         trainingApprovedSoft: softHours,
         trainingApprovedHard: hardHours,
         cvStatus,
+        cvStatusLabel: CV_STATE_LABEL[cvStatus],
+        hasCv: cvStatus !== "NONE",
+        cvUploadedAfterComment: uploadedAfterLastComment(s.cv),
         placementStatus,
         isMatchedWithChecklist,
         hasPendingChecklist,
@@ -366,14 +371,23 @@ router.get("/students", async (req: Request, res: Response) => {
         case "training_failed":
           mapped = mapped.filter((s) => !s.isTrainingComplete);
           break;
+        // CV: ไม่มีการอนุมัติ (cv_approved / cv_pending คงไว้รองรับลิงก์เดิม)
+        case "cv_uploaded":
         case "cv_approved":
         case "cv_passed":
-          mapped = mapped.filter((s) => s.cvStatus === "APPROVED");
+          mapped = mapped.filter((s) => s.hasCv);
           break;
+        case "cv_waiting":
         case "cv_pending":
+          mapped = mapped.filter((s) => s.cvStatus === "WAITING");
+          break;
+        case "cv_commented":
+          mapped = mapped.filter((s) => s.cvStatus === "COMMENTED");
+          break;
+        case "cv_none":
         case "cv_rejected":
         case "cv_failed":
-          mapped = mapped.filter((s) => s.cvStatus !== "APPROVED");
+          mapped = mapped.filter((s) => !s.hasCv);
           break;
         case "checklist_approved":
         case "checklist_passed":
@@ -417,7 +431,7 @@ router.get("/students", async (req: Request, res: Response) => {
     } = {
       totalStudents: mapped.length,
       checklistStats: { reviewed: 0, pending: 0, failed: 0 },
-      readinessStats: { registered: 0, cvApproved: 0, noData: 0, hoursIncomplete: 0, trainingComplete: 0 },
+      readinessStats: { registered: 0, cvUploaded: 0, noData: 0, hoursIncomplete: 0, trainingComplete: 0 },
     };
 
     mapped.forEach((s) => {
@@ -914,13 +928,8 @@ router.get("/export", async (req: Request, res: Response) => {
         ? `ผ่านครบ ${totalHours} ชม. (Soft ${softHours}/12, Hard ${hardHours}/18)`
         : `ยังไม่ครบ (Soft ${softHours}/12, Hard ${hardHours}/18)`;
 
-      // 6. สถานะ CV
-      let cvStatus = "ยังไม่ส่ง CV";
-      if (s.cv) {
-        if (s.cv.status === "APPROVED") cvStatus = "ผ่าน";
-        else if (s.cv.status === "REJECTED") cvStatus = "ไม่ผ่าน";
-        else cvStatus = "รอตรวจ";
-      }
+      // 6. สถานะ CV (คอมเมนต์อย่างเดียว ไม่มีผ่าน/ไม่ผ่าน)
+      const cvStatus = CV_STATE_LABEL[cvState(s.cv)];
 
       // 7. สถานะ Checklist
       const companies = s.companies || [];
@@ -1041,10 +1050,12 @@ router.get("/export", async (req: Request, res: Response) => {
             exportData = exportData.filter((s) => !s.isTrainingComplete);
             break;
           case "cv_passed":
-            exportData = exportData.filter((s) => s.cvStatus === "ผ่าน");
+          case "cv_uploaded":
+            exportData = exportData.filter((s) => s.cvStatus !== CV_STATE_LABEL.NONE);
             break;
           case "cv_failed":
-            exportData = exportData.filter((s) => s.cvStatus !== "ผ่าน");
+          case "cv_none":
+            exportData = exportData.filter((s) => s.cvStatus === CV_STATE_LABEL.NONE);
             break;
           case "checklist_passed":
             exportData = exportData.filter((s) => s.checklistStatusCode === "APPROVED");

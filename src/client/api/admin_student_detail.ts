@@ -82,7 +82,7 @@ async function initStudentDetail() {
 
     renderProfile(data.student);
     renderTrainings(data.trainings, data.trainingSummary);
-    renderCv(data.cv);
+    renderCv(data.cv, data.cvComments, data.canCommentCv);
     renderCompanies(data.companies, data.acceptanceWorkflow);
     renderSubmissions(data.companies);
     renderPlacement(data.placement);
@@ -146,14 +146,9 @@ async function initStudentDetail() {
 
     const trainingApproval = document.getElementById('training-approval-area');
     const trainingSave = document.getElementById('training-save-area');
-    const cvStatusSelect = document.getElementById('cv-admin-status');
-
     if (!isActingAsCourseAdmin) {
       if (trainingApproval) trainingApproval.style.display = 'none';
       if (trainingSave) trainingSave.style.display = 'none';
-      if (cvStatusSelect && cvStatusSelect.parentElement) {
-        cvStatusSelect.parentElement.style.display = 'none';
-      }
     }
   } catch (err) {
     console.error('Load student detail error:', err);
@@ -444,69 +439,101 @@ window.saveBatchTrainingStatus = async function() {
 // ==========================================
 // 3. CV (admin ตรวจได้)
 // ==========================================
-function renderCv(cv) {
+function renderCv(cv, comments, canComment) {
   const section = document.getElementById('admin-cv-section');
   if (!cv) {
     section.innerHTML = '<p class="text-gray-400 text-center py-4">นิสิตยังไม่ได้อัปโหลด CV</p>';
     return;
   }
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const fmt = (v) => (v ? new Date(v).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-');
+  const list = Array.isArray(comments) ? comments : [];
 
-  let statusBadge = '<span class="status-wait">☐ รอผล</span>';
-  if (cv.status === 'APPROVED') statusBadge = '<span class="status-pass" style="font-size:16px; font-weight:600;">✓ CVตรวจแล้ว / ผ่าน</span>';
-  else if (cv.status === 'REJECTED') statusBadge = `<span class="status-fail" style="font-size:16px; font-weight:600;">✗ CVไม่ผ่าน / ทำใหม่</span>`;
+  // CV ไม่มีการอนุมัติแล้ว — อาจารย์คอมเมนต์อย่างเดียว (นิสิตอ่านอย่างเดียว)
+  const statusBadge = cv.state === 'COMMENTED'
+    ? '<span style="background:#EEF2FF; color:#3730A3; border:1px solid #C7D2FE; border-radius:999px; padding:2px 10px; font-size:13px; font-weight:700;">💬 อาจารย์คอมเมนต์แล้ว</span>'
+    : '<span style="background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; border-radius:999px; padding:2px 10px; font-size:13px; font-weight:700;">📄 อัปโหลดแล้ว • รอคอมเมนต์</span>';
+  const reuploadNote = cv.uploadedAfterComment
+    ? '<div style="margin-top:6px; font-size:13px; color:#B45309; font-weight:600;">นิสิตอัปโหลดไฟล์ใหม่หลังคอมเมนต์ล่าสุด</div>'
+    : '';
 
   const displayUrl = getCvDisplayUrl(cv);
   const previewHtml = `<img src="${displayUrl}" alt="CV" style="max-width:450px; max-height:550px; border-radius:8px; border:1px solid #e2e8f0; cursor:pointer;" onclick="window.open('${cv.fileUrl}', '_blank')" />`;
 
-  const editControlsHtml = isActingAsCourseAdmin ? `
-    <div style="display:flex; flex-direction:column; gap:10px; max-width:350px;">
-      <label style="font-size:16px; font-weight:600; color:#334155;">ตั้งสถานะ CV</label>
-      <select class="input-field" id="cv-admin-status" style="font-size:16px; padding:8px 10px;">
-        <option value="PENDING" ${cv.status === 'PENDING' ? 'selected' : ''}>☐ รอผล (รออาจารย์ตรวจ)</option>
-        <option value="APPROVED" ${cv.status === 'APPROVED' ? 'selected' : ''}>✓ CVตรวจแล้ว / ผ่าน</option>
-        <option value="REJECTED" ${cv.status === 'REJECTED' ? 'selected' : ''}>✗ CVไม่ผ่าน / ทำใหม่</option>
-      </select>
-      <input type="text" class="input-field" id="cv-admin-note" value="${cv.note || ''}" placeholder="Comment / หมายเหตุ..." />
-      <button class="btn btn-primary btn-sm" onclick="saveCvStatus()" style="width:fit-content; font-size:18px;">💾 บันทึกสถานะ CV</button>
-    </div>
-  ` : `
-    <div style="padding:10px 14px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; font-size:13px; color:#64748B;">
-      ℹ️ ส่วนตรวจสอบ CV ดำเนินการโดยอาจารย์ประจำรายวิชา (สิทธิ์อ่านอย่างเดียว)
-    </div>
-  `;
+  const commentsHtml = list.length
+    ? list.map((c) => `
+        <div style="padding:10px 12px; border:1px solid #E2E8F0; border-radius:10px; background:${c.forOlderFile ? '#F8FAFC' : '#FFFFFF'};">
+          <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12.5px; color:#64748B;">
+            <span><strong style="color:#334155;">${esc(c.authorName)}</strong> (${esc(c.authorRoleLabel)}) · ${esc(fmt(c.createdAt))}
+              ${c.forOlderFile ? `<span style="margin-left:4px; background:#F1F5F9; border:1px solid #CBD5E1; border-radius:999px; padding:0 7px; font-size:11px;" title="${esc(c.cvFileName || '')}">เขียนถึงไฟล์ก่อนหน้า</span>` : ''}
+            </span>
+            ${c.mine ? `<button type="button" onclick="deleteCvComment(${c.id})" style="background:none; border:none; color:#DC2626; font-size:12px; cursor:pointer;">ลบ</button>` : ''}
+          </div>
+          <div style="margin-top:4px; white-space:pre-wrap; font-size:14px; color:#1E293B;">${esc(c.message)}</div>
+        </div>`).join('')
+    : '<div style="font-size:13px; color:#94A3B8;">ยังไม่มีคอมเมนต์</div>';
+
+  const formHtml = canComment
+    ? `<div style="margin-top:10px;">
+        <label for="cv-comment-input" style="font-size:14px; font-weight:600; color:#334155;">เพิ่มคอมเมนต์ (นิสิตอ่านได้ ตอบกลับไม่ได้)</label>
+        <textarea id="cv-comment-input" class="input-field" rows="3" maxlength="2000" placeholder="เช่น ควรเพิ่มผลงาน/โปรเจกต์ที่เกี่ยวกับตำแหน่งที่สมัคร..." style="margin-top:4px; width:100%; resize:vertical; font-size:14px;"></textarea>
+        <button type="button" class="btn btn-primary btn-sm" id="cv-comment-submit" onclick="submitCvComment()" style="margin-top:6px;">💬 ส่งคอมเมนต์</button>
+      </div>`
+    : `<div style="margin-top:10px; padding:8px 12px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; font-size:13px; color:#64748B;">
+        ℹ️ คอมเมนต์ CV ได้เฉพาะอาจารย์ที่ปรึกษาของนิสิตคนนี้ หรืออาจารย์ประจำวิชา (ไม่มีการอนุมัติ CV)
+      </div>`;
 
   section.innerHTML = `
-    <div style="display: flex; justify-content: center; align-items: center; gap:20px; max-width: 700px; margin: 0 auto; padding: 20px;">
+    <div style="display:flex; justify-content:center; align-items:flex-start; gap:20px; flex-wrap:wrap; max-width:900px; margin:0 auto; padding:20px;">
       <div>${previewHtml}</div>
-      <div style="flex:1; min-width:250px; max-width: 400px;">
-        <p style="font-size:16px; margin-bottom:8px;"><strong>ไฟล์:</strong> ${cv.fileName || 'CV'}</p>
-        <p style="font-size:16px; margin-bottom:12px;"><strong>สถานะปัจจุบัน:</strong>  ${statusBadge}</p>
-        ${cv.note ? `<p style="font-size:16px; color:#64748b; margin-bottom:12px;">หมายเหตุ: ${cv.note}</p>` : ''}
-        ${editControlsHtml}
+      <div style="flex:1; min-width:260px; max-width:440px;">
+        <p style="font-size:16px; margin-bottom:8px;"><strong>ไฟล์:</strong> ${esc(cv.fileName || 'CV')}</p>
+        <p style="font-size:14px; margin-bottom:8px; color:#64748B;">อัปโหลดเมื่อ ${esc(fmt(cv.uploadedAt))}</p>
+        <div style="margin-bottom:12px;">${statusBadge}${reuploadNote}</div>
+        <div style="font-size:15px; font-weight:700; color:#1E293B; margin-bottom:6px;">คอมเมนต์ (${list.length})</div>
+        <div style="display:flex; flex-direction:column; gap:8px; max-height:360px; overflow:auto;">${commentsHtml}</div>
+        ${formHtml}
       </div>
     </div>
   `;
 }
 
-window.saveCvStatus = async function() {
-  const selectEl = document.getElementById('cv-admin-status');
-  const noteEl = document.getElementById('cv-admin-note');
-  const status = selectEl ? selectEl.value : 'PENDING';
-  const note = noteEl ? noteEl.value : '';
-
+window.submitCvComment = async function() {
+  const input = document.getElementById('cv-comment-input');
+  const btn = document.getElementById('cv-comment-submit');
+  const message = input ? input.value.trim() : '';
+  if (!message) {
+    alert('กรุณาพิมพ์คอมเมนต์');
+    return;
+  }
+  if (btn) btn.disabled = true;
   try {
-    const res = await fetch(`/api/admin/students/${studentId}/cv-status`, {
-      method: 'PUT',
+    const res = await fetch(`/api/admin/students/${studentId}/cv-comments`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, note }),
+      body: JSON.stringify({ message }),
     });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ อัปเดตสถานะ CV สำเร็จ');
-      initStudentDetail();
-    } else {
-      alert('เกิดข้อผิดพลาด: ' + data.message);
+    const data = await res.json().catch(() => ({ success: false, message: `HTTP ${res.status}` }));
+    if (!data.success) {
+      alert(data.message || 'บันทึกคอมเมนต์ไม่สำเร็จ');
+      if (btn) btn.disabled = false;
+      return;
     }
+    initStudentDetail();
+  } catch (err) {
+    console.error(err);
+    alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+    if (btn) btn.disabled = false;
+  }
+};
+
+window.deleteCvComment = async function(commentId) {
+  if (!confirm('ลบคอมเมนต์นี้?')) return;
+  try {
+    const res = await fetch(`/api/admin/students/${studentId}/cv-comments/${commentId}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({ success: false }));
+    if (!data.success) alert(data.message || 'ลบไม่สำเร็จ');
+    initStudentDetail();
   } catch (err) {
     console.error(err);
   }
@@ -946,7 +973,7 @@ function renderDocumentSummary(data) {
   const companies = data.companies;
   const placement = data.placement;
 
-  const cvStatus = cv ? (cv.status === 'APPROVED' ? '✅ ผ่าน' : cv.status === 'REJECTED' ? '❌ ไม่ผ่าน' : '⏳ รอผล') : '❌ ยังไม่ได้อัปโหลด';
+  const cvStatus = cv ? (cv.state === 'COMMENTED' ? '✅ อัปโหลดแล้ว · 💬 อาจารย์คอมเมนต์แล้ว' : '✅ อัปโหลดแล้ว · รอคอมเมนต์') : '❌ ยังไม่ได้อัปโหลด';
   const trainingStatus = (ts.approvedSoft >= 12 && ts.approvedHard >= 18) ? '✅ ครบ 30 ชม.' : `⏳ Soft ${ts.approvedSoft}/12 | Hard ${ts.approvedHard}/18`;
   const checklistApproved = companies.filter(c => c.checklistStatus === 'APPROVED').length;
   const interviewPassed = companies.filter(c => c.submission && c.submission.status === 'INTERVIEW_PASSED').length;
