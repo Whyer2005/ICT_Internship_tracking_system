@@ -15,6 +15,35 @@ export * from "./internshipWindowRules";
 
 export type WindowWithStatus = InternshipWindow & { cohort: InternshipCohort; status: WindowStatus };
 
+/** ประวัติรอบของนิสิต (รูปแบบเดียวกับ getStudentRoundState ใน superAdminStore) */
+type RoundStateLike = {
+  currentTerm?: string;
+  historyRounds?: { internshipWindowId?: number | null; term?: string }[];
+};
+
+/** เทอม (เช่น "2/2568") / รอบ ที่นิสิตเคยใช้ไปแล้วในรอบก่อนหน้า */
+export function usedWindowKeys(roundState: RoundStateLike, includeCurrent: boolean) {
+  const ids = new Set<number>();
+  const terms = new Set<string>();
+  for (const h of roundState.historyRounds || []) {
+    if (h.internshipWindowId) ids.add(h.internshipWindowId);
+    const t = String(h.term || "").match(/[123]\/\d{4}/)?.[0];
+    if (t) terms.add(t);
+  }
+  if (includeCurrent) {
+    const t = String(roundState.currentTerm || "").match(/[123]\/\d{4}/)?.[0];
+    if (t) terms.add(t);
+  }
+  return { ids, terms };
+}
+
+/** ตัดรอบออกฝึกที่นิสิตใช้ไปแล้วในรอบก่อน ๆ ออก (กันเลือกรอบเดิมซ้ำตอนยื่นรอบที่ 2) */
+export function excludeUsedWindows<T extends { id: number; term: string }>(windows: T[], roundState: RoundStateLike): T[] {
+  if (!roundState.historyRounds || roundState.historyRounds.length === 0) return windows;
+  const used = usedWindowKeys(roundState, false);
+  return windows.filter((w) => !used.ids.has(w.id) && !used.terms.has(w.term));
+}
+
 /**
  * รอบออกฝึกที่นิสิต "ยื่นได้ตอนนี้"
  * - ปกติ: รอบของสาขาตัวเอง ในรุ่นตัวเอง

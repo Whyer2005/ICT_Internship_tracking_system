@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "ระบบติดตามการเตรียมความพร้อมเข้าฝึกงานของนิสิตSE",
   "scripts": {
-    "test": "tsx --test tests/studentImportParser.test.ts tests/internshipWindowRules.test.ts tests/letterBatches.test.ts tests/companyImportParser.test.ts tests/googleMapsLink.test.ts",
+    "test": "tsx --test tests/studentImportParser.test.ts tests/internshipWindowRules.test.ts tests/letterBatches.test.ts tests/companyImportParser.test.ts tests/googleMapsLink.test.ts tests/coopPostings.test.ts tests/coopApplications.test.ts",
     "build:css": "tailwindcss -i ./src/css/main.css -o ./public/css/main-output.css --minify",
     "watch:css": "tailwindcss -i ./src/css/main.css -o ./public/css/main-output.css --watch",
     "build:client": "tsx scripts/build-client.ts",
@@ -45,6 +45,7 @@
     "express-session": "^1.19.0",
     "multer": "^2.2.0",
     "next": "^16.4.4",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

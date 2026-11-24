@@ -23,6 +23,11 @@ erDiagram
     Company ||--o{ CompanyChecklistAnswer : "มี (has)"
     ChecklistItem ||--o{ CompanyChecklistAnswer : "ถูกตอบใน (answered in)"
     Company ||--o| CompanySubmission : "มี (has)"
+    CoopPosting ||--o{ CoopPosition : "มี (has)"
+    CoopPosting ||--o{ CoopApplication : "ถูกสมัคร (applied)"
+    CoopPosition ||--o{ CoopApplication : "ถูกสมัคร (applied)"
+    Student ||--o{ CoopApplication : "สมัคร (applies)"
+    InternshipWindow |o--o{ CoopApplication : "ผูกกับ (bound to)"
     Staff {
         INT id PK "รหัส"
         INT userId FK,UK "ผู้ใช้ (User)"
@@ -124,6 +129,8 @@ erDiagram
         TEXT note "หมายเหตุ (null ได้)"
         TIMESTAMP archivedAt "วันที่ปิดรุ่น (null ได้)"
         TEXT archivedBy "ผู้ปิดรุ่น (null ได้)"
+        TEXT archivedAcademicYear "ปีการศึกษาที่จบกระบวนการ (null ได้)"
+        INT_ARRAY archiveRetestStudentIds "นิสิตที่ระบบตั้งตกค้างตอนปิดรุ่น"
         TIMESTAMP createdAt "วันที่สร้าง"
         TIMESTAMP updatedAt "วันที่แก้ไข"
     }
@@ -195,6 +202,60 @@ erDiagram
         TEXT title "ชื่อหมวด"
         INT order "ลำดับ"
     }
+    CoopPosting {
+        INT id PK "รหัส"
+        TEXT companyName "ชื่อบริษัท (ไทย)"
+        TEXT companyNameEn "ชื่อบริษัท (อังกฤษ) (null ได้)"
+        TEXT masterCompanyId "อ้างอิงฐานข้อมูลบริษัทกลาง (null ได้)"
+        TEXT description "รายละเอียดบริษัท (null ได้)"
+        TEXT qualifications "คุณสมบัติเพิ่มเติม (null ได้)"
+        TEXT benefits "สวัสดิการ (null ได้)"
+        TEXT address "ที่อยู่ (null ได้)"
+        TEXT province "จังหวัด (null ได้)"
+        TEXT website "เว็บไซต์ (null ได้)"
+        BOOLEAN isClosed "ปิดรับก่อนกำหนด"
+        TEXT hrContactName "ผู้ติดต่อ HR - เฉพาะเจ้าหน้าที่ (null ได้)"
+        TEXT hrPhone "เบอร์ HR (null ได้)"
+        TEXT hrEmail "อีเมล HR (null ได้)"
+        TEXT createdBy "ผู้สร้าง (null ได้)"
+        TIMESTAMP createdAt "วันที่สร้าง"
+        TIMESTAMP updatedAt "วันที่แก้ไข"
+    }
+    CoopPosition {
+        INT id PK "รหัส"
+        INT postingId FK "ประกาศ (CoopPosting)"
+        TEXT title "ชื่อตำแหน่ง"
+        INT seats "จำนวนที่รับ (null ได้)"
+        TEXT description "ลักษณะงาน (null ได้)"
+        INT sortOrder "ลำดับ"
+    }
+    CoopApplication {
+        INT id PK "รหัส"
+        INT studentId FK "นิสิต (Student)"
+        INT postingId FK "ประกาศ (CoopPosting)"
+        INT positionId FK "ตำแหน่ง (CoopPosition)"
+        INT windowId FK "รอบออกฝึก (null ได้)"
+        TEXT companyName "ชื่อบริษัท ณ วันที่สมัคร"
+        TEXT positionTitle "ชื่อตำแหน่ง ณ วันที่สมัคร"
+        TEXT resumeUrl "ไฟล์ Resume"
+        TEXT transcriptUrl "ไฟล์ Transcript"
+        TEXT portfolioUrl "ไฟล์ Portfolio (null ได้)"
+        TEXT portfolioLink "ลิงก์ Portfolio (null ได้)"
+        CoopApplicationStatus status "สถานะใบสมัคร"
+        TEXT statusNote "เหตุผล/หมายเหตุ (null ได้)"
+        TIMESTAMP statusUpdatedAt "วันที่เปลี่ยนสถานะ (null ได้)"
+        TEXT statusUpdatedBy "ผู้เปลี่ยนสถานะ (null ได้)"
+        CoopDocStep docStep "ขั้นเอกสารหลังผ่าน"
+        TEXT docStepUpdatedBy "ผู้ตั้งขั้นเอกสาร (null ได้)"
+        TIMESTAMP requestLetterAt "วันที่ออกหนังสือขอความอนุเคราะห์ (null ได้)"
+        TEXT requestLetterUrl "ไฟล์หนังสือขอความอนุเคราะห์ (null ได้)"
+        TIMESTAMP acceptanceFormAt "วันที่ได้รับแบบตอบรับ (null ได้)"
+        TEXT acceptanceFormUrl "ไฟล์แบบตอบรับ (null ได้)"
+        TIMESTAMP dispatchLetterAt "วันที่ออกหนังสือส่งตัว (null ได้)"
+        TEXT dispatchLetterUrl "ไฟล์หนังสือส่งตัว (null ได้)"
+        TIMESTAMP createdAt "วันที่สมัคร"
+        TIMESTAMP updatedAt "วันที่แก้ไข"
+    }
 ```
 
 ## ค่าคงที่ (Enum)
@@ -209,6 +270,8 @@ erDiagram
 | `SkillType` | SOFT, HARD |
 | `ChecklistVersionStatus` | DRAFT, ACTIVE, ARCHIVED |
 | `SubmissionStatus` | NOT_SUBMITTED, SUBMITTED_WAITING, INTERVIEWED_PENDING, INTERVIEW_PASSED, INTERVIEW_FAILED_REAPPLIED |
+| `CoopApplicationStatus` | SUBMITTED (ส่งใบสมัครแล้ว), SENT_TO_COMPANY (คณะส่งเอกสารให้บริษัทแล้ว), ACCEPTED (ผ่านการคัดเลือก), REJECTED (ไม่ผ่าน = ประวัติ), CANCELLED (ยกเลิก = ประวัติ) |
+| `CoopDocStep` | NONE (ยังไม่เริ่ม), REQUEST_LETTER (ออกหนังสือขอความอนุเคราะห์แล้ว), ACCEPTANCE_FORM (ได้รับแบบตอบรับแล้ว), DISPATCH_LETTER (ออกหนังสือส่งตัวแล้ว) |
 
 ## รายละเอียดแต่ละตาราง
 
@@ -343,6 +406,8 @@ erDiagram
 | `note` | TEXT |  | ✓ | หมายเหตุ |
 | `archivedAt` | TIMESTAMP |  | ✓ | วันที่ปิดรุ่น |
 | `archivedBy` | TEXT |  | ✓ | ผู้ปิดรุ่น |
+| `archivedAcademicYear` | TEXT |  | ✓ | ปีการศึกษาที่จบกระบวนการ (พ.ศ.) เลือกตอนปิดรุ่น ใช้ออกรายงาน |
+| `archiveRetestStudentIds` | INT[] |  |  | รหัส (id) นิสิตที่ระบบเปลี่ยนเป็นตกค้างตอนปิดรุ่น — เปิดรุ่นกลับจะคืนเป็น NEW (ค่าเริ่มต้น `[]`) |
 | `createdAt` | TIMESTAMP |  |  | วันที่สร้าง |
 | `updatedAt` | TIMESTAMP |  |  | วันที่แก้ไข |
 
@@ -448,3 +513,65 @@ erDiagram
 
 > ข้อจำกัด: `UNIQUE (versionId, order)`
 
+### CoopPosting — ประกาศรับนิสิตสหกิจศึกษา
+
+| คอลัมน์ | ชนิด | คีย์ | Null | คำอธิบาย |
+|---|---|:---:|:---:|---|
+| `id` | INT | PK |  | รหัส |
+| `companyName` | TEXT |  |  | ชื่อบริษัท (ไทย) |
+| `companyNameEn` | TEXT |  | ✓ | ชื่อบริษัท (อังกฤษ) |
+| `masterCompanyId` | TEXT |  | ✓ | อ้างอิงฐานข้อมูลบริษัทกลาง (ถ้าเลือกจากรายการ) |
+| `description` | TEXT |  | ✓ | รายละเอียดบริษัท |
+| `qualifications` | TEXT |  | ✓ | คุณสมบัติเพิ่มเติม |
+| `benefits` | TEXT |  | ✓ | สวัสดิการ / เบี้ยเลี้ยง / ที่พัก |
+| `address` | TEXT |  | ✓ | ที่อยู่ (ไม่เก็บพิกัด) |
+| `province` | TEXT |  | ✓ | จังหวัด (ชื่อมาตรฐาน 77 จังหวัด หรือ "ต่างประเทศ") |
+| `website` | TEXT |  | ✓ | เว็บไซต์ |
+| `isClosed` | BOOLEAN |  |  | เจ้าหน้าที่ปิดรับประกาศ |
+| `hrContactName` | TEXT |  | ✓ | ผู้ติดต่อ HR (เห็นเฉพาะเจ้าหน้าที่) |
+| `hrPhone` | TEXT |  | ✓ | เบอร์โทร HR |
+| `hrEmail` | TEXT |  | ✓ | อีเมล HR |
+| `createdBy` | TEXT |  | ✓ | ผู้สร้างประกาศ |
+| `createdAt` | TIMESTAMP |  |  | วันที่สร้าง |
+| `updatedAt` | TIMESTAMP |  |  | วันที่แก้ไข |
+
+> 1 บริษัท = 1 ประกาศ (ตรวจชื่อซ้ำที่ API) · รอบ/ช่วงฝึก/วันปิดยื่น/GPAX ไม่เก็บในประกาศ — ใช้ตามรอบออกฝึกของนิสิต และ GPAX ขั้นต่ำคงที่ 2.00 (ลบคอลัมน์ term, closeDate, majorCodes, minGpax, internStartDate, internEndDate เมื่อ 24 พ.ย. 2569)
+
+### CoopPosition — ตำแหน่งในประกาศสหกิจ
+
+| คอลัมน์ | ชนิด | คีย์ | Null | คำอธิบาย |
+|---|---|:---:|:---:|---|
+| `id` | INT | PK |  | รหัส |
+| `postingId` | INT | FK |  | ประกาศ (CoopPosting) — ลบประกาศแล้วตำแหน่งถูกลบตาม |
+| `title` | TEXT |  |  | ชื่อตำแหน่ง |
+| `seats` | INT |  | ✓ | จำนวนที่รับนิสิตคณะนี้ |
+| `description` | TEXT |  | ✓ | ลักษณะงาน |
+| `sortOrder` | INT |  |  | ลำดับ |
+
+### CoopApplication — ใบสมัครสหกิจของนิสิต
+
+| คอลัมน์ | ชนิด | คีย์ | Null | คำอธิบาย |
+|---|---|:---:|:---:|---|
+| `id` | INT | PK |  | รหัส |
+| `studentId` | INT | FK |  | นิสิต (Student) — ลบนิสิตแล้วใบสมัครถูกลบตาม |
+| `postingId` | INT | FK |  | ประกาศ (CoopPosting) — ลบประกาศที่มีใบสมัครไม่ได้ |
+| `positionId` | INT | FK |  | ตำแหน่ง (CoopPosition) — ลบตำแหน่งที่มีใบสมัครไม่ได้ |
+| `windowId` | INT | FK | ✓ | รอบออกฝึกที่ผูกตอนสมัคร (InternshipWindow) |
+| `companyName` | TEXT |  |  | ชื่อบริษัท ณ วันที่สมัคร (กันประกาศถูกแก้ภายหลัง) |
+| `positionTitle` | TEXT |  |  | ชื่อตำแหน่ง ณ วันที่สมัคร |
+| `resumeUrl` / `resumeName` | TEXT |  | ✓ (ชื่อ) | ไฟล์ Resume (ใช้จาก CV ในระบบ หรืออัปโหลดใหม่) |
+| `transcriptUrl` / `transcriptName` | TEXT |  | ✓ (ชื่อ) | ไฟล์ Transcript |
+| `portfolioUrl` / `portfolioName` | TEXT |  | ✓ | ไฟล์ Portfolio (ไม่บังคับ) |
+| `portfolioLink` | TEXT |  | ✓ | ลิงก์ Portfolio (ไม่บังคับ) |
+| `status` | CoopApplicationStatus |  |  | SUBMITTED / SENT_TO_COMPANY / ACCEPTED / REJECTED / CANCELLED (2 อันหลัง = ประวัติ) |
+| `statusNote` | TEXT |  | ✓ | เหตุผล (บังคับเมื่อไม่ผ่าน / เจ้าหน้าที่ยกเลิก · นิสิตยกเลิกเอง = "นิสิตยกเลิกเอง: ...") |
+| `statusUpdatedAt` / `statusUpdatedBy` | TIMESTAMP / TEXT |  | ✓ | ใคร/เมื่อไรที่เปลี่ยนสถานะล่าสุด |
+| `docStep` | CoopDocStep |  |  | ขั้นเอกสารหลังผ่าน (ใช้เมื่อ ACCEPTED) — ค่าเริ่มต้น NONE |
+| `docStepUpdatedBy` | TEXT |  | ✓ | เจ้าหน้าที่ที่ตั้งขั้นเอกสารล่าสุด |
+| `requestLetterAt` / `requestLetterUrl` / `requestLetterName` | TIMESTAMP / TEXT |  | ✓ | หนังสือขอความอนุเคราะห์: วันที่ + ไฟล์แนบ (ไม่บังคับ) |
+| `acceptanceFormAt` / `acceptanceFormUrl` / `acceptanceFormName` | TIMESTAMP / TEXT |  | ✓ | แบบตอบรับจากบริษัท: วันที่ + ไฟล์แนบ |
+| `dispatchLetterAt` / `dispatchLetterUrl` / `dispatchLetterName` | TIMESTAMP / TEXT |  | ✓ | หนังสือส่งตัว: วันที่ + ไฟล์แนบ (ถึงขั้นนี้ = นับว่าส่งตัวแล้วใน Export Co-op 01) |
+| `createdAt` | TIMESTAMP |  |  | วันที่สมัคร |
+| `updatedAt` | TIMESTAMP |  |  | วันที่แก้ไข |
+
+> ดัชนี: `studentId`, `postingId`, `status` · นิสิตมีใบที่ยังไม่จบ (ไม่ใช่ REJECTED) ได้ทีละ 1 ใบ (ตรวจที่ API)

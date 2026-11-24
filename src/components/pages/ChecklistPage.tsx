@@ -2,6 +2,7 @@
 
 import React from "react";
 import PageShell from "./PageShell";
+import { jobPositionsDataScript } from "../../utils/jobPositions";
 
 const PAGE_TITLE = "แบบสำรวจสถานประกอบการ (Checklist ยื่นทีละ 1 บริษัท) - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [
@@ -96,6 +97,7 @@ const PAGE_SCRIPTS: string[] = [
   "../api/checklist.js"
 ];
 const PAGE_BODY_HTML = `
+${jobPositionsDataScript()}
   <!-- Header -->
   <div id="header-placeholder"></div>
 

@@ -6,8 +6,10 @@ import requireLogin from "../auth/requireLogin";
 import { uploadToCloudinary } from "../utils/cloudinary";
 import { findMajor, ICT_DEGREES } from "../utils/majors";
 import {
+  excludeUsedWindows,
   getInternshipLock,
   getStudentWindowEligibility,
+  usedWindowKeys,
   resolveSubmissionWindow,
   termSortKey,
   windowDisplayLabel,
@@ -22,11 +24,16 @@ import {
   StudentRoundState,
 } from "../utils/superAdminStore";
 import { resolveGoogleMapsLink } from "../utils/googleMapsLink";
+import { studentCoopRouter } from "./coopRoutes";
+import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
 
 const router = express.Router();
 
 // ต้อง login ทุก route ภายใต้ /api/student
 router.use(requireLogin);
+
+// ประกาศรับนิสิตสหกิจศึกษา (อ่านอย่างเดียว)
+router.use(studentCoopRouter);
 
 // แปลงลิงก์ Google Maps / พิกัดที่คัดลอกมา → lat,lng สำหรับปักหมุดสถานประกอบการ
 // (ลิงก์ย่อ maps.app.goo.gl ต้องให้ server ตาม redirect เพราะ browser อ่าน redirect ข้ามโดเมนไม่ได้)
@@ -109,32 +116,6 @@ async function getStudentInternshipLock(student: StudentWithRelations) {
   const wf = state.docWorkflowMap?.[String(student.id)];
   const dispatched = wf ? Boolean(wf.dispatchLetterIssued) : student.placement?.status === "APPROVED";
   return getInternshipLock(student, dispatched, getRoundStateFor(student).currentTerm);
-}
-
-/** เทอม (เช่น "2/2568") ที่นิสิตเคยใช้ไปแล้วในรอบก่อนหน้า */
-function usedWindowKeys(roundState: ReturnType<typeof getStudentRoundState>, includeCurrent: boolean) {
-  const ids = new Set<number>();
-  const terms = new Set<string>();
-  for (const h of roundState.historyRounds || []) {
-    if (h.internshipWindowId) ids.add(h.internshipWindowId);
-    const t = String(h.term || "").match(/[123]\/\d{4}/)?.[0];
-    if (t) terms.add(t);
-  }
-  if (includeCurrent) {
-    const t = String(roundState.currentTerm || "").match(/[123]\/\d{4}/)?.[0];
-    if (t) terms.add(t);
-  }
-  return { ids, terms };
-}
-
-/** ตัดรอบออกฝึกที่นิสิตใช้ไปแล้วในรอบก่อน ๆ ออก (กันเลือกรอบเดิมซ้ำตอนยื่นรอบที่ 2) */
-function excludeUsedWindows<T extends { id: number; term: string }>(
-  windows: T[],
-  roundState: ReturnType<typeof getStudentRoundState>
-): T[] {
-  if (!roundState.historyRounds || roundState.historyRounds.length === 0) return windows;
-  const used = usedWindowKeys(roundState, false);
-  return windows.filter((w) => !used.ids.has(w.id) && !used.terms.has(w.term));
 }
 
 /** รอบออกฝึกที่เลือกได้สำหรับ "รอบที่ 2" = รอบที่เปิดอยู่และอยู่หลังรอบปัจจุบัน */
@@ -1016,6 +997,18 @@ router.post("/companies", async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: "กรุณากรอกข้อมูลส่วนตัวนิสิตก่อน",
+      });
+    }
+
+    // เลือกได้ทางเดียว: มีใบสมัครสหกิจที่ยังไม่จบ (ยังไม่ "ไม่ผ่าน" / "ยกเลิก") -> ยื่นสถานประกอบการแบบฝึกงานไม่ได้
+    const activeCoop = await prisma.coopApplication.findFirst({
+      where: { studentId: student.id, status: { notIn: COOP_FINAL_STATUSES } },
+      select: { companyName: true },
+    });
+    if (activeCoop) {
+      return res.status(400).json({
+        success: false,
+        message: `คุณสมัครสหกิจศึกษา "${activeCoop.companyName}" อยู่ (เลือกได้ทางเดียว: ฝึกงาน หรือ สหกิจ) — ถ้าไม่ผ่านการคัดเลือกหรือยกเลิกใบสมัครแล้ว จึงจะยื่นสถานประกอบการได้`,
       });
     }
 
@@ -2122,12 +2115,15 @@ router.post("/round/dev-toggle-round", async (req: Request, res: Response) => {
         });
       }
 
+      // คืนรอบออกฝึกของรอบที่ 1 ด้วย (ตอนเข้ารอบ 2 ระบบย้ายนิสิตไปรอบใหม่) — ประวัติเก่าที่ไม่มีค่านี้ = ไม่แตะ
+      const round1WindowId = hist && hist.internshipWindowId !== undefined ? hist.internshipWindowId : undefined;
       await prisma.student.update({
         where: { id: student.id },
         data: {
           semester: "2",
           academicYear: "2568",
           stage: "READY",
+          ...(round1WindowId !== undefined ? { internshipWindowId: round1WindowId } : {}),
         },
       });
 

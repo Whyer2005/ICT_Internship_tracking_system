@@ -8,7 +8,8 @@ type StatusAllTab =
   | "cv"
   | "checklist-locked"
   | "checklist"
-  | "submission";
+  | "submission"
+  | "coop";
 
 type BadgeTone = "done" | "todo" | "pending" | "fail" | "locked" | "muted";
 
@@ -47,13 +48,19 @@ type UrlMode = "push" | "replace" | null;
   if (!nav) return;
 
   // แท็บที่เขียนลง ?tab= ได้ (checklist-locked เป็นหน้าข้อมูลล็อก ไม่ใส่ใน URL)
-  const URL_TABS: string[] = ["personal", "training", "cv", "checklist", "submission"];
+  const URL_TABS: string[] = ["personal", "training", "cv", "checklist", "submission", "coop"];
   // แท็บเก่าที่เลิกใช้แล้ว → ส่งไปแท็บใหม่ (ข้อมูลบริษัทย้ายไปอยู่ใน Checklist)
   const LEGACY_TABS: Record<string, string> = { placement: "checklist" };
-  const STAGE_1_TABS: string[] = ["personal", "training", "cv", "checklist-locked"];
+  // แท็บที่เปิดได้โดยไม่ต้องรอข้อมูล (สหกิจศึกษา = ดูประกาศได้ทุกคน ทุกช่วง)
+  const STAGE_1_TABS: string[] = ["personal", "training", "cv", "checklist-locked", "coop"];
   const DEFAULT_TAB = "personal";
 
   let state: UnlockState | null = null;
+  // badge ของแท็บสหกิจ (จำนวนประกาศที่เปิดรับสมัคร) — ส่งมาจาก status_coop.js
+  let coopBadge = "…";
+  let coopTone: BadgeTone = "muted";
+  // นิสิตมีใบสมัครสหกิจที่ยังไม่จบ -> ล็อกเมนูสถานประกอบการ (เลือกได้ทางเดียว)
+  let coopActive = false;
   let activeTab: string | null = null;
   let pendingUrlTab: string | null = null;
   let viewingLockInfo = false;
@@ -81,6 +88,11 @@ type UrlMode = "push" | "replace" | null;
   }
 
   function describe(tab: string): TabInfo {
+    // แท็บดูประกาศ: ไม่ล็อก และไม่นับเป็นขั้นที่ต้องทำให้เสร็จ (done = ข้ามตอนหาแท็บถัดไป)
+    if (tab === "coop") return { done: true, locked: false, badge: coopBadge, tone: coopTone, reasons: [] };
+    if (tab === "checklist" && coopActive) {
+      return { done: false, locked: true, badge: "เลือกสหกิจแล้ว", tone: "locked", reasons: ["คุณสมัครสหกิจศึกษาอยู่ (เลือกได้ทางเดียว)"] };
+    }
     const s = state;
     if (!s) return { done: false, locked: tab === "checklist-locked" || !STAGE_1_TABS.includes(tab), badge: "…", tone: "muted", reasons: [] };
 
@@ -368,6 +380,19 @@ type UrlMode = "push" | "replace" | null;
     } else if (activeTab && (!isTabVisible(activeTab) || (describe(activeTab).locked && !viewingLockInfo))) {
       showTab(firstIncompleteTab(), { urlMode: "replace" });
     }
+  });
+
+  window.addEventListener("status-all:coop-count", (event) => {
+    const d = (event as CustomEvent<{ openCount: number; applicationStatus: string | null; chosenInternship: boolean }>).detail || ({} as any);
+    const n = Number(d.openCount) || 0;
+    const appStatus = d.applicationStatus || null;
+    coopActive = Boolean(appStatus);
+    if (appStatus === "ACCEPTED") [coopBadge, coopTone] = ["ผ่านแล้ว", "done"];
+    else if (appStatus === "SENT_TO_COMPANY") [coopBadge, coopTone] = ["ส่งบริษัทแล้ว", "pending"];
+    else if (appStatus) [coopBadge, coopTone] = ["รอพิจารณา", "pending"];
+    else if (d.chosenInternship) [coopBadge, coopTone] = ["เลือกฝึกงานแล้ว", "muted"];
+    else [coopBadge, coopTone] = [n > 0 ? `${n} เปิดรับ` : "ดูประกาศ", "muted"];
+    render();
   });
 
   ["prof-phone", "prof-lineId"].forEach((id) => {

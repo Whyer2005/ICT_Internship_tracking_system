@@ -10,12 +10,16 @@ import { ICT_MAJORS, findMajor } from "../utils/majors";
 import { loadSuperAdminState } from "../utils/superAdminStore";
 import {
   WINDOW_STATUS_LABEL,
+  academicYearOf,
   canSubmitInWindow,
   classYearOfCohort,
+  cohortAcademicYear,
+  cohortAcademicYearError,
   cohortCodeOf,
   computeWindowStatus,
   isValidTerm,
   parseYmd,
+  partitionRetestRevert,
   shiftDate,
   shiftTerm,
   termSortKey,
@@ -139,6 +143,7 @@ router.get("/super-admin/cohorts", async (_req: Request, res: Response) => {
         note: c.note || "",
         archivedAt: c.archivedAt,
         archivedBy: c.archivedBy,
+        archivedAcademicYear: cohortAcademicYear(c),
         classYear: classYearOfCohort(c.code),
         majors: ICT_MAJORS.map((m) => ({
           code: m.code,
@@ -152,7 +157,7 @@ router.get("/super-admin/cohorts", async (_req: Request, res: Response) => {
       };
     });
 
-    res.json({ success: true, today, cohorts: data });
+    res.json({ success: true, today, currentAcademicYear: academicYearOf(new Date()), cohorts: data });
   } catch (err) {
     console.error("GET /api/admin/super-admin/cohorts error:", err);
     res.status(500).json({ success: false, message: "โหลดข้อมูลรุ่นและรอบออกฝึกไม่สำเร็จ" });
@@ -221,7 +226,8 @@ router.post("/super-admin/cohorts", requireStaffOnly, async (req: Request, res: 
 // ---------------------------------------------------------------------
 // POST /super-admin/cohorts/:id/archive — ปิดรุ่น / เก็บเข้าประวัติ
 //   body.dryRun = true -> คืนรายชื่อนิสิตที่ยังไม่ได้หนังสือส่งตัว (ใช้แสดงคำเตือนก่อนยืนยัน)
-//   ปิดจริง -> นิสิตที่ยังไม่ได้หนังสือส่งตัวถูกตั้งเป็น RETEST อัตโนมัติ
+//   ปิดจริง -> บันทึกปีการศึกษาที่จบกระบวนการ (body.academicYear ว่าง = ปีการศึกษาปัจจุบัน)
+//             และนิสิตที่ยังไม่ได้หนังสือส่งตัวถูกตั้งเป็น RETEST อัตโนมัติ
 // ---------------------------------------------------------------------
 router.post("/super-admin/cohorts/:id/archive", requireStaffOnly, async (req: Request, res: Response) => {
   try {
@@ -235,24 +241,37 @@ router.post("/super-admin/cohorts/:id/archive", requireStaffOnly, async (req: Re
     const state = loadSuperAdminState();
     const students = await getCohortStudents(cohort.code);
     const pending = students.filter((s) => !state.docWorkflowMap[String(s.id)]?.dispatchLetterIssued);
+    // คนที่ระบบเปลี่ยนจริง (ยังไม่เป็น RETEST) — จำไว้ในรุ่น เพื่อคืนเป็น NEW ตอนเปิดรุ่นกลับ
+    const changed = pending.filter((s) => s.internshipType !== "RETEST");
 
     if (req.body.dryRun) {
       return res.json({
         success: true,
         totalStudents: students.length,
         pendingCount: pending.length,
+        changedCount: changed.length,
         pendingStudents: pending.slice(0, 50).map((s) => ({ studentCode: s.studentCode, nameTh: s.nameTh })),
       });
     }
+
+    const academicYear = String(req.body.academicYear || academicYearOf(new Date())).trim();
+    const yearError = cohortAcademicYearError(academicYear, cohort.code);
+    if (yearError) return res.status(400).json({ success: false, message: yearError });
 
     const actor = req.session.user?.username || req.session.user?.email || "Staff";
     await prisma.$transaction([
       prisma.internshipCohort.update({
         where: { id },
-        data: { status: "ARCHIVED", archivedAt: new Date(), archivedBy: String(actor) },
+        data: {
+          status: "ARCHIVED",
+          archivedAt: new Date(),
+          archivedBy: String(actor),
+          archivedAcademicYear: academicYear,
+          archiveRetestStudentIds: changed.map((s) => s.id),
+        },
       }),
       prisma.student.updateMany({
-        where: { id: { in: pending.map((s) => s.id) } },
+        where: { id: { in: changed.map((s) => s.id) } },
         data: { internshipType: "RETEST" },
       }),
     ]);
@@ -260,7 +279,7 @@ router.post("/super-admin/cohorts/:id/archive", requireStaffOnly, async (req: Re
     res.json({
       success: true,
       message:
-        `ปิดรุ่น ${cohort.code} เรียบร้อยแล้ว` +
+        `ปิดรุ่น ${cohort.code} เรียบร้อยแล้ว (ปีการศึกษา ${academicYear})` +
         (pending.length ? ` — นิสิตที่ยังไม่ได้หนังสือส่งตัว ${pending.length} คน ถูกตั้งเป็น "ตกค้าง (RETEST)"` : ""),
     });
   } catch (err) {
@@ -269,18 +288,85 @@ router.post("/super-admin/cohorts/:id/archive", requireStaffOnly, async (req: Re
   }
 });
 
-// POST /super-admin/cohorts/:id/restore — นำรุ่นที่ปิดแล้วกลับมาใช้งาน (สถานะ RETEST ของนิสิตไม่ถูกย้อนอัตโนมัติ)
+// POST /super-admin/cohorts/:id/restore — นำรุ่นที่ปิดแล้วกลับมาใช้งาน
+//   คืนสถานะ NEW ให้นิสิตที่ระบบเปลี่ยนเป็นตกค้างตอนปิดรุ่น (archiveRetestStudentIds) — ดู partitionRetestRevert
+//   body.dryRun = true -> คืนจำนวนที่จะคืนค่า (ใช้แสดงในหน้าต่างยืนยัน)
 router.post("/super-admin/cohorts/:id/restore", requireStaffOnly, async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
-    const cohort = await prisma.internshipCohort.update({
-      where: { id },
-      data: { status: "ACTIVE", archivedAt: null, archivedBy: null },
+    const cohort = await prisma.internshipCohort.findUnique({ where: { id } });
+    if (!cohort) return res.status(404).json({ success: false, message: "ไม่พบรุ่นนี้" });
+    if (cohort.status !== "ARCHIVED") {
+      return res.status(400).json({ success: false, message: `รุ่น ${cohort.code} ยังใช้งานอยู่แล้ว` });
+    }
+
+    const recorded = cohort.archiveRetestStudentIds || [];
+    const students = recorded.length
+      ? await prisma.student.findMany({
+          where: { id: { in: recorded } },
+          select: { id: true, studentCode: true, nameTh: true, internshipType: true, internshipWindow: { select: { cohortId: true } } },
+        })
+      : [];
+    const { revert, movedOn } = partitionRetestRevert(students, id);
+
+    if (req.body.dryRun) {
+      return res.json({
+        success: true,
+        recordedCount: recorded.length,
+        revertCount: revert.length,
+        movedOnCount: movedOn.length,
+        movedOnStudents: movedOn.slice(0, 20).map((s) => ({ studentCode: s.studentCode, nameTh: s.nameTh })),
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.internshipCohort.update({
+        where: { id },
+        data: {
+          status: "ACTIVE",
+          archivedAt: null,
+          archivedBy: null,
+          archivedAcademicYear: null,
+          archiveRetestStudentIds: [],
+        },
+      }),
+      prisma.student.updateMany({
+        where: { id: { in: revert.map((s) => s.id) }, internshipType: "RETEST" },
+        data: { internshipType: "NEW" },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      message:
+        `เปิดใช้งานรุ่น ${cohort.code} อีกครั้งแล้ว` +
+        (revert.length ? ` — คืนสถานะนิสิต ${revert.length} คน จาก "ตกค้าง" เป็นปกติ` : "") +
+        (movedOn.length ? ` (${movedOn.length} คนยังเป็นตกค้าง เพราะยื่นรอบของรุ่นอื่นไปแล้ว)` : ""),
     });
-    res.json({ success: true, message: `เปิดใช้งานรุ่น ${cohort.code} อีกครั้งแล้ว` });
   } catch (err) {
     console.error("POST /api/admin/super-admin/cohorts/:id/restore error:", err);
     res.status(500).json({ success: false, message: "เปิดใช้งานรุ่นไม่สำเร็จ" });
+  }
+});
+
+// PATCH /super-admin/cohorts/:id/academic-year — แก้ปีการศึกษาที่จบกระบวนการของรุ่นที่ปิดแล้ว (กรณีเลือกผิดตอนปิดรุ่น)
+router.patch("/super-admin/cohorts/:id/academic-year", requireStaffOnly, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(String(req.params.id), 10);
+    const cohort = await prisma.internshipCohort.findUnique({ where: { id } });
+    if (!cohort) return res.status(404).json({ success: false, message: "ไม่พบรุ่นนี้" });
+    if (cohort.status !== "ARCHIVED") {
+      return res.status(400).json({ success: false, message: `รุ่น ${cohort.code} ยังไม่ได้ปิด จึงยังไม่มีปีการศึกษาที่จบกระบวนการ` });
+    }
+    const academicYear = String(req.body.academicYear || "").trim();
+    const yearError = cohortAcademicYearError(academicYear, cohort.code);
+    if (yearError) return res.status(400).json({ success: false, message: yearError });
+
+    await prisma.internshipCohort.update({ where: { id }, data: { archivedAcademicYear: academicYear } });
+    res.json({ success: true, message: `บันทึกปีการศึกษา ${academicYear} ให้รุ่น ${cohort.code} แล้ว` });
+  } catch (err) {
+    console.error("PATCH /api/admin/super-admin/cohorts/:id/academic-year error:", err);
+    res.status(500).json({ success: false, message: "บันทึกปีการศึกษาไม่สำเร็จ" });
   }
 });
 
@@ -477,6 +563,7 @@ router.get("/super-admin/students/:id/cohort-info", async (req: Request, res: Re
       success: true,
       cohortCode: code || null,
       cohortStatus: cohort?.status || null,
+      cohortAcademicYear: cohort ? cohortAcademicYear(cohort) || null : null,
       classYear: code ? classYearOfCohort(code) : null,
       majorCode: findMajor(student.major)?.code || null,
       internshipType: student.internshipType || "NEW",

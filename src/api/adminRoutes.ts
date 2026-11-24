@@ -22,6 +22,7 @@ import {
 } from "../utils/companyImportParser";
 import { analyzeAcceptanceForm, fetchFileBuffer } from "../utils/acceptanceOcr";
 import cohortRouter, { getOpenMajorsSummary } from "./cohortRoutes";
+import { adminCoopRouter, buildCoopExportRows, coopSummaryForProfile } from "./coopRoutes";
 import {
   backfillLegacyBatches,
   findIneligibleForLetter,
@@ -29,7 +30,7 @@ import {
   saveLetterBatch,
   toBatchStudent,
 } from "../utils/letterBatches";
-import { ymd } from "../utils/internshipWindowRules";
+import { cohortAcademicYear, cohortCodeOf, ymd } from "../utils/internshipWindowRules";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -74,6 +75,8 @@ router.use(requireAdmin);
 
 // รุ่น & รอบออกฝึก (หน้า "รอบฝึกงาน & ปลดล็อก")
 router.use(cohortRouter);
+// ประกาศรับนิสิตสหกิจศึกษา (หน้า "ประกาศสหกิจศึกษา")
+router.use(adminCoopRouter);
 
 const STATUS_LABELS: Record<string, Record<string, string>> = {
   readiness: {
@@ -335,6 +338,29 @@ async function applyWindowTermFilter<T extends { internshipWindowId: number | nu
   return list.filter((s) => s.internshipWindowId !== null && ids.has(s.internshipWindowId));
 }
 
+/**
+ * ตัวกรองรุ่นจาก query: yearPrefix = รหัสรุ่น 2 หลัก (เช่น 67)
+ * academicYear = ปีการศึกษาที่จบกระบวนการ (เช่น 2569) -> นิสิตทุกรุ่นที่ปิดรุ่นในปีนั้น (ใช้ออกรายงาน)
+ * คืน null เมื่อไม่ได้กรอง
+ */
+async function cohortFilterFromQuery(query: Request["query"]): Promise<((studentCode?: string | null) => boolean) | null> {
+  const prefix = String(query.yearPrefix || "").trim();
+  const academicYear = String(query.academicYear || "").trim();
+  if (!prefix && !academicYear) return null;
+  let codes: Set<string> | null = null;
+  if (academicYear) {
+    const archived = await prisma.internshipCohort.findMany({
+      where: { status: "ARCHIVED" },
+      select: { code: true, status: true, archivedAt: true, archivedAcademicYear: true },
+    });
+    codes = new Set(archived.filter((c) => cohortAcademicYear(c) === academicYear).map((c) => c.code));
+  }
+  return (studentCode) =>
+    Boolean(studentCode) &&
+    (!prefix || studentCode!.startsWith(prefix)) &&
+    (!codes || codes.has(cohortCodeOf(studentCode!)));
+}
+
 // ==========================================
 // 1. Dashboard Summary — สรุปสถิตินิสิตทั้งหมด (กราฟวงกลม 4 อัน + สรุปจำนวน)
 // ==========================================
@@ -353,8 +379,9 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
     });
 
     let students = filterStudentsByScope(allStudentsRaw, req);
-    if (req.query.yearPrefix) {
-      students = students.filter((s) => s.studentCode && s.studentCode.startsWith(String(req.query.yearPrefix)));
+    const matchCohort = await cohortFilterFromQuery(req.query);
+    if (matchCohort) {
+      students = students.filter((s) => matchCohort(s.studentCode));
     }
     if (req.query.semester) {
       students = students.filter((s) => (s.semester || "2") === String(req.query.semester));
@@ -489,10 +516,8 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
             (s: any) => matchesTarget(s.major) || matchesTarget(s.curriculum)
           );
         }
-        if (req.query.yearPrefix) {
-          relevantAdvised = relevantAdvised.filter(
-            (s: any) => s.studentCode && s.studentCode.startsWith(String(req.query.yearPrefix))
-          );
+        if (matchCohort) {
+          relevantAdvised = relevantAdvised.filter((s: any) => matchCohort(s.studentCode));
         }
         if (req.query.semester) {
           relevantAdvised = relevantAdvised.filter(
@@ -711,10 +736,10 @@ router.get("/students", async (req: Request, res: Response) => {
       );
     }
 
-    // Filter ตามปีของรหัสนิสิต (2 หลักแรก เช่น 67, 68)
-    const yearPrefix = req.query.yearPrefix as string | undefined;
-    if (yearPrefix) {
-      mapped = mapped.filter((s) => s.studentCode && s.studentCode.startsWith(yearPrefix));
+    // Filter ตามรุ่น (รหัสนิสิต 2 หลักแรก เช่น 67) หรือปีการศึกษาที่ปิดรุ่น (เช่น 2569)
+    const matchCohort = await cohortFilterFromQuery(req.query);
+    if (matchCohort) {
+      mapped = mapped.filter((s) => matchCohort(s.studentCode));
     }
     const semester = req.query.semester as string | undefined;
     if (semester) {
@@ -871,6 +896,7 @@ router.get("/students/:studentId", async (req: Request, res: Response) => {
         placement: true,
         advisor: { include: { user: true } },
         supervisor: { include: { user: true } },
+        coopApplications: true,
       },
     });
 
@@ -933,6 +959,8 @@ router.get("/students/:studentId", async (req: Request, res: Response) => {
         : null,
       acceptanceWorkflow: state.docWorkflowMap[String(student.id)] || null,
       roundInfo: getStudentRoundState(student.id, `${student.semester || "2"}/${student.academicYear || "2568"}`),
+      // สหกิจศึกษา (อ่านอย่างเดียว — เจ้าหน้าที่จัดการในแท็บประกาศสหกิจ)
+      coop: coopSummaryForProfile(student.coopApplications),
     });
   } catch (err) {
     console.error("GET /api/admin/students/:id error:", err);
@@ -1740,9 +1768,10 @@ router.get("/export", async (req: Request, res: Response) => {
         );
       }
 
-      // กรองตาม yearPrefix
-      if (req.query.yearPrefix) {
-        exportData = exportData.filter((s) => s.studentCode && s.studentCode.startsWith(String(req.query.yearPrefix)));
+      // กรองตามรุ่น (yearPrefix) หรือปีการศึกษาที่ปิดรุ่น (academicYear)
+      const matchCohort = await cohortFilterFromQuery(req.query);
+      if (matchCohort) {
+        exportData = exportData.filter((s) => matchCohort(s.studentCode));
       }
 
       // กรองตาม statusFilter
@@ -2360,6 +2389,8 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         (c) => c.status === "PENDING_REVIEW"
       ).length,
       documentQueue,
+      // นิสิตสหกิจ (ใบสมัครที่ยังไม่จบ) สำหรับ Export Co-op 01 — ตัวกรองประเภท ฝึกงาน / สหกิจ
+      coopExportRows: await buildCoopExportRows(),
       companyGroups: Object.values(companyGroupsMap),
       archivedApplications: state.archivedApplications,
       // ฉบับหนังสือราชการที่ออกแล้ว (รายชื่อ snapshot ณ วันที่ออก) — ใช้แสดงรายฉบับและพรีวิวในคิวออกหนังสือ

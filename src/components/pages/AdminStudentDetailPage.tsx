@@ -119,6 +119,15 @@ ${ictMajorsDataScript()}
       <div class="card-body" id="internship-cohort-body"></div>
     </section>
 
+    <!-- สหกิจศึกษา (อ่านอย่างเดียว — เจ้าหน้าที่จัดการในแท็บประกาศสหกิจ) -->
+    <section class="card" id="student-coop-section" style="display:none;">
+      <div class="card-header">
+        <span class="material-icons header-icon">work_history</span>
+        <h2 class="card-title" style="margin:0;">สหกิจศึกษา</h2>
+      </div>
+      <div class="card-body" id="student-coop-body"></div>
+    </section>
+
     <!-- ประวัติการฝึกงานรอบที่ 1 (กรณีฝึกงานรอบที่ 2 - SCRUM-73) -->
     <section class="card" id="admin-round-history-section" style="display:none;">
       <div class="card-header" style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);">

@@ -88,6 +88,7 @@ async function initStudentDetail() {
     renderPlacement(data.placement);
     renderAcceptanceFormReview(data.acceptanceWorkflow);
     renderDocumentSummary(data);
+    renderCoopSummary(data.coop);
     loadCohortInfo(studentId);
 
     // Multi-round history (SCRUM-73)
@@ -192,7 +193,7 @@ async function loadCohortInfo(studentId) {
       </div>`;
 
     const cohortText = info.cohortCode
-      ? `รหัส ${info.cohortCode}${info.classYear ? ` · ปี ${info.classYear}` : ''}${info.cohortStatus === 'ARCHIVED' ? ' (ปิดรุ่นแล้ว)' : (info.cohortStatus ? '' : ' (ยังไม่มีในระบบ)')}`
+      ? `รหัส ${info.cohortCode}${info.classYear ? ` · ปี ${info.classYear}` : ''}${info.cohortStatus === 'ARCHIVED' ? ` (ปิดรุ่นแล้ว${info.cohortAcademicYear ? ` · ปีการศึกษา ${info.cohortAcademicYear}` : ''})` :(info.cohortStatus ? '' : ' (ยังไม่มีในระบบ)')}`
       : '-';
     const w = info.window;
     const windowText = w
@@ -977,3 +978,44 @@ initStudentDetail();
 window.addEventListener('app:data-updated', () => {
   initStudentDetail();
 });
+
+// สหกิจศึกษา: บริษัทที่นิสิตสมัคร + สถานะ + ขั้นเอกสาร (อ่านอย่างเดียว ทุกบทบาท)
+function renderCoopSummary(coop) {
+  const section = document.getElementById('student-coop-section');
+  const body = document.getElementById('student-coop-body');
+  if (!section || !body || !coop || (!coop.active && !(coop.history || []).length)) return;
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const thDate = (v) => (v ? new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+  const color = { SUBMITTED: '#92400E', SENT_TO_COMPANY: '#075985', ACCEPTED: '#166534', REJECTED: '#991B1B', CANCELLED: '#475569' };
+  let html = '';
+  const a = coop.active;
+  if (a) {
+    html += `<div style="padding:12px 14px; border:1px solid #DDD6FE; background:#F5F3FF; border-radius:12px; font-size:13px; color:#1E293B; line-height:1.7;">
+      <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <div><strong>${esc(a.companyName)}</strong> · ${esc(a.positionTitle)}</div>
+        <span style="font-weight:800; color:${color[a.status] || '#334155'};">${esc(a.statusLabel)}</span>
+      </div>
+      <div style="font-size:12px; color:#64748B;">สมัครเมื่อ ${esc(thDate(a.createdAt))}${a.statusNote ? ` · หมายเหตุ: ${esc(a.statusNote)}` : ''}</div>
+      ${a.status === 'ACCEPTED' ? `<div style="display:flex; flex-direction:column; gap:3px; margin-top:8px;">
+        ${(a.docSteps || []).map((d) => `<div style="font-size:12.5px; color:${d.done ? '#166534' : '#94A3B8'};">
+          ${d.done ? '✓' : '○'} ${esc(d.label)}${d.done && d.at ? ` (${esc(thDate(d.at))})` : ''}
+          ${d.url ? ` · <a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" style="color:#4338CA; font-weight:600;">เปิดไฟล์</a>` : ''}
+        </div>`).join('')}
+      </div>` : ''}
+      <div style="font-size:11.5px; color:#64748B; margin-top:6px;">เจ้าหน้าที่ฝ่ายฝึกงานดำเนินการเอกสารสหกิจ — อาจารย์ที่ปรึกษาไม่ต้องอนุมัติ</div>
+    </div>`;
+  }
+  const history = coop.history || [];
+  if (history.length) {
+    html += `<details style="margin-top:${a ? 10 : 0}px;" ${a ? '' : 'open'}>
+      <summary style="cursor:pointer; font-size:12.5px; font-weight:700; color:#475569;">ประวัติใบสมัครสหกิจ (ไม่ผ่าน / ยกเลิก) (${history.length})</summary>
+      ${history.map((h) => `<div style="margin-top:6px; padding:8px 12px; border:1px solid #E2E8F0; border-radius:10px; background:#F8FAFC; font-size:12.5px;">
+        <strong>${esc(h.companyName)}</strong> · ${esc(h.positionTitle)} · <span style="font-weight:700; color:${color[h.status] || '#334155'};">${esc(h.statusLabel)}</span>
+        <span style="color:#94A3B8;">(สมัคร ${esc(thDate(h.createdAt))})</span>
+        ${h.statusNote ? `<div style="color:#475569;">เหตุผล: ${esc(h.statusNote)}</div>` : ''}
+      </div>`).join('')}
+    </details>`;
+  }
+  body.innerHTML = html;
+  section.style.display = 'block';
+}

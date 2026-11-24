@@ -82,6 +82,7 @@ model Student {
   trainingRecords TrainingRecord[]
   companies       Company[]
   placement       InternshipPlacement?
+  coopApplications CoopApplication[] // ใบสมัครสหกิจศึกษา
 
   // รอบออกฝึกที่นิสิตเลือก (เช่น 2/2568, 3/2569 Summer, 1/2570)
   internshipWindowId Int?
@@ -113,6 +114,8 @@ model InternshipCohort {
   note       String?
   archivedAt DateTime?
   archivedBy String?
+  archivedAcademicYear String? // ปีการศึกษาที่จบกระบวนการ (พ.ศ. เช่น "2569") เลือกตอนปิดรุ่น ใช้ออกรายงานระดับมหาวิทยาลัย
+  archiveRetestStudentIds Int[] @default([]) // นิสิตที่ระบบเปลี่ยนจาก NEW เป็นตกค้าง (RETEST) ตอนปิดรุ่น — เปิดรุ่นกลับจะคืนเป็น NEW ให้
 
   windows    InternshipWindow[]
 
@@ -143,12 +146,55 @@ model InternshipWindow {
   sortOrder     Int                @default(0)
 
   students      Student[]
+  coopApplications CoopApplication[]
 
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   @@unique([cohortId, majorCode, term])
   @@index([majorCode])
+}
+
+// ---------------------------------------------------------------------
+// สหกิจศึกษา: ประกาศรับนิสิตที่พี่จอม (Staff) เพิ่มเอง / นำเข้าจาก Excel
+// 1 ประกาศ = 1 บริษัท มีได้หลายตำแหน่ง · รอบเทอม/ช่วงฝึก/วันปิดยื่น ใช้ตามรอบออกฝึกของสาขานิสิต (InternshipWindow)
+// ข้อมูลผู้ติดต่อ HR เห็นเฉพาะเจ้าหน้าที่ — API ฝั่งนิสิตไม่ส่งออกไป
+// ---------------------------------------------------------------------
+model CoopPosting {
+  id              Int       @id @default(autoincrement())
+  companyName     String // ชื่อบริษัท (ไทย)
+  companyNameEn   String?
+  masterCompanyId String? // อ้างอิงฐานข้อมูลบริษัทกลาง (ถ้าเลือกจากรายการ)
+  description     String? // รายละเอียดบริษัท
+  qualifications  String? // คุณสมบัติเพิ่มเติม
+  benefits        String? // สวัสดิการ / เบี้ยเลี้ยง / ที่พัก
+  address         String? // ที่อยู่ (ไม่เก็บพิกัด)
+  province        String? // ชื่อจังหวัดมาตรฐาน (src/utils/thaiProvinces.ts) หรือ "ต่างประเทศ"
+  website         String?
+  isClosed        Boolean   @default(false) // เจ้าหน้าที่กดปิดรับก่อนกำหนด
+  hrContactName   String? // เห็นเฉพาะเจ้าหน้าที่
+  hrPhone         String?
+  hrEmail         String?
+  createdBy       String?
+
+  positions    CoopPosition[]
+  applications CoopApplication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CoopPosition {
+  id           Int               @id @default(autoincrement())
+  postingId    Int
+  posting      CoopPosting       @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  title        String // ชื่อตำแหน่ง
+  seats        Int? // จำนวนที่รับนิสิตคณะนี้ (ไม่แสดงจำนวนที่สมัครไปแล้ว)
+  description  String? // ลักษณะงาน
+  sortOrder    Int               @default(0)
+  applications CoopApplication[]
+
+  @@index([postingId])
 }
 
 // อาจารย์ที่ปรึกษา / อาจารย์รายวิชา / อาจารย์นิเทศก์ / เจ้าหน้าที่ (Staff)
@@ -383,4 +429,69 @@ model session {
   expire DateTime @db.Timestamp(6)
 
   @@index([expire], map: "IDX_session_expire")
+}
+
+// ---------------------------------------------------------------------
+// สหกิจศึกษา: ใบสมัครของนิสิต (สมัครได้ทีละ 1 ตำแหน่ง · เลือกได้ทางเดียว ฝึกงาน หรือ สหกิจ)
+// สถานะเปลี่ยนโดยเจ้าหน้าที่ · REJECTED = เก็บเข้าประวัติ แล้วสมัครที่อื่น/ไปฝึกงานได้
+// ---------------------------------------------------------------------
+enum CoopApplicationStatus {
+  SUBMITTED // ส่งใบสมัครแล้ว (รอเจ้าหน้าที่พิจารณา)
+  SENT_TO_COMPANY // คณะส่งเอกสารให้บริษัทแล้ว
+  ACCEPTED // ผ่านการคัดเลือก
+  REJECTED // ไม่ผ่าน (เก็บเข้าประวัติ)
+  CANCELLED // ยกเลิก — นิสิตยกเลิกเอง (ก่อนส่งเอกสารให้บริษัท) หรือเจ้าหน้าที่ยกเลิกให้ (เก็บเข้าประวัติ)
+}
+
+/// ขั้นเอกสารหลังผ่านการคัดเลือก (เจ้าหน้าที่เลื่อนขั้นเอง แนบ PDF ได้ไม่บังคับ)
+enum CoopDocStep {
+  NONE // ยังไม่เริ่ม
+  REQUEST_LETTER // ออกหนังสือขอความอนุเคราะห์แล้ว
+  ACCEPTANCE_FORM // ได้รับแบบตอบรับจากบริษัทแล้ว
+  DISPATCH_LETTER // ออกหนังสือส่งตัวแล้ว
+}
+
+model CoopApplication {
+  id              Int                   @id @default(autoincrement())
+  studentId       Int
+  student         Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  postingId       Int
+  posting         CoopPosting           @relation(fields: [postingId], references: [id], onDelete: Restrict)
+  positionId      Int
+  position        CoopPosition          @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  windowId        Int? // รอบออกฝึกที่ผูกตอนสมัคร (เหมือนการเลือกสถานประกอบการ)
+  window          InternshipWindow?     @relation(fields: [windowId], references: [id], onDelete: SetNull)
+  companyName     String // ชื่อบริษัท ณ วันที่สมัคร (กันประกาศถูกแก้ภายหลัง)
+  positionTitle   String // ชื่อตำแหน่ง ณ วันที่สมัคร
+  resumeUrl       String
+  resumeName      String?
+  transcriptUrl   String
+  transcriptName  String?
+  portfolioUrl    String? // ไฟล์ Portfolio (ไม่บังคับ)
+  portfolioName   String?
+  portfolioLink   String? // หรือ ลิงก์ Portfolio
+  status          CoopApplicationStatus @default(SUBMITTED)
+  statusNote      String? // เหตุผล (เช่น กรณีไม่ผ่าน)
+  statusUpdatedAt DateTime?
+  statusUpdatedBy String?
+
+  // ขั้นเอกสารหลังผ่านการคัดเลือก (ใช้เมื่อ status = ACCEPTED)
+  docStep            CoopDocStep @default(NONE)
+  docStepUpdatedBy   String?
+  requestLetterAt    DateTime?
+  requestLetterUrl   String? // PDF แนบ (ไม่บังคับ)
+  requestLetterName  String?
+  acceptanceFormAt   DateTime?
+  acceptanceFormUrl  String?
+  acceptanceFormName String?
+  dispatchLetterAt   DateTime?
+  dispatchLetterUrl  String?
+  dispatchLetterName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([postingId])
+  @@index([status])
 }

@@ -424,6 +424,12 @@ function renderStudentTable(students, total, page, totalPages) {
               ✓ แบบตอบรับอนุมัติแล้ว
             </span>
           ` : ''}
+          ${s.coop ? `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-violet-50 text-violet-800 border border-violet-200"
+              title="สหกิจศึกษา (เจ้าหน้าที่ดำเนินการ — อาจารย์ไม่ต้องอนุมัติ): ${advisorCoopEsc(s.coop.companyName)} · ${advisorCoopEsc(s.coop.positionTitle)}">
+              🎓 สหกิจ: ${advisorCoopEsc(s.coop.companyName)} · ${advisorCoopEsc(s.coop.status === 'ACCEPTED' ? s.coop.docStepLabel : s.coop.statusLabel)}
+            </span>
+          ` : ''}
         </div>
       </td>
       <td class="text-center">
@@ -1068,3 +1074,7 @@ window.addEventListener('app:data-updated', () => {
   loadDashboardSummary();
   loadStudents();
 });
+/** escape ข้อความในป้ายสหกิจ (ชื่อบริษัทมาจากประกาศ/นิสิต) */
+function advisorCoopEsc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}

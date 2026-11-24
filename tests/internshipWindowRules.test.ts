@@ -1,11 +1,15 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  academicYearOf,
   classYearOfCohort,
+  cohortAcademicYear,
+  cohortAcademicYearError,
   cohortCodeOf,
   computeWindowStatus,
   isValidTerm,
   parseYmd,
+  partitionRetestRevert,
   resolveSubmissionWindow,
   windowDisplayLabel,
   shiftDate,
@@ -119,5 +123,44 @@ describe("windowDateOrderError (เปิดยื่น ≤ ปิดยื่�
     assert.match(windowDateOrderError({ closeDate: d("2026-11-03"), internStartDate: d("2026-11-02") })!, /ปิดยื่น/);
     assert.match(windowDateOrderError({ openDate: d("2026-11-03"), internStartDate: d("2026-11-02") })!, /เปิดยื่น/);
     assert.match(windowDateOrderError({ internStartDate: d("2027-02-19"), internEndDate: d("2027-02-19") })!, /เริ่มฝึก/);
+  });
+});
+
+describe("ปีการศึกษาที่จบกระบวนการของรุ่น (ปิดรุ่น / เก็บเข้าประวัติ)", () => {
+  test("academicYearOf ตัดรอบเดือน มิ.ย. ตามเวลาไทย", () => {
+    assert.equal(academicYearOf(new Date("2026-11-17T08:29:00Z")), 2569);
+    assert.equal(academicYearOf(new Date("2027-01-20T03:00:00Z")), 2569);
+    assert.equal(academicYearOf(new Date("2027-06-01T03:00:00Z")), 2570);
+    // 31 พ.ค. 2027 เวลา 18:00 UTC = 1 มิ.ย. 01:00 เวลาไทย -> ขึ้นปีการศึกษาใหม่แล้ว
+    assert.equal(academicYearOf(new Date("2027-05-31T18:00:00Z")), 2570);
+  });
+
+  test("cohortAcademicYear ใช้ค่าที่เลือกไว้ก่อน ถ้าไม่มีคิดจากวันที่ปิด และรุ่นที่ยังเปิดไม่มีค่า", () => {
+    const closedAt = new Date("2026-11-17T08:29:00Z");
+    assert.equal(cohortAcademicYear({ status: "ARCHIVED", archivedAt: closedAt, archivedAcademicYear: "2570" }), "2570");
+    assert.equal(cohortAcademicYear({ status: "ARCHIVED", archivedAt: closedAt, archivedAcademicYear: null }), "2569");
+    assert.equal(cohortAcademicYear({ status: "ACTIVE", archivedAt: null, archivedAcademicYear: null }), "");
+  });
+
+  test("cohortAcademicYearError ตรวจรูปแบบ และช่วงปีที่เป็นไปได้", () => {
+    assert.equal(cohortAcademicYearError("2569", "67", 2569), null);
+    assert.equal(cohortAcademicYearError("2570", "67", 2569), null);
+    assert.match(cohortAcademicYearError("69", "67", 2569)!, /4 หลัก/);
+    assert.match(cohortAcademicYearError("2566", "67", 2569)!, /เข้าศึกษา \(2567\)/);
+    assert.match(cohortAcademicYearError("2571", "67", 2569)!, /ไม่เกิน 2570/);
+  });
+});
+
+describe("partitionRetestRevert (เปิดรุ่นกลับ -> คืนสถานะตกค้างที่ระบบตั้งตอนปิดรุ่น)", () => {
+  test("คืนเฉพาะคนที่ยังเป็น RETEST และไม่ได้ผูกรอบของรุ่นอื่น", () => {
+    const students = [
+      { id: 1, internshipType: "RETEST", internshipWindow: null },          // ยังไม่ผูกรอบ -> คืน
+      { id: 2, internshipType: "RETEST", internshipWindow: { cohortId: 7 } }, // รอบของรุ่นตัวเอง -> คืน
+      { id: 3, internshipType: "RETEST", internshipWindow: { cohortId: 8 } }, // ยื่นรอบรุ่นอื่นแล้ว -> คงตกค้าง
+      { id: 4, internshipType: "NEW", internshipWindow: null },             // เจ้าหน้าที่แก้เองแล้ว -> ไม่แตะ
+    ];
+    const { revert, movedOn } = partitionRetestRevert(students, 7);
+    assert.deepEqual(revert.map((s) => s.id), [1, 2]);
+    assert.deepEqual(movedOn.map((s) => s.id), [3]);
   });
 });

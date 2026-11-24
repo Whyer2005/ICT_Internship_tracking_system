@@ -77,6 +77,60 @@ export function classYearOfCohort(cohortCode: string, academicYear: number = cal
   return academicYear - (2500 + n) + 1;
 }
 
+/**
+ * ปีการศึกษา (พ.ศ.) ของวันที่ ตามเวลาไทย ตัดรอบเดือน มิ.ย. (เหมือน calculateCurrentAcademicYear)
+ * เช่น 17 พ.ย. 2026 -> 2569 | 20 ม.ค. 2027 -> 2569 | 1 มิ.ย. 2027 -> 2570
+ */
+export function academicYearOf(date: Date): number {
+  const [y, m] = todayYmdBangkok(date).split("-").map(Number);
+  const beYear = y + 543;
+  return m < 6 ? beYear - 1 : beYear;
+}
+
+/** ปีการศึกษาที่รุ่นจบกระบวนการ: ค่าที่เลือกตอนปิดรุ่น หรือคิดจากวันที่ปิด (รุ่นที่ปิดก่อนมีช่องนี้) */
+export function cohortAcademicYear(c: {
+  status: string;
+  archivedAt: Date | null;
+  archivedAcademicYear?: string | null;
+}): string {
+  if (c.status !== "ARCHIVED") return "";
+  if (c.archivedAcademicYear) return c.archivedAcademicYear;
+  return c.archivedAt ? String(academicYearOf(c.archivedAt)) : "";
+}
+
+/**
+ * ตรวจปีการศึกษาที่จบกระบวนการของรุ่น: ต้องเป็น พ.ศ. 4 หลัก ไม่ก่อนปีที่รุ่นเข้าศึกษา และไม่เกินปีการศึกษาถัดไป
+ * คืนข้อความผิดพลาด หรือ null ถ้าถูกต้อง
+ */
+export function cohortAcademicYearError(
+  value: string,
+  cohortCode: string,
+  currentAcademicYear: number = academicYearOf(new Date())
+): string | null {
+  if (!/^25\d{2}$/.test(value)) return "ปีการศึกษาต้องเป็น พ.ศ. 4 หลัก เช่น 2569";
+  const year = parseInt(value, 10);
+  const entryYear = 2500 + parseInt(cohortCode, 10);
+  if (!isNaN(entryYear) && year < entryYear) return `ปีการศึกษาต้องไม่ก่อนปีที่รุ่น ${cohortCode} เข้าศึกษา (${entryYear})`;
+  if (year > currentAcademicYear + 1) return `ปีการศึกษาต้องไม่เกิน ${currentAcademicYear + 1}`;
+  return null;
+}
+
+/**
+ * ตอนเปิดรุ่นกลับมาใช้งาน: แยกนิสิตที่ระบบเคยเปลี่ยนเป็นตกค้าง (RETEST) ตอนปิดรุ่น
+ * - revert  = ยังเป็น RETEST และยังไม่ได้ผูกรอบของรุ่นอื่น -> คืนเป็น NEW
+ * - movedOn = ยังเป็น RETEST แต่ยื่นรอบของรุ่นอื่นไปแล้ว -> คงเป็นตกค้าง
+ * คนที่ไม่ใช่ RETEST แล้ว (เจ้าหน้าที่แก้เองระหว่างที่ปิดรุ่น) ไม่แตะ
+ */
+export function partitionRetestRevert<
+  T extends { internshipType: string | null; internshipWindow: { cohortId: number } | null }
+>(students: T[], cohortId: number): { revert: T[]; movedOn: T[] } {
+  const stillRetest = students.filter((s) => s.internshipType === "RETEST");
+  return {
+    revert: stillRetest.filter((s) => !s.internshipWindow || s.internshipWindow.cohortId === cohortId),
+    movedOn: stillRetest.filter((s) => s.internshipWindow && s.internshipWindow.cohortId !== cohortId),
+  };
+}
+
 /** เลื่อนปีของรอบเทอม เช่น ("2/2568", 1) -> "2/2569" */
 export function shiftTerm(term: string, years: number): string {
   return String(term).replace(/(\d{4})\s*$/, (y) => String(parseInt(y, 10) + years));

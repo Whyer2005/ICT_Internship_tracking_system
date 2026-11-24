@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import prisma from "../db";
+import { coopSummaryForProfile } from "./coopRoutes";
 import requireAdvisor from "../auth/requireAdvisor";
 import { loadSuperAdminState, saveSuperAdminState, getStudentRoundState } from "../utils/superAdminStore";
 
@@ -219,6 +220,7 @@ router.get("/students", async (req: Request, res: Response) => {
         trainingRecords: true,
         companies: { include: { submission: true } },
         placement: true,
+        coopApplications: true,
       },
       orderBy: { studentCode: "desc" },
     });
@@ -226,6 +228,8 @@ router.get("/students", async (req: Request, res: Response) => {
     const state = loadSuperAdminState();
 
     let mapped = allStudents.map((s) => {
+      // สหกิจศึกษา: อาจารย์ไม่ต้องอนุมัติ แต่เห็นบริษัทที่นิสิตเลือกและสถานะ (อ่านอย่างเดียว)
+      const coopActive = coopSummaryForProfile(s.coopApplications).active;
       const cStatus = getStudentChecklistStatus(s);
       const rStatus = getStudentReadinessStatus(s);
 
@@ -282,6 +286,16 @@ router.get("/students", async (req: Request, res: Response) => {
         acceptanceFileName,
         acceptanceFileUrl,
         roundInfo: getStudentRoundState(s.id, `${s.semester || "2"}/${s.academicYear || "2568"}`),
+        coop: coopActive
+          ? {
+              companyName: coopActive.companyName,
+              positionTitle: coopActive.positionTitle,
+              status: coopActive.status,
+              statusLabel: coopActive.statusLabel,
+              docStep: coopActive.docStep,
+              docStepLabel: coopActive.docStepLabel,
+            }
+          : null,
       };
     });
 

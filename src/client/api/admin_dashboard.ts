@@ -152,14 +152,12 @@ async function loadDashboardSummary() {
   try {
     const majorFilter = document.getElementById('major-filter') as HTMLSelectElement | null;
     const selectedMajor = majorFilter ? majorFilter.value : 'ALL';
-    const yearFilter = document.getElementById('year-filter') as HTMLSelectElement | null;
-    const selectedYear = yearFilter ? yearFilter.value : '';
     const semesterFilter = document.getElementById('semester-filter') as HTMLSelectElement | null;
     const selectedSemester = semesterFilter ? semesterFilter.value : '';
 
     const summaryParams = new URLSearchParams();
     if (selectedMajor && selectedMajor !== 'ALL') summaryParams.set('major', selectedMajor);
-    if (selectedYear) summaryParams.set('yearPrefix', selectedYear);
+    Object.entries(yearFilterQueryParams()).forEach(([k, v]) => summaryParams.set(k, v));
     if (selectedSemester) summaryParams.set('semester', selectedSemester);
     const windowTermVal = (document.getElementById('window-term-filter') as HTMLSelectElement | null)?.value || '';
     if (windowTermVal) summaryParams.set('windowTerm', windowTermVal);
@@ -307,9 +305,7 @@ async function loadStudents() {
 
     let url = `/api/admin/students?page=${currentPage}&limit=${pageLimit}&viewDropped=${currentTab === 'dropped'}`;
     if (searchVal) url += `&search=${encodeURIComponent(searchVal)}`;
-    const yearFilter = document.getElementById('year-filter') as HTMLSelectElement | null;
-    const selectedYear = yearFilter ? yearFilter.value : '';
-    if (selectedYear) url += `&yearPrefix=${encodeURIComponent(selectedYear)}`;
+    Object.entries(yearFilterQueryParams()).forEach(([k, v]) => { url += `&${k}=${encodeURIComponent(v)}`; });
 
     const semesterFilter = document.getElementById('semester-filter') as HTMLSelectElement | null;
     const selectedSemester = semesterFilter ? semesterFilter.value : '';
@@ -1081,8 +1077,6 @@ window.confirmExport = async function() {
     } else if (scope === 'filtered') {
       const searchInput = document.getElementById('student-search');
       const searchVal = searchInput ? searchInput.value.trim() : '';
-      const yearFilter = document.getElementById('year-filter');
-      const selectedYear = yearFilter ? yearFilter.value : '';
       const statusFilter = document.getElementById('status-filter');
       const advisorFilter = document.getElementById('advisor-filter');
       const skillFilter = document.getElementById('skill-filter');
@@ -1091,7 +1085,7 @@ window.confirmExport = async function() {
       const params = new URLSearchParams();
       params.set('viewDropped', String(currentTab === 'dropped'));
       if (searchVal) params.set('search', searchVal);
-      if (selectedYear) params.set('yearPrefix', selectedYear);
+      Object.entries(yearFilterQueryParams()).forEach(([k, v]) => params.set(k, v));
       if (selectedSemester) params.set('semester', selectedSemester);
       const exportWindowTerm = (document.getElementById('window-term-filter') as HTMLSelectElement | null)?.value || '';
       if (exportWindowTerm) params.set('windowTerm', exportWindowTerm);
@@ -1306,13 +1300,40 @@ function getDefaultYearPrefix(date = new Date()) {
 
 let yearFilterInitialized = false;
 
-// ดึงรายปีจากรหัสนิสิตทั้งหมดมาใส่ Dropdown
+// ตัวกรอง "ชั้นปี" มี 2 แบบ: "67" = รุ่น (yearPrefix) | "AY:2569" = ปีการศึกษาที่ปิดรุ่น (academicYear ใช้ออกรายงาน)
+function yearFilterQueryParams(): Record<string, string> {
+  const v = (document.getElementById('year-filter') as HTMLSelectElement | null)?.value || '';
+  if (!v) return {};
+  return v.startsWith('AY:') ? { academicYear: v.slice(3) } : { yearPrefix: v };
+}
+
+// ปีการศึกษาที่มีรุ่นปิดแล้ว เช่น [{ year: "2569", codes: ["67"] }] (ใหม่ไปเก่า)
+async function loadClosedAcademicYears(): Promise<{ year: string; codes: string[] }[]> {
+  try {
+    const res = await fetch('/api/admin/super-admin/cohorts');
+    const data = await res.json();
+    if (!data.success) return [];
+    const map = new Map<string, string[]>();
+    (data.cohorts || []).forEach((c: any) => {
+      if (c.status !== 'ARCHIVED' || !c.archivedAcademicYear) return;
+      const key = String(c.archivedAcademicYear);
+      map.set(key, [...(map.get(key) || []), String(c.code)]);
+    });
+    return Array.from(map.entries())
+      .map(([year, codes]) => ({ year, codes: codes.sort((a, b) => Number(a) - Number(b)) }))
+      .sort((a, b) => Number(b.year) - Number(a.year));
+  } catch {
+    return [];
+  }
+}
+
+// ดึงรายปีจากรหัสนิสิตทั้งหมดมาใส่ Dropdown (+ ปีการศึกษาที่ปิดรุ่นแล้ว)
 async function populateYearFilter(apiUrl) {
   try {
     const select = document.getElementById('year-filter');
     if (!select) return;
     let currentVal = select.value;
-    const res = await fetch(`${apiUrl}?page=1&limit=9999`);
+    const [res, closedYears] = await Promise.all([fetch(`${apiUrl}?page=1&limit=9999`), loadClosedAcademicYears()]);
     const data = await res.json();
     if (!data.success || !Array.isArray(data.students)) return;
     const years = [...new Set(
@@ -1327,22 +1348,54 @@ async function populateYearFilter(apiUrl) {
       const defaultPrefix = getDefaultYearPrefix();
       if (years.includes(defaultPrefix)) currentVal = defaultPrefix;
     }
+    const validValues = [...years, ...closedYears.map(g => `AY:${g.year}`)];
     select.innerHTML = '';
     const allYearsOption = document.createElement('option');
     allYearsOption.value = '';
     allYearsOption.textContent = 'ทั้งหมด';
-    allYearsOption.selected = !years.includes(currentVal);
+    allYearsOption.selected = !validValues.includes(currentVal);
     select.appendChild(allYearsOption);
+    // มีรุ่นที่ปิดแล้ว -> แยกเป็น 2 กลุ่มให้เห็นชัดว่าตัวเลือกไหนกรองตามรุ่น ตัวไหนกรองตามปีการศึกษา
+    const cohortParent: HTMLElement = closedYears.length ? document.createElement('optgroup') : select;
+    if (closedYears.length) {
+      (cohortParent as HTMLOptGroupElement).label = 'ชั้นปี (รหัสนิสิต)';
+      select.appendChild(cohortParent);
+    }
     years.forEach(y => {
       const opt = document.createElement('option');
       opt.value = y;
       opt.textContent = `ปี ${y} (25${y})`;
       if (y === currentVal) opt.selected = true;
-      select.appendChild(opt);
+      cohortParent.appendChild(opt);
     });
+    if (closedYears.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'ปีการศึกษาที่จบกระบวนการ (ปิดรุ่นแล้ว)';
+      closedYears.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = `AY:${g.year}`;
+        opt.textContent = `ปีการศึกษา ${g.year} · รุ่น ${g.codes.join(', ')}`;
+        if (opt.value === currentVal) opt.selected = true;
+        group.appendChild(opt);
+      });
+      select.appendChild(group);
+    }
     syncFilterChips();
   } catch (err) {
     console.error('Populate year filter error:', err);
+  }
+}
+
+// เรียกหลังปิดรุ่น / เปิดรุ่นใหม่ / แก้ปีการศึกษา ให้ตัวเลือกในหน้าภาพรวมตรงกับข้อมูลล่าสุด
+async function refreshYearFilterOptions() {
+  const select = document.getElementById('year-filter') as HTMLSelectElement | null;
+  if (!select) return;
+  const before = select.value;
+  await populateYearFilter('/api/admin/students');
+  // ค่าที่เลือกไว้หายไป (เช่น เปิดรุ่นกลับมาใช้งาน) -> โหลดข้อมูลใหม่ตามค่า "ทั้งหมด"
+  if (select.value !== before) {
+    loadStudents();
+    loadDashboardSummary();
   }
 }
 
@@ -2178,12 +2231,13 @@ let superAdminData = {
   companyMasterData: [],
   pendingMasterCompaniesCount: 0,
   documentQueue: [],
+  coopExportRows: [] as any[], // นิสิตสหกิจ (ใบสมัครที่ยังไม่จบ) สำหรับ Export Co-op 01
   companyGroups: [],
   archivedApplications: [],
   letterBatches: [] as any[],
 };
 
-type AdminWorkspace = 'overview' | 'unlock' | 'events' | 'companies' | 'documents' | 'coop' | 'checklist';
+type AdminWorkspace = 'overview' | 'unlock' | 'events' | 'companies' | 'coopjobs' | 'documents' | 'coop' | 'checklist';
 
 let currentWorkspace: AdminWorkspace = 'overview';
 
@@ -2214,7 +2268,7 @@ window.switchAdminWorkspace = function(wsKey: AdminWorkspace) {
     }
   }
   currentWorkspace = wsKey;
-  const workspaces: AdminWorkspace[] = ['overview', 'unlock', 'events', 'companies', 'documents', 'coop', 'checklist'];
+  const workspaces: AdminWorkspace[] = ['overview', 'unlock', 'events', 'companies', 'coopjobs', 'documents', 'coop', 'checklist'];
   workspaces.forEach(k => {
     const panel = document.getElementById(`workspace-${k}`);
     const tabBtn = document.getElementById(`ws-tab-${k}`);
@@ -2228,6 +2282,8 @@ window.switchAdminWorkspace = function(wsKey: AdminWorkspace) {
   if (wsKey === 'companies') renderPendingCompaniesTable();
   // โหลดข้อมูลรุ่นแยกจาก overview (ถ้า overview ล้ม หน้านี้ยังทำงาน/แสดง error ได้)
   if (wsKey === 'unlock' && window.loadCohorts) window.loadCohorts();
+  // ประกาศสหกิจศึกษา (admin_coop_postings.js)
+  if (wsKey === 'coopjobs' && window.loadCoopPostings) window.loadCoopPostings();
   if (wsKey === 'checklist') {
     if (typeof (window as any).hasUnsavedChecklistChanges === 'function' && (window as any).hasUnsavedChecklistChanges()) {
       return;
@@ -2406,6 +2462,7 @@ window.saveAcademicConfig = async function() {
 // =========================================================================
 let cohortsData: any[] = [];
 let selectedCohortId: number | null = null;
+let cohortsCurrentAcademicYear = 0; // ปีการศึกษาปัจจุบันตามเวลาไทย (จากเซิร์ฟเวอร์) ใช้เป็นค่าเริ่มต้นตอนปิดรุ่น
 const expandedCohortMajors = new Set<string>();
 const selectedBatchMajors = new Set<string>();
 
@@ -2461,6 +2518,7 @@ window.loadCohorts = async function() {
       return;
     }
     cohortsData = data.cohorts || [];
+    cohortsCurrentAcademicYear = Number(data.currentAcademicYear) || 0;
     if (!selectedCohortId || !cohortsData.some(c => c.id === selectedCohortId)) {
       const firstActive = cohortsData.find(c => c.status === 'ACTIVE');
       selectedCohortId = (firstActive || cohortsData[0] || {}).id || null;
@@ -2488,7 +2546,10 @@ function renderCohortWorkspace() {
   if (!tabsEl || !majorsEl) return;
 
   const active = cohortsData.filter(c => c.status === 'ACTIVE');
-  const archived = cohortsData.filter(c => c.status === 'ARCHIVED');
+  // ประวัติ: เรียงปีการศึกษาที่จบกระบวนการล่าสุดก่อน แล้วตามรหัสรุ่น
+  const archived = cohortsData
+    .filter(c => c.status === 'ARCHIVED')
+    .sort((a, b) => (Number(b.archivedAcademicYear) || 0) - (Number(a.archivedAcademicYear) || 0) || Number(b.code) - Number(a.code));
   const cohort = getSelectedCohort();
   const isArchived = cohort?.status === 'ARCHIVED';
 
@@ -2502,7 +2563,7 @@ function renderCohortWorkspace() {
 
   if (archivedEl) {
     archivedEl.innerHTML = `<option value="">${archived.length ? `ประวัติรุ่นที่ปิดแล้ว (${archived.length})...` : 'ยังไม่มีรุ่นที่ปิด'}</option>` +
-      archived.map(c => `<option value="${c.id}">รหัส ${escapeHtmlText(c.code)} (ปิดแล้ว)</option>`).join('');
+      archived.map(c => `<option value="${c.id}">${escapeHtmlText(cohortHistoryLabel(c))}</option>`).join('');
     archivedEl.value = isArchived ? String(cohort.id) : '';
   }
 
@@ -2523,8 +2584,14 @@ function renderCohortWorkspace() {
   }
 
   const archivedBanner = isArchived
-    ? `<div style="padding:10px 14px; background:#F1F5F9; border:1px solid #CBD5E1; border-radius:10px; font-size:12.5px; color:#334155;">
-        📦 รุ่น ${escapeHtmlText(cohort.code)} ถูกปิดเมื่อ ${cohort.archivedAt ? new Date(cohort.archivedAt).toLocaleDateString('th-TH') : '-'}${cohort.archivedBy ? ` โดย ${escapeHtmlText(cohort.archivedBy)}` : ''} — แสดงแบบอ่านอย่างเดียว
+    ? `<div style="padding:10px 14px; background:#F1F5F9; border:1px solid #CBD5E1; border-radius:10px; font-size:12.5px; color:#334155; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="flex:1; min-width:220px;">
+          📦 <strong>${escapeHtmlText(cohortHistoryLabel(cohort))}</strong>
+          — ปิดเมื่อ ${cohort.archivedAt ? new Date(cohort.archivedAt).toLocaleDateString('th-TH') : '-'}${cohort.archivedBy ? ` โดย ${escapeHtmlText(cohort.archivedBy)}` : ''} · แสดงแบบอ่านอย่างเดียว
+        </span>
+        <button type="button" onclick="window.openCohortArchiveModal(${cohort.id}, 'EDIT_YEAR')" style="background:#FFFFFF; border:1px solid #CBD5E1; color:#4338CA; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+          <span class="material-icons" style="font-size:15px;">edit_calendar</span> แก้ปีการศึกษา
+        </button>
       </div>`
     : '';
 
@@ -2961,31 +3028,145 @@ window.createCohort = async function() {
   }
 };
 
-window.archiveCohort = async function(id: number) {
+// ===== ปิดรุ่น / เก็บเข้าประวัติ: หน้าต่างเลือก "ปีการศึกษาที่จบกระบวนการ" =====
+// ใช้หน้าต่างเดียวกัน 2 แบบ: ARCHIVE = ปิดรุ่น | EDIT_YEAR = แก้ปีการศึกษาของรุ่นที่ปิดแล้ว (กรณีเลือกผิด)
+let cohortArchiveTarget: { id: number; mode: 'ARCHIVE' | 'EDIT_YEAR' } | null = null;
+
+/** ชื่อรุ่นในประวัติ เช่น "ปีการศึกษา 2569 · รุ่น 67" */
+function cohortHistoryLabel(c: any) {
+  return c.archivedAcademicYear ? `ปีการศึกษา ${c.archivedAcademicYear} · รุ่น ${c.code}` : `รุ่น ${c.code} (ปิดแล้ว)`;
+}
+
+function cohortCurrentAcademicYear() {
+  if (cohortsCurrentAcademicYear) return cohortsCurrentAcademicYear;
+  const now = new Date();
+  const beYear = now.getFullYear() + 543;
+  return now.getMonth() + 1 < 6 ? beYear - 1 : beYear;
+}
+
+/** ตัวเลือกปีการศึกษา: ปีการศึกษาถัดไป ย้อนลงไปถึงปีที่รุ่นเข้าศึกษา (ไม่เกิน 5 ปี) — ช่วงเดียวกับที่เซิร์ฟเวอร์ตรวจ */
+function cohortAcademicYearChoices(code: string, keep?: string) {
+  const current = cohortCurrentAcademicYear();
+  const min = Math.max(2500 + Number(code), current - 5);
+  const years: string[] = [];
+  for (let y = current + 1; y >= min; y--) years.push(String(y));
+  if (keep && !years.includes(keep)) years.push(keep);
+  return years;
+}
+
+window.openCohortArchiveModal = async function(id: number, mode: 'ARCHIVE' | 'EDIT_YEAR' = 'ARCHIVE') {
   const cohort = cohortsData.find(c => c.id === id);
-  if (!cohort) return;
-  const preview = await cohortApi(`/api/admin/super-admin/cohorts/${id}/archive`, 'POST', { dryRun: true });
-  if (!preview.success) return;
-  let msg = `ยืนยันปิดรุ่น ${cohort.code} และเก็บเข้าประวัติหรือไม่?\n\nนิสิตในรุ่น: ${preview.totalStudents} คน`;
-  if (preview.pendingCount > 0) {
-    const names = preview.pendingStudents.slice(0, 10).map(s => `• ${s.studentCode} ${s.nameTh}`).join('\n');
-    msg += `\n\n⚠️ ยังไม่ได้หนังสือส่งตัว ${preview.pendingCount} คน — จะถูกตั้งเป็น "ตกค้าง (RETEST)" อัตโนมัติ\n` +
-      `(ยื่นรอบออกฝึกของรุ่นถัดไปได้)\n${names}${preview.pendingCount > 10 ? '\n...' : ''}`;
+  const modal = document.getElementById('cohort-archive-modal');
+  const select = document.getElementById('cohort-archive-year') as HTMLSelectElement | null;
+  if (!cohort || !modal || !select) return;
+  const isEdit = mode === 'EDIT_YEAR';
+
+  let studentsHtml = '';
+  if (!isEdit) {
+    const preview = await cohortApi(`/api/admin/super-admin/cohorts/${id}/archive`, 'POST', { dryRun: true });
+    if (!preview.success) return;
+    const pending = preview.pendingStudents || [];
+    studentsHtml = `
+      <div style="font-size:12.5px; color:#334155;">นิสิตในรุ่น: <strong>${preview.totalStudents}</strong> คน</div>
+      ${preview.pendingCount > 0 ? `
+        <div style="margin-top:8px; padding:10px 12px; background:#FFFBEB; border:1px solid #FCD34D; border-radius:10px; font-size:12px; color:#92400E;">
+          <div style="font-weight:700;">⚠️ ยังไม่ได้หนังสือส่งตัว ${preview.pendingCount} คน — จะถูกตั้งเป็น "ตกค้าง (RETEST)" อัตโนมัติ</div>
+          <div style="margin:2px 0 6px;">(ยื่นรอบออกฝึกของรุ่นถัดไปได้ · ถ้ากด "เปิดใช้งานรุ่นนี้อีกครั้ง" ภายหลัง ระบบคืนสถานะปกติให้)</div>
+          <div style="max-height:140px; overflow-y:auto; line-height:1.6;">
+            ${pending.slice(0, 10).map(s => `• ${escapeHtmlText(s.studentCode)} ${escapeHtmlText(s.nameTh)}`).join('<br>')}
+            ${preview.pendingCount > 10 ? `<br>... และอีก ${preview.pendingCount - 10} คน` : ''}
+          </div>
+        </div>` : `
+        <div style="margin-top:8px; padding:8px 12px; background:#F0FDF4; border:1px solid #86EFAC; border-radius:10px; font-size:12px; color:#166534;">
+          ✓ นิสิตทุกคนในรุ่นได้หนังสือส่งตัวแล้ว
+        </div>`}`;
   }
-  if (!confirm(msg)) return;
-  const data = await cohortApi(`/api/admin/super-admin/cohorts/${id}/archive`, 'POST', {});
-  if (data.success) {
-    alert('✅ ' + data.message);
-    selectedCohortId = null;
-    await window.loadCohorts();
-    if (window.loadSuperAdminOverview) window.loadSuperAdminOverview();
+
+  cohortArchiveTarget = { id, mode };
+  const titleEl = document.getElementById('cohort-archive-title');
+  const subEl = document.getElementById('cohort-archive-subtitle');
+  const studentsEl = document.getElementById('cohort-archive-students');
+  const btn = document.getElementById('cohort-archive-confirm') as HTMLButtonElement | null;
+  if (titleEl) titleEl.textContent = isEdit ? `แก้ปีการศึกษาของรุ่น ${cohort.code}` : `ปิดรุ่น ${cohort.code} / เก็บเข้าประวัติ`;
+  if (subEl) {
+    subEl.textContent = isEdit
+      ? 'ใช้แก้กรณีเลือกปีการศึกษาผิดตอนปิดรุ่น — ไม่กระทบสถานะของนิสิต'
+      : 'รุ่นนี้จะย้ายไปอยู่ใน "ประวัติรุ่นที่ปิดแล้ว" (อ่านอย่างเดียว) และใช้ปีการศึกษาด้านล่างในการออกรายงาน / Export';
   }
+  const selected = isEdit && cohort.archivedAcademicYear ? String(cohort.archivedAcademicYear) : String(cohortCurrentAcademicYear());
+  select.innerHTML = cohortAcademicYearChoices(cohort.code, selected)
+    .map(y => `<option value="${y}" ${y === selected ? 'selected' : ''}>${y}${Number(y) === cohortCurrentAcademicYear() ? ' (ปีการศึกษาปัจจุบัน)' : ''}</option>`)
+    .join('');
+  if (studentsEl) studentsEl.innerHTML = studentsHtml;
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = isEdit ? 'บันทึก' : 'ยืนยันปิดรุ่น';
+  }
+  window.updateCohortArchivePreview();
+  modal.style.display = 'flex';
+};
+
+window.updateCohortArchivePreview = function() {
+  const hint = document.getElementById('cohort-archive-year-hint');
+  const cohort = cohortArchiveTarget ? cohortsData.find(c => c.id === cohortArchiveTarget!.id) : null;
+  const year = (document.getElementById('cohort-archive-year') as HTMLSelectElement | null)?.value || '';
+  if (!hint || !cohort) return;
+  hint.innerHTML = `จะแสดงในประวัติเป็น: <strong style="color:#1E1B4B;">${escapeHtmlText(cohortHistoryLabel({ code: cohort.code, archivedAcademicYear: year }))}</strong>`;
+};
+
+window.closeCohortArchiveModal = function() {
+  const modal = document.getElementById('cohort-archive-modal');
+  if (modal) modal.style.display = 'none';
+  cohortArchiveTarget = null;
+};
+
+window.submitCohortArchive = async function() {
+  if (!cohortArchiveTarget) return;
+  const { id, mode } = cohortArchiveTarget;
+  const academicYear = (document.getElementById('cohort-archive-year') as HTMLSelectElement | null)?.value || '';
+  const btn = document.getElementById('cohort-archive-confirm') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+  const data = mode === 'EDIT_YEAR'
+    ? await cohortApi(`/api/admin/super-admin/cohorts/${id}/academic-year`, 'PATCH', { academicYear })
+    : await cohortApi(`/api/admin/super-admin/cohorts/${id}/archive`, 'POST', { academicYear });
+  if (btn) btn.disabled = false;
+  if (!data.success) return;
+  window.closeCohortArchiveModal();
+  alert('✅ ' + data.message);
+  if (mode === 'ARCHIVE') selectedCohortId = null;
+  await window.loadCohorts();
+  refreshYearFilterOptions();
+  if (mode === 'ARCHIVE' && window.loadSuperAdminOverview) window.loadSuperAdminOverview();
+};
+
+window.archiveCohort = function(id: number) {
+  return window.openCohortArchiveModal(id, 'ARCHIVE');
 };
 
 window.restoreCohort = async function(id: number) {
-  if (!confirm('เปิดใช้งานรุ่นนี้อีกครั้งหรือไม่?\n\n* สถานะ "ตกค้าง (RETEST)" ของนิสิตที่ตั้งไว้ตอนปิดรุ่นจะไม่ถูกย้อนกลับอัตโนมัติ')) return;
+  const cohort = cohortsData.find(c => c.id === id);
+  const preview = await cohortApi(`/api/admin/super-admin/cohorts/${id}/restore`, 'POST', { dryRun: true });
+  if (!preview.success) return;
+  const lines = [`เปิดใช้งานรุ่น ${cohort ? cohort.code : ''} อีกครั้งหรือไม่?`, ''];
+  if (preview.revertCount > 0) {
+    lines.push(`✓ นิสิต ${preview.revertCount} คนที่ระบบตั้งเป็น "ตกค้าง (RETEST)" ตอนปิดรุ่น จะกลับเป็นสถานะปกติ`);
+  } else if (preview.recordedCount === 0) {
+    lines.push('• ไม่มีรายชื่อนิสิตที่ระบบตั้งเป็นตกค้างตอนปิดรุ่น (รุ่นที่ปิดก่อนมีระบบจำรายชื่อ ต้องแก้สถานะตกค้างเป็นรายคน)');
+  }
+  if (preview.movedOnCount > 0) {
+    const names = (preview.movedOnStudents || []).slice(0, 10).map(s => `   - ${s.studentCode} ${s.nameTh}`).join('\n');
+    lines.push(`• ${preview.movedOnCount} คนยังเป็น "ตกค้าง" ต่อ เพราะยื่นรอบออกฝึกของรุ่นอื่นไปแล้ว:\n${names}`);
+  }
+  lines.push('• ปีการศึกษาที่จบกระบวนการจะถูกล้าง (เลือกใหม่ตอนปิดรุ่นครั้งถัดไป)');
+  lines.push('• รอบออกฝึกและข้อมูลนิสิต (CV / ชั่วโมงอบรม / สถานประกอบการ / หนังสือ) ไม่ได้ถูกแก้ระหว่างปิดรุ่น จึงอยู่ครบเหมือนเดิม');
+  if (!confirm(lines.join('\n'))) return;
   const data = await cohortApi(`/api/admin/super-admin/cohorts/${id}/restore`, 'POST', {});
-  if (data.success) await window.loadCohorts();
+  if (data.success) {
+    alert('✅ ' + data.message);
+    await window.loadCohorts();
+    refreshYearFilterOptions();
+    if (window.loadSuperAdminOverview) window.loadSuperAdminOverview();
+  }
 };
 
 // =========================================================================
@@ -6384,6 +6565,19 @@ window.printOfficialLetter = function() {
 const selectedCoopStudentIds = new Set<number>();
 let currentFilteredCoopList: any[] = [];
 
+/**
+ * รายชื่อสำหรับ Co-op 01 = นิสิตฝึกงาน (คิวเอกสาร) + นิสิตสหกิจ (ใบสมัครที่ยังไม่จบ)
+ * นิสิตที่มีใบสมัครสหกิจ ใช้แถวสหกิจแทนแถวฝึกงาน (เลือกได้ทางเดียว)
+ */
+function coopExportSource(): any[] {
+  const coopRows = (superAdminData.coopExportRows || []) as any[];
+  const coopIds = new Set(coopRows.map(r => r.studentId));
+  const internRows = (superAdminData.documentQueue || [])
+    .filter((s: any) => !coopIds.has(s.studentId))
+    .map((s: any) => ({ ...s, programType: 'INTERNSHIP' }));
+  return [...internRows, ...coopRows];
+}
+
 window.filterCoopTable = function() {
   renderCoop01PreviewTable();
 };
@@ -6392,10 +6586,12 @@ window.clearCoopFilters = function() {
   const searchInput = document.getElementById('coop-search-input') as HTMLInputElement | null;
   const majorSelect = document.getElementById('coop-major-filter') as HTMLSelectElement | null;
   const statusSelect = document.getElementById('coop-status-filter') as HTMLSelectElement | null;
+  const typeSelect = document.getElementById('coop-type-filter') as HTMLSelectElement | null;
 
   if (searchInput) searchInput.value = '';
   if (majorSelect) majorSelect.value = 'ALL';
   if (statusSelect) statusSelect.value = 'DISPATCHED';
+  if (typeSelect) typeSelect.value = 'ALL';
   ['coop-cohort-filter', 'coop-window-filter'].forEach(id => {
     const el = document.getElementById(id) as HTMLSelectElement | null;
     if (el) el.value = 'ALL';
@@ -6453,9 +6649,10 @@ function updateCoopSelectionUi() {
 function renderCoop01PreviewTable() {
   const tbody = document.getElementById('coop-preview-tbody');
   if (!tbody) return;
-  const rawList = superAdminData.documentQueue || [];
+  const rawList = coopExportSource();
 
   const searchVal = (document.getElementById('coop-search-input') as HTMLInputElement | null)?.value?.trim().toLowerCase() || '';
+  const typeVal = (document.getElementById('coop-type-filter') as HTMLSelectElement | null)?.value || 'ALL';
   const majorVal = (document.getElementById('coop-major-filter') as HTMLSelectElement | null)?.value || 'ALL';
   const statusVal = (document.getElementById('coop-status-filter') as HTMLSelectElement | null)?.value || 'DISPATCHED';
   const coopCohortEl = document.getElementById('coop-cohort-filter') as HTMLSelectElement | null;
@@ -6466,6 +6663,11 @@ function renderCoop01PreviewTable() {
   const coopWindowVal = coopWindowEl?.value || 'ALL';
 
   let list = rawList;
+
+  // กรองตามประเภท: ฝึกงาน / สหกิจศึกษา
+  if (typeVal !== 'ALL') {
+    list = list.filter(s => s.programType === typeVal);
+  }
 
   // กรองตามสถานะส่งตัว
   if (statusVal === 'DISPATCHED') {
@@ -6505,7 +6707,15 @@ function renderCoop01PreviewTable() {
 
   tbody.innerHTML = list.map(s => {
     const isSelected = selectedCoopStudentIds.has(s.studentId);
-    const statusBadge = s.dispatchLetterIssued
+    const isCoop = s.programType === 'COOP';
+    const typeBadge = isCoop
+      ? '<span style="display:inline-block; margin-left:6px; background:#EDE9FE; color:#5B21B6; padding:1px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">สหกิจ</span>'
+      : '';
+    const statusBadge = isCoop
+      ? (s.dispatchLetterIssued
+        ? `<span style="background:#DCFCE7; color:#166534; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;">✓ สหกิจ: ออกหนังสือส่งตัวแล้ว</span>`
+        : `<span style="background:${s.coopStatus === 'ACCEPTED' ? '#DBEAFE' : '#F1F5F9'}; color:${s.coopStatus === 'ACCEPTED' ? '#1E40AF' : '#64748B'}; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;">สหกิจ: ${escapeHtmlText(s.coopStatus === 'ACCEPTED' ? s.coopDocStepLabel : s.coopStatusLabel)}</span>`)
+      : s.dispatchLetterIssued
       ? `<span style="background:#DCFCE7; color:#166534; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;">✓ ออกหนังสือส่งตัวแล้ว (${s.dispatchLetterDocNo || '-'})</span>`
       : s.companyResponseStatus === 'ACCEPTED'
       ? `<span style="background:#DBEAFE; color:#1E40AF; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;">✓ บริษัทตอบรับแล้ว</span>`
@@ -6517,7 +6727,7 @@ function renderCoop01PreviewTable() {
         <td>${escapeHtmlText(s.nameTh)}</td>
         <td>${escapeHtmlText(s.major)}</td>
         <td style="font-weight:700;">${s.gpa ?? '-'}</td>
-        <td style="font-weight:700; color:#1E293B;">${escapeHtmlText(s.companyName)}</td>
+        <td style="font-weight:700; color:#1E293B;">${escapeHtmlText(s.companyName)}${typeBadge}</td>
         <td>${escapeHtmlText(s.position)}</td>
         <td>
           <div style="font-size:12px;">ที่ปรึกษา: ${escapeHtmlText(s.advisorName)}</div>
@@ -6550,7 +6760,7 @@ window.openCoopExportModal = function(preferredScope?: string) {
 
   const countSelected = selectedCoopStudentIds.size;
   const countFiltered = currentFilteredCoopList.length;
-  const countAllDispatched = (superAdminData.documentQueue || []).filter(s => s.dispatchLetterIssued).length;
+  const countAllDispatched = coopExportSource().filter(s => s.dispatchLetterIssued).length;
 
   const countSelectedEl = document.getElementById('coop-export-count-selected');
   const countFilteredEl = document.getElementById('coop-export-count-filtered');
@@ -6606,7 +6816,7 @@ window.updateCoopExportSummary = function() {
       labelAll.style.borderColor = '#10B981';
       labelAll.style.background = '#ECFDF5';
     }
-    count = (superAdminData.documentQueue || []).filter(s => s.dispatchLetterIssued).length;
+    count = coopExportSource().filter(s => s.dispatchLetterIssued).length;
   } else {
     if (labelFiltered) {
       labelFiltered.style.borderColor = '#10B981';
@@ -6623,7 +6833,7 @@ window.updateCoopExportSummary = function() {
 window.confirmCoopExport = function() {
   const scopeRadio = document.querySelector('input[name="coop-export-scope"]:checked') as HTMLInputElement | null;
   const scope = scopeRadio ? scopeRadio.value : 'filtered';
-  const allList = superAdminData.documentQueue || [];
+  const allList = coopExportSource();
 
   let exportList: any[] = [];
   if (scope === 'selected') {
@@ -6663,6 +6873,7 @@ function executeCoopCsvDownload(list: any[], scopeName: string) {
     'เลขที่หนังสือขอความอนุเคราะห์ (Request_Doc_No)',
     'เลขที่หนังสือส่งตัว (Dispatch_Doc_No)',
     'สถานะส่งต่อ Co-op 01',
+    'ประเภท (Program_Type)',
   ];
 
   const rows = list.map(s => [
@@ -6684,6 +6895,7 @@ function executeCoopCsvDownload(list: any[], scopeName: string) {
     s.requestLetterDocNo || '-',
     s.dispatchLetterDocNo || '-',
     s.dispatchLetterIssued ? 'พร้อมส่งต่อ Co-op 01' : 'รอดำเนินการ',
+    s.programType === 'COOP' ? 'สหกิจศึกษา' : 'ฝึกงาน',
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
 
   const csvContent = '\uFEFF' + [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
@@ -6697,7 +6909,7 @@ function executeCoopCsvDownload(list: any[], scopeName: string) {
 }
 
 window.downloadCoop01Csv = function(mode) {
-  let list = superAdminData.documentQueue || [];
+  let list = coopExportSource();
   if (mode === 'APPROVED_ONLY') {
     const approved = list.filter(s => s.companyResponseStatus === 'ACCEPTED' || s.dispatchLetterIssued);
     if (approved.length > 0) list = approved;

@@ -4,6 +4,8 @@ import React from "react";
 import PageShell from "./PageShell";
 import FloatingNotification from "../FloatingNotification";
 import { ICT_MAJORS, majorLabel, majorOptionsHtml, ictMajorsDataScript } from "../../utils/majors";
+import { jobPositionsDataScript } from "../../utils/jobPositions";
+import { thaiProvincesDataScript } from "../../utils/thaiProvinces";
 
 const PAGE_TITLE = "Super Admin (พี่จอม) & อาจารย์ประจำวิชา - คณะ ICT ม.พะเยา";
 const PAGE_STYLES: string[] = [`
@@ -731,10 +733,13 @@ const PAGE_STYLES: string[] = [`
 `];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
-  "../api/admin_dashboard.js"
+  "../api/admin_dashboard.js",
+  "../api/admin_coop_postings.js"
 ];
 const PAGE_BODY_HTML = `
 ${ictMajorsDataScript()}
+${jobPositionsDataScript()}
+${thaiProvincesDataScript()}
   <div id="header-placeholder"></div>
   <div id="admin-dashboard">
     <div class="admin-layout" id="admin-layout">
@@ -766,6 +771,11 @@ ${ictMajorsDataScript()}
             <span class="material-icons" aria-hidden="true">business</span>
             <span>ฐานข้อมูลบริษัท</span>
             <span id="badge-pending-companies" class="admin-nav-badge">0 รอยืนยัน</span>
+          </button>
+          <button type="button" id="ws-tab-coopjobs" aria-current="false" onclick="switchAdminWorkspace('coopjobs')">
+            <span class="material-icons" aria-hidden="true">campaign</span>
+            <span>ประกาศสหกิจศึกษา</span>
+            <span id="badge-coop-postings" class="admin-nav-badge">…</span>
           </button>
           <button type="button" id="ws-tab-documents" aria-current="false" onclick="switchAdminWorkspace('documents')">
             <span class="material-icons" aria-hidden="true">description</span>
@@ -1638,6 +1648,111 @@ ${majorOptionsHtml("                    ")}
     </div>
 
     <!-- =====================================================================
+         WORKSPACE 4.1: ประกาศรับนิสิตสหกิจศึกษา (เจ้าหน้าที่เพิ่ม / แก้ / ปิดรับ / นำเข้า Excel) — logic: admin_coop_postings.js
+         ===================================================================== -->
+    <div id="workspace-coopjobs" style="display:none;">
+      <section class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <span class="material-icons header-icon">campaign</span>
+            <div style="min-width:0;">
+              <h2 class="card-title" style="margin:0;">ประกาศรับนิสิตสหกิจศึกษา</h2>
+              <p style="margin:2px 0 0 0; font-size:12px; color:#E0E7FF;">นิสิตทุกคนเห็นตารางนี้ในแท็บ "สหกิจศึกษา" (ไม่แสดงข้อมูลผู้ติดต่อ HR) · 1 ประกาศ = 1 บริษัท · รอบ/ช่วงฝึก/วันปิดยื่น ตามรอบออกฝึกของแต่ละสาขา · GPAX ขั้นต่ำ 2.00</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button type="button" onclick="window.openCoopImportModal()" style="background:#10B981; color:white; border:none; padding:8px 16px; border-radius:10px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;">
+              <span class="material-icons" style="font-size:16px;">upload_file</span> นำเข้าประกาศ (Excel)
+            </button>
+            <button type="button" onclick="window.openCoopPostingModal()" style="background:#FFFFFF; color:#1E1B4B; border:none; padding:8px 16px; border-radius:10px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;">
+              <span class="material-icons" style="font-size:16px;">add</span> เพิ่มประกาศ
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+            <input type="search" id="coop-posting-search" class="input-field" oninput="window.renderCoopPostings()" placeholder="ค้นหาบริษัท ตำแหน่ง หรือจังหวัด..." aria-label="ค้นหาประกาศสหกิจ" style="flex:1 1 240px; margin:0; font-size:13px;" />
+            <select id="coop-posting-status" class="input-field" onchange="window.renderCoopPostings()" aria-label="กรองสถานะ" style="width:auto; margin:0; font-size:13px;">
+              <option value="">ทุกสถานะ</option>
+              <option value="OPEN">เปิดรับสมัคร</option>
+              <option value="CLOSED">ปิดรับแล้ว</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:680px;">
+              <thead>
+                <tr>
+                  <th style="width:34%;">บริษัท</th>
+                  <th style="width:38%;">ตำแหน่ง (จำนวนที่รับ)</th>
+                  <th style="width:14%;" class="text-center">สถานะ</th>
+                  <th style="width:14%;" class="text-center">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="coop-postings-tbody">
+                <tr><td colspan="4" class="text-center py-6 text-gray-400">กำลังโหลดประกาศ...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ใบสมัครสหกิจของนิสิต: ดาวน์โหลด PDF รวม + เปลี่ยนสถานะ (ทีละใบ หรือเลือกหลายใบ) -->
+      <section class="card" id="coop-applications-card">
+        <div class="card-header" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span class="material-icons header-icon">assignment_ind</span>
+          <div style="min-width:0;">
+            <h2 class="card-title" style="margin:0;">ใบสมัครสหกิจศึกษา</h2>
+            <p style="margin:2px 0 0 0; font-size:12px; color:#E0E7FF;">ดาวน์โหลด PDF รวม (Resume → Transcript → Portfolio) ส่งให้บริษัท แล้วเปลี่ยนสถานะเพื่อแจ้งนิสิต · ผ่านแล้วกด "เอกสารหลังผ่าน" เพื่อเลื่อนขั้นหนังสือ/แนบไฟล์ · ไม่ผ่าน/ยกเลิก = เก็บเข้าประวัติ นิสิตสมัครที่อื่นหรือไปฝึกงานได้</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+            <input type="search" id="coop-app-search" class="input-field" oninput="window.renderCoopApplications()" placeholder="ค้นหารหัส / ชื่อนิสิต / บริษัท..." aria-label="ค้นหาใบสมัคร" style="flex:1 1 220px; margin:0; font-size:13px;" />
+            <select id="coop-app-status" class="input-field" onchange="window.renderCoopApplications()" aria-label="กรองสถานะใบสมัคร" style="width:auto; margin:0; font-size:13px;">
+              <option value="ACTIVE">ยังไม่จบ (ทั้งหมดที่ต้องดำเนินการ)</option>
+              <option value="SUBMITTED">ส่งใบสมัครแล้ว (รอพิจารณา)</option>
+              <option value="SENT_TO_COMPANY">ส่งเอกสารให้บริษัทแล้ว</option>
+              <option value="ACCEPTED">ผ่านการคัดเลือก</option>
+              <option value="REJECTED">ไม่ผ่าน (ประวัติ)</option>
+              <option value="CANCELLED">ยกเลิก (ประวัติ)</option>
+              <option value="">ทุกสถานะ</option>
+            </select>
+            <select id="coop-app-posting" class="input-field" onchange="window.renderCoopApplications()" aria-label="กรองบริษัท" style="width:auto; max-width:260px; margin:0; font-size:13px;">
+              <option value="">ทุกบริษัท</option>
+            </select>
+          </div>
+          <div id="coop-app-bulk" style="display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 12px; margin-bottom:10px; background:#EEF2FF; border:1px solid #C7D2FE; border-radius:10px; font-size:12.5px; color:#1E1B4B;">
+            <strong id="coop-app-bulk-count">0</strong> ใบที่เลือก:
+            <button type="button" onclick="window.bulkCoopAppStatus('SENT_TO_COMPANY')" style="background:#0EA5E9; color:#fff; border:none; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer;">ส่งเอกสารให้บริษัทแล้ว</button>
+            <button type="button" onclick="window.bulkCoopAppStatus('ACCEPTED')" style="background:#16A34A; color:#fff; border:none; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer;">ผ่านการคัดเลือก</button>
+            <button type="button" onclick="window.bulkCoopAppStatus('REJECTED')" style="background:#DC2626; color:#fff; border:none; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer;">ไม่ผ่าน</button>
+            <button type="button" onclick="window.bulkCoopAppStatus('CANCELLED')" style="background:#475569; color:#fff; border:none; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer;">ยกเลิกให้นิสิต</button>
+            <button type="button" onclick="window.clearCoopAppSelection()" style="background:none; border:none; color:#4338CA; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline;">ยกเลิกการเลือก</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:980px;">
+              <thead>
+                <tr>
+                  <th style="width:4%;" class="text-center"><input type="checkbox" id="coop-app-select-all" onchange="window.toggleAllCoopApps(this.checked)" aria-label="เลือกทั้งหมด" style="width:16px; height:16px; cursor:pointer;" /></th>
+                  <th style="width:20%;">นิสิต</th>
+                  <th style="width:7%;" class="text-center">GPAX</th>
+                  <th style="width:21%;">บริษัท / ตำแหน่ง</th>
+                  <th style="width:8%;">รอบ</th>
+                  <th style="width:9%;">วันที่สมัคร</th>
+                  <th style="width:14%;" class="text-center">สถานะ</th>
+                  <th style="width:17%;">เอกสาร / จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="coop-apps-tbody">
+                <tr><td colspan="8" class="text-center py-6 text-gray-400">กำลังโหลดใบสมัคร...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- =====================================================================
          WORKSPACE 5: ระบบออกเอกสารราชการอัตโนมัติ (หนังสือขอความอนุเคราะห์ + แบบฟอร์มใบตอบรับ & หนังสือส่งตัว)
          ===================================================================== -->
     <div id="workspace-documents" style="display:none;">
@@ -1818,6 +1933,12 @@ ${majorOptionsHtml("              ")}
 
             <select id="coop-window-filter" class="input-field" onchange="window.filterCoopTable ? window.filterCoopTable() : null" style="width:auto; min-width:130px; font-size:12.5px; height:36px; padding:4px 10px; border-radius:8px; cursor:pointer; background:#FFFFFF;">
               <option value="ALL">ทุกรอบออกฝึก</option>
+            </select>
+
+            <select id="coop-type-filter" class="input-field" onchange="window.filterCoopTable ? window.filterCoopTable() : null" aria-label="ประเภท ฝึกงาน หรือ สหกิจศึกษา" style="width:auto; min-width:140px; font-size:12.5px; height:36px; padding:4px 10px; border-radius:8px; cursor:pointer; background:#FFFFFF;">
+              <option value="ALL">ฝึกงาน + สหกิจ</option>
+              <option value="INTERNSHIP">เฉพาะฝึกงาน</option>
+              <option value="COOP">เฉพาะสหกิจศึกษา</option>
             </select>
 
             <select id="coop-status-filter" class="input-field" onchange="window.filterCoopTable ? window.filterCoopTable() : null" style="width:auto; min-width:220px; font-size:12.5px; height:36px; padding:4px 10px; border-radius:8px; cursor:pointer; background:#FFFFFF; font-weight:600; color:#1E40AF;">
@@ -2334,6 +2455,154 @@ ${majorOptionsHtml("              ")}
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCohortBulkModal()">ยกเลิก</button>
           <button type="button" id="cohort-bulk-confirm" onclick="window.submitCohortBulk()" style="color:white; border:none; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px;">ยืนยัน</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่าง เพิ่ม / แก้ไข ประกาศสหกิจศึกษา — logic: admin_coop_postings.js -->
+    <div id="coop-posting-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+      <div style="background:white; border-radius:20px; padding:22px 26px; width:780px; max-width:94%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons" style="font-size:24px; color:#4338CA;">campaign</span>
+            <h3 id="cp-title" style="font-size:17px; font-weight:700; margin:0; color:#1E1B4B;">เพิ่มประกาศสหกิจศึกษา</h3>
+          </div>
+          <button type="button" onclick="window.closeCoopPostingModal()" aria-label="ปิดหน้าต่าง" style="background:none; border:none; color:#64748B; cursor:pointer; display:flex; align-items:center;">
+            <span class="material-icons" style="font-size:20px;">close</span>
+          </button>
+        </div>
+        <input type="hidden" id="cp-master-id" />
+        <datalist id="cp-master-list"></datalist>
+        <style>
+          #coop-posting-modal .cp-combo-list { display:none; position:absolute; left:0; right:0; top:calc(100% + 2px); z-index:30; max-height:240px; overflow-y:auto; background:#FFFFFF; border:1px solid #CBD5E1; border-radius:10px; box-shadow:0 10px 24px rgba(15,23,42,0.15); }
+          #coop-posting-modal .cp-combo-group { padding:6px 12px 3px; font-size:11px; font-weight:800; color:#64748B; background:#F8FAFC; position:sticky; top:0; }
+          #coop-posting-modal .cp-combo-option { padding:7px 14px; font-size:12.5px; cursor:pointer; color:#1E293B; }
+          #coop-posting-modal .cp-combo-option.is-active, #coop-posting-modal .cp-combo-option:hover { background:#EEF2FF; }
+          #coop-posting-modal .cp-combo-option.is-selected { font-weight:700; color:#4338CA; }
+          #coop-posting-modal .cp-combo-option.is-custom { color:#4338CA; border-top:1px solid #E2E8F0; font-weight:600; }
+          #coop-posting-modal .cp-combo-empty { padding:10px 14px; font-size:12px; color:#94A3B8; }
+          #coop-posting-modal .cp-combo input.is-invalid { border-color:#F87171 !important; background:#FEF2F2; }
+        </style>
+
+        <div class="cp-section-title" style="font-size:13px; font-weight:800; color:#334155; margin:4px 0 8px;">1. บริษัท</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px 12px;">
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">ชื่อบริษัท (ไทย) <span style="color:#DC2626;">*</span>
+            <input id="cp-company" class="input-field" list="cp-master-list" onchange="window.onCoopCompanyPicked()" placeholder="พิมพ์ค้นหาจากฐานข้อมูลบริษัท หรือพิมพ์ชื่อใหม่" style="margin:4px 0 0; width:100%;" />
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">ชื่อบริษัท (อังกฤษ)
+            <input id="cp-company-en" class="input-field" style="margin:4px 0 0; width:100%;" />
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">จังหวัด
+            <div class="cp-combo" style="position:relative; margin-top:4px;">
+              <input id="cp-province" class="input-field" autocomplete="off" placeholder="พิมพ์ค้นหา หรือเลือกจากรายการ" role="combobox" aria-autocomplete="list" aria-controls="cp-province-list" style="margin:0; width:100%; padding-right:30px;" />
+              <span class="material-icons" aria-hidden="true" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); font-size:18px; color:#94A3B8; pointer-events:none;">expand_more</span>
+              <div id="cp-province-list" class="cp-combo-list" role="listbox"></div>
+            </div>
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">เว็บไซต์
+            <input id="cp-website" class="input-field" placeholder="https://" style="margin:4px 0 0; width:100%;" />
+          </label>
+        </div>
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#475569; margin-top:10px;">ที่อยู่ (ไม่ต้องใส่พิกัด)
+          <textarea id="cp-address" class="input-field" rows="2" style="margin:4px 0 0; width:100%;"></textarea>
+        </label>
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#475569; margin-top:10px;">รายละเอียดบริษัท
+          <textarea id="cp-description" class="input-field" rows="2" placeholder="เช่น ประเภทธุรกิจ จำนวนพนักงาน" style="margin:4px 0 0; width:100%;"></textarea>
+        </label>
+
+        <div style="font-size:13px; font-weight:800; color:#334155; margin:16px 0 8px;">2. สวัสดิการและคุณสมบัติ</div>
+        <div style="padding:9px 12px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; font-size:12px; color:#475569; line-height:1.6;">
+          เปิดรับทุกสาขา · GPAX ขั้นต่ำ 2.00 (ต่ำกว่าเกณฑ์ระบบแค่เตือนนิสิต) · <strong>รอบเทอม ช่วงฝึก และวันปิดยื่น ใช้ตามรอบออกฝึกของแต่ละสาขา</strong> (แท็บ "รอบฝึกงาน &amp; ปลดล็อก") — ไม่ต้องตั้งในประกาศ
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:10px 12px; margin-top:10px;">
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">สวัสดิการ / เบี้ยเลี้ยง / ที่พัก
+            <textarea id="cp-benefits" class="input-field" rows="3" style="margin:4px 0 0; width:100%;"></textarea>
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">คุณสมบัติเพิ่มเติม
+            <textarea id="cp-qualifications" class="input-field" rows="3" style="margin:4px 0 0; width:100%;"></textarea>
+          </label>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; margin:16px 0 8px;">
+          <div style="font-size:13px; font-weight:800; color:#334155;">3. ตำแหน่งที่เปิดรับ <span style="color:#DC2626;">*</span></div>
+          <button type="button" onclick="window.addCoopPositionRow()" style="background:#EEF2FF; border:1px dashed #818CF8; color:#4338CA; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+            <span class="material-icons" style="font-size:15px;">add</span> เพิ่มตำแหน่ง
+          </button>
+        </div>
+        <div id="cp-positions" style="display:flex; flex-direction:column; gap:8px;"></div>
+
+        <div style="font-size:13px; font-weight:800; color:#334155; margin:16px 0 8px;">4. ผู้ติดต่อ HR <span style="font-weight:600; color:#B45309; font-size:12px;">🔒 เห็นเฉพาะเจ้าหน้าที่</span></div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px 12px;">
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">ชื่อผู้ติดต่อ
+            <input id="cp-hr-name" class="input-field" style="margin:4px 0 0; width:100%;" />
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">เบอร์โทร
+            <input id="cp-hr-phone" class="input-field" style="margin:4px 0 0; width:100%;" />
+          </label>
+          <label style="font-size:12.5px; font-weight:600; color:#475569;">อีเมล
+            <input id="cp-hr-email" type="email" class="input-field" style="margin:4px 0 0; width:100%;" />
+          </label>
+        </div>
+
+        <div id="cp-error" role="alert" style="display:none; margin-top:14px; padding:9px 12px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; color:#991B1B; font-size:12.5px;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCoopPostingModal()">ยกเลิก</button>
+          <button type="button" id="cp-save" onclick="window.saveCoopPosting()" style="background:#4338CA; color:white; border:none; padding:8px 18px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px;">บันทึกประกาศ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่าง นำเข้าประกาศสหกิจจาก Excel (พรีวิวก่อนบันทึก) — logic: admin_coop_postings.js -->
+    <div id="coop-import-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+      <div style="background:white; border-radius:20px; padding:22px 26px; width:760px; max-width:94%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons" style="font-size:24px; color:#059669;">upload_file</span>
+            <h3 style="font-size:17px; font-weight:700; margin:0; color:#1E1B4B;">นำเข้าประกาศสหกิจศึกษา (Excel / CSV)</h3>
+          </div>
+          <button type="button" onclick="window.closeCoopImportModal()" aria-label="ปิดหน้าต่าง" style="background:none; border:none; color:#64748B; cursor:pointer; display:flex; align-items:center;">
+            <span class="material-icons" style="font-size:20px;">close</span>
+          </button>
+        </div>
+        <ul style="font-size:12.5px; color:#475569; margin:8px 0 12px; padding-left:18px; line-height:1.7;">
+          <li><strong>1 แถว = 1 ตำแหน่ง</strong> · แถวที่ชื่อบริษัทเหมือนกันจะรวมเป็นประกาศเดียว</li>
+          <li>ถ้ามีประกาศของบริษัทนั้นอยู่แล้ว ระบบจะ<strong>เติมข้อมูล/เพิ่มตำแหน่ง</strong>ให้ (ตำแหน่งชื่อเดิมจะอัปเดตจำนวนที่รับ) ไม่ลบของเดิม</li>
+          <li>จังหวัดต้องตรงกับชื่อจังหวัด หรือ "ต่างประเทศ" · ไม่ต้องใส่รอบเทอม/วันที่ (ใช้ตามรอบออกฝึกของแต่ละสาขา)</li>
+        </ul>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <a href="/api/admin/super-admin/coop-postings/import-template" download style="display:inline-flex; align-items:center; gap:4px; font-size:12.5px; font-weight:700; color:#4338CA; text-decoration:none; border:1px solid #C7D2FE; background:#EEF2FF; padding:6px 12px; border-radius:8px;">
+            <span class="material-icons" style="font-size:16px;">download</span> ดาวน์โหลดไฟล์ตัวอย่าง
+          </a>
+          <input type="file" id="coop-import-file" accept=".xlsx,.xls,.csv" onchange="window.previewCoopImport()" style="font-size:12.5px;" />
+        </div>
+        <div id="coop-import-preview" style="margin-top:14px;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCoopImportModal()">ยกเลิก</button>
+          <button type="button" id="coop-import-confirm" onclick="window.confirmCoopImport()" disabled style="background:#059669; color:white; border:none; padding:8px 18px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px; opacity:.5;">บันทึกการนำเข้า</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่าง ปิดรุ่น / เก็บเข้าประวัติ + เลือกปีการศึกษาที่จบกระบวนการ (ใช้ทั้งตอนปิดรุ่น และแก้ปีการศึกษาของรุ่นที่ปิดแล้ว) — เนื้อหาเติมโดย admin_dashboard.js -->
+    <div id="cohort-archive-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+      <div style="background:white; border-radius:20px; padding:22px 26px; width:500px; max-width:92%; max-height:86vh; overflow-y:auto; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons" style="font-size:24px; color:#4338CA;">inventory_2</span>
+            <h3 id="cohort-archive-title" style="font-size:17px; font-weight:700; margin:0; color:#1E1B4B;">ปิดรุ่น / เก็บเข้าประวัติ</h3>
+          </div>
+          <button type="button" onclick="window.closeCohortArchiveModal()" aria-label="ปิดหน้าต่าง" style="background:none; border:none; color:#64748B; cursor:pointer; display:flex; align-items:center;">
+            <span class="material-icons" style="font-size:20px;">close</span>
+          </button>
+        </div>
+        <p id="cohort-archive-subtitle" style="font-size:12.5px; color:#64748B; margin:4px 0 14px;"></p>
+        <label for="cohort-archive-year" style="display:block; font-size:12.5px; font-weight:700; color:#475569; margin-bottom:6px;">ปีการศึกษาที่จบกระบวนการ</label>
+        <select id="cohort-archive-year" class="input-field" onchange="window.updateCohortArchivePreview()" style="width:100%; margin:0; font-size:13px;"></select>
+        <div id="cohort-archive-year-hint" style="font-size:11.5px; color:#64748B; margin-top:6px;"></div>
+        <div id="cohort-archive-students" style="margin-top:14px;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCohortArchiveModal()">ยกเลิก</button>
+          <button type="button" id="cohort-archive-confirm" onclick="window.submitCohortArchive()" style="background:#4338CA; color:white; border:none; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px;">ยืนยันปิดรุ่น</button>
         </div>
       </div>
     </div>
