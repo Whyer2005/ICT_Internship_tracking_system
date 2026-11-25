@@ -441,7 +441,8 @@ function renderStudentTable(students, total, page, totalPages) {
             ` : ''}
           </div>
         </td>
-        <td>${s.nameTh}</td>
+        <td>${s.nameTh}${s.profileEditUnlocked ? `
+          <div><span class="inline-flex items-center gap-1 px-1.5 py-0.5 mt-0.5 text-[10.5px] font-bold rounded bg-violet-50 text-violet-700 border border-violet-200" title="นิสิตแก้ ชื่อ-สกุล / GPAX ได้ 1 ครั้ง (ล็อกกลับเมื่อบันทึก)">✏️ เปิดแก้ข้อมูลอยู่</span></div>` : ''}</td>
         <td><span class="text-xs font-medium text-slate-700" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
         <td>${s.advisorName || '<span class="text-gray-400">-</span>'}</td>
         <td>
@@ -704,6 +705,43 @@ function renderAdvisorTable(advisors) {
     });
   });
 }
+
+// ==========================================
+// เปิด/ปิดให้นิสิตแก้ข้อมูลส่วนตัว (ชื่อ-สกุล / GPAX) — นิสิตบันทึกยืนยัน 1 ครั้งแล้วล็อกกลับอัตโนมัติ
+// เลือกแต่คนที่เปิดอยู่แล้วทั้งหมด → ถามว่าจะล็อกกลับไหม / มีคนที่ยังล็อก → ถามว่าจะเปิดให้แก้ไหม
+// ==========================================
+window.toggleProfileEditUnlock = async function() {
+  if (selectedStudentIds.size === 0) {
+    alert('กรุณาเลือก checkbox นิสิตอย่างน้อย 1 คน');
+    return;
+  }
+  const ids = Array.from(selectedStudentIds);
+  const selected = allStudents.filter((s: any) => selectedStudentIds.has(s.id));
+  const allUnlocked = selected.length === ids.length && selected.every((s: any) => s.profileEditUnlocked);
+  const unlock = !allUnlocked;
+  const question = unlock
+    ? `เปิดให้นิสิต ${ids.length} คนแก้ไข "ชื่อ-สกุล (ไทย/อังกฤษ)" และ "GPAX" ได้ 1 ครั้ง?\n\nเมื่อนิสิตกดบันทึกยืนยันแล้ว ระบบจะล็อกกลับอัตโนมัติ จนกว่าจะเปิดให้อีกครั้ง`
+    : `นิสิต ${ids.length} คนที่เลือกเปิดแก้ไขอยู่แล้ว ต้องการล็อกกลับ (ยกเลิกสิทธิ์แก้ไข) ใช่ไหม?`;
+  if (!confirm(question)) return;
+  try {
+    const res = await fetch('/api/admin/students/profile-edit-unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentIds: ids, unlock }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert('เกิดข้อผิดพลาด: ' + (data.message || 'บันทึกไม่สำเร็จ'));
+      return;
+    }
+    alert('✅ ' + data.message);
+    selectedStudentIds.clear();
+    loadStudents();
+  } catch (err) {
+    console.error(err);
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  }
+};
 
 // ==========================================
 // Modal: ตั้งสถานะนิสิต

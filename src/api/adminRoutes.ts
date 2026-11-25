@@ -592,6 +592,9 @@ router.get("/students", async (req: Request, res: Response) => {
 
     const allStudents = await applyWindowTermFilter(filterStudentsByScope(allStudentsRaw, req), req.query.windowTerm);
 
+    // นิสิตที่เปิดให้แก้ข้อมูลส่วนตัว (ชื่อ-สกุล / GPAX) อยู่ — แสดงป้ายในตาราง
+    const profileEditUnlocks = loadSuperAdminState().profileEditUnlocks || {};
+
     // Map สถานะแต่ละคนด้วยฟังก์ชัน categorizeStudent เดียวกัน
     let mapped = allStudents.map((s) => {
       const cats = categorizeStudent(s);
@@ -641,6 +644,7 @@ router.get("/students", async (req: Request, res: Response) => {
         placementStatus: s.placement ? s.placement.status : null,
         isMatchedWithChecklist,
         hasChecklistApproved: (s.companies || []).some((c: any) => c.checklistStatus === "APPROVED"),
+        profileEditUnlocked: Boolean(profileEditUnlocks[String(s.id)]),
         roundInfo: {
           currentRound: studentRoundState.currentRound,
           currentTerm: studentRoundState.currentTerm,
@@ -1206,6 +1210,50 @@ router.put("/students/:studentId/placement-status", async (req: Request, res: Re
 // ==========================================
 // 7. Batch ตั้งสถานะนิสิตหลายคนพร้อมกัน
 // ==========================================
+// เปิด/ปิดให้นิสิตแก้ข้อมูลส่วนตัวที่ล็อกตาม REG (ชื่อ-สกุล / GPAX) — นิสิตบันทึกยืนยัน 1 ครั้งแล้วล็อกกลับอัตโนมัติ
+router.post("/students/profile-edit-unlock", async (req: Request, res: Response) => {
+  try {
+    const { studentIds, unlock } = req.body || {};
+    const ids: number[] = Array.isArray(studentIds)
+      ? studentIds.map((v: unknown) => Number(v)).filter((n: number) => Number.isInteger(n) && n > 0)
+      : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, message: "กรุณาเลือกนิสิตอย่างน้อย 1 คน" });
+    }
+
+    // ทำได้เฉพาะนิสิตในขอบเขตของผู้ใช้ (อาจารย์ประจำวิชาสาขา → เฉพาะสาขาตัวเอง)
+    const students = await prisma.student.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, major: true, curriculum: true },
+    });
+    const allowed = filterStudentsByScope(students, req);
+    if (allowed.length === 0) {
+      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์จัดการนิสิตที่เลือก" });
+    }
+
+    const state = loadSuperAdminState();
+    if (!state.profileEditUnlocks) state.profileEditUnlocks = {};
+    const by = req.session.user?.email || req.session.user?.username || "admin";
+    const now = new Date().toISOString();
+    for (const s of allowed) {
+      if (unlock === false) delete state.profileEditUnlocks[String(s.id)];
+      else state.profileEditUnlocks[String(s.id)] = { unlockedAt: now, unlockedBy: String(by) };
+    }
+    saveSuperAdminStateOrThrow(state);
+
+    const skipped = ids.length - allowed.length;
+    res.json({
+      success: true,
+      updatedCount: allowed.length,
+      message: `${unlock === false ? "ล็อกการแก้ไขข้อมูลส่วนตัว" : "เปิดให้แก้ไขข้อมูลส่วนตัว (ชื่อ-สกุล ไทย/อังกฤษ / GPAX)"} ${allowed.length} คนแล้ว`
+        + (skipped > 0 ? ` — ข้าม ${skipped} คนที่อยู่นอกสาขาที่ดูแล` : ""),
+    });
+  } catch (err) {
+    console.error("POST /api/admin/students/profile-edit-unlock error:", err);
+    res.status(500).json({ success: false, message: "บันทึกไม่สำเร็จ" });
+  }
+});
+
 router.put("/students/batch-status", async (req: Request, res: Response) => {
   const isPureStaff = Boolean(
     (req.staff?.isStaff || req.session.user!.role === "STAFF") &&

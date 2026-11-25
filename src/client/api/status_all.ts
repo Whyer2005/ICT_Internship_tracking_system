@@ -51,6 +51,73 @@ function renderOtherInfoLinks() {
     : '';
 }
 
+// ===== admin เปิดให้แก้ ชื่อ-สกุล (ไทย/อังกฤษ) / GPAX ได้ 1 ครั้ง (บันทึกยืนยันแล้วล็อกกลับ) =====
+const PROFILE_UNLOCK_FIELDS = ['prof-nameTh', 'prof-nameEn', 'prof-gpa'];
+let profileEditUnlocked = false;
+
+function applyProfileEditUnlock(unlocked) {
+  profileEditUnlocked = unlocked;
+  PROFILE_UNLOCK_FIELDS.forEach((id) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (!el) return;
+    const badge = document.querySelector(`label[for="${id}"] .student-profile-reg-badge`) as HTMLElement | null;
+    if (badge && !badge.dataset.lockedText) badge.dataset.lockedText = badge.textContent || '';
+    if (unlocked) {
+      el.readOnly = false;
+      el.style.backgroundColor = '#FFFFFF';
+      el.style.cursor = '';
+      el.style.borderColor = '#A78BFA';
+      el.title = 'เจ้าหน้าที่เปิดให้แก้ไขได้ 1 ครั้ง';
+      if (badge) {
+        badge.textContent = '✏️ แก้ได้ 1 ครั้ง';
+        badge.style.cssText = 'background:#F5F3FF; color:#6D28D9; border-color:#DDD6FE;';
+      }
+    } else {
+      // ล็อกกลับเสมอ (แม้ค่าว่าง ซึ่งลูปล็อก REG ด้านบนจะข้ามไป)
+      el.readOnly = true;
+      el.style.borderColor = '';
+      el.style.backgroundColor = '#F8FAFC';
+      el.style.cursor = 'not-allowed';
+      if (badge && badge.dataset.lockedText) {
+        badge.textContent = badge.dataset.lockedText;
+        badge.style.cssText = '';
+      }
+    }
+  });
+
+  let banner = document.getElementById('profile-edit-unlock-banner');
+  if (!unlocked) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    // แทรกเหนือ layout ทั้งก้อน (ถ้าแทรกข้างการ์ด จะไปกินช่องใน grid และดันการ์ดข้อมูลไปอยู่คอลัมน์แคบ)
+    const card = document.getElementById('prof-nameTh')?.closest('.student-profile-layout')
+      || document.getElementById('prof-nameTh')?.closest('.student-profile-card');
+    if (!card || !card.parentNode) return;
+    banner = document.createElement('div');
+    banner.id = 'profile-edit-unlock-banner';
+    banner.setAttribute('role', 'status');
+    banner.style.cssText = 'display:flex; gap:10px; align-items:flex-start; margin-bottom:14px; padding:12px 16px; border-radius:12px; background:#F5F3FF; border:1px solid #DDD6FE; color:#4C1D95; font-size:13.5px; line-height:1.6;';
+    banner.innerHTML = `<span class="material-icons" style="color:#7C3AED;" aria-hidden="true">edit_note</span>
+      <div><b>เจ้าหน้าที่เปิดให้แก้ไขข้อมูลส่วนตัว</b><br>แก้ "ชื่อ-สกุล (ไทย/อังกฤษ)" และ "GPAX" ให้ถูกต้อง แล้วกดบันทึก — <b>บันทึกได้ 1 ครั้ง</b> หลังบันทึกระบบจะล็อกกลับ ถ้าต้องแก้อีกให้แจ้งเจ้าหน้าที่</div>`;
+    card.parentNode.insertBefore(banner, card);
+  }
+}
+
+// ตรวจค่าก่อนบันทึกตอนเปิดแก้ไข → ข้อความผิดพลาด หรือ '' ถ้าผ่าน
+function validateUnlockedProfileFields() {
+  const nameTh = ((document.getElementById('prof-nameTh') as HTMLInputElement)?.value || '').trim();
+  const gpa = ((document.getElementById('prof-gpa') as HTMLInputElement)?.value || '').trim();
+  if (!nameTh) return 'กรุณากรอกชื่อ-สกุล (ภาษาไทย)';
+  if (nameTh.length > 200) return 'ชื่อ-สกุลยาวเกิน 200 ตัวอักษร';
+  const nameEn = ((document.getElementById('prof-nameEn') as HTMLInputElement)?.value || '').trim();
+  if (!nameEn) return 'กรุณากรอก Name & Surname (English)';
+  if (nameEn.length > 200) return 'ชื่อภาษาอังกฤษยาวเกิน 200 ตัวอักษร';
+  if (gpa && (!/^\d(\.\d{1,2})?$/.test(gpa) || Number(gpa) > 4)) return 'GPAX ต้องเป็นตัวเลข 0.00 - 4.00 (ทศนิยมไม่เกิน 2 ตำแหน่ง)';
+  return '';
+}
+
 // 1. โหลดข้อมูลส่วนตัว
 async function loadProfile() {
   try {
@@ -95,7 +162,7 @@ async function loadProfile() {
         if (endEl) endEl.value = letterThaiDate(win?.internEndDate);
 
         // [REQ-04] ล็อคข้อมูลทางวิชาการที่ดึงจากระบบทะเบียน REG ห้ามนิสิตแก้ไข
-        ['prof-studentCode', 'prof-nameTh', 'prof-year', 'prof-gpa', 'prof-major', 'prof-curriculum', 'prof-faculty', 'prof-email'].forEach(id => {
+        ['prof-studentCode', 'prof-nameTh', 'prof-nameEn', 'prof-year', 'prof-gpa', 'prof-major', 'prof-curriculum', 'prof-faculty', 'prof-email'].forEach(id => {
           const el = document.getElementById(id);
           if (el && el.value) {
             el.readOnly = true;
@@ -104,6 +171,17 @@ async function loadProfile() {
             el.title = '[REQ-04] ข้อมูลจากระบบทะเบียน REG ถูกล็อค ไม่สามารถแก้ไขได้';
           }
         });
+        applyProfileEditUnlock(Boolean(data.profileEditUnlocked));
+        // ยังไม่มีชื่อภาษาอังกฤษ → ให้กรอกครั้งแรกได้ (server รับเมื่อค่าเดิมว่าง/"-") แม้ช่องใน HTML ตั้ง readonly ไว้
+        const nameEnEl = document.getElementById('prof-nameEn') as HTMLInputElement | null;
+        const nameEnVal = (nameEnEl?.value || '').trim();
+        if (nameEnEl && !data.profileEditUnlocked && (!nameEnVal || nameEnVal === '-')) {
+          nameEnEl.readOnly = false;
+          nameEnEl.style.backgroundColor = '#FFFFFF';
+          nameEnEl.style.cursor = '';
+          nameEnEl.title = 'ยังไม่มีชื่อภาษาอังกฤษ กรอกได้ 1 ครั้ง';
+          if (nameEnVal === '-') nameEnEl.value = '';
+        }
 
         if (s.profileImageUrl) {
           const preview = document.getElementById('profile-photo-preview');
@@ -196,6 +274,16 @@ if (saveProfileBtn) {
       return;
     }
 
+    const wasUnlocked = profileEditUnlocked;
+    if (wasUnlocked) {
+      const problem = validateUnlockedProfileFields();
+      if (problem) {
+        alert(problem);
+        return;
+      }
+      if (!confirm('ยืนยันบันทึก "ชื่อ-สกุล (ไทย/อังกฤษ)" และ "GPAX" ?\n\nบันทึกแล้วจะแก้ไม่ได้อีก จนกว่าเจ้าหน้าที่จะเปิดให้แก้ไขใหม่')) return;
+    }
+
     const advisorSelect = document.getElementById('prof-advisor');
     const payload = {
       nameTh: document.getElementById('prof-nameTh').value,
@@ -219,7 +307,9 @@ if (saveProfileBtn) {
       });
       const data = await res.json();
       if (data.success) {
-        alert('✅ บันทึกข้อมูลส่วนตัวสำเร็จ');
+        alert(wasUnlocked ? '✅ บันทึกข้อมูลส่วนตัวสำเร็จ ระบบล็อก ชื่อ-สกุล และ GPAX กลับแล้ว' : '✅ บันทึกข้อมูลส่วนตัวสำเร็จ');
+        // เคยเปิดแก้ไข → โหลดใหม่ให้ช่องกลับเป็นล็อกตามค่าที่บันทึก
+        if (wasUnlocked) await loadProfile();
       } else {
         alert('เกิดข้อผิดพลาด: ' + (data.message || 'บันทึกไม่สำเร็จ'));
       }

@@ -910,6 +910,9 @@ ${thaiProvincesDataScript()}
             <button id="btn-set-supervisor" class="btn btn-sm" onclick="openSetSupervisorModal()" style="background:#FFFFFF; color:#334155; border:1px solid #CBD5E1; font-size:12px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
               <span class="material-icons" style="font-size:14px;">explore</span> ตั้งอาจารย์นิเทศก์
             </button>
+            <button id="btn-profile-edit-unlock" class="btn btn-sm" onclick="toggleProfileEditUnlock()" title="เปิดให้นิสิตที่เลือกแก้ ชื่อ-สกุล (ไทย/อังกฤษ) และ GPAX ได้ 1 ครั้ง (บันทึกแล้วล็อกกลับอัตโนมัติ)" style="background:#FFFFFF; color:#7C3AED; border:1px solid #DDD6FE; font-size:12px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+              <span class="material-icons" style="font-size:15px;">lock_open</span> เปิดแก้ข้อมูลส่วนตัว
+            </button>
             <button id="btn-drop-student" class="btn btn-sm" onclick="openDropStudentModal()" style="background:#FFFFFF; color:#BE123C; border:1px solid #FDA4AF; font-size:12px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
               <span class="material-icons" style="font-size:14px;">person_remove</span> ดรอปนิสิต
             </button>

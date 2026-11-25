@@ -286,6 +286,8 @@ router.get("/profile", async (req: Request, res: Response) => {
       user: req.session.user,
       student: student || null,
       advisorEmail: student?.advisor?.user?.email || null,
+      // admin เปิดให้แก้ ชื่อ-สกุล / GPAX (ล็อกกลับหลังนิสิตบันทึกยืนยัน 1 ครั้ง)
+      profileEditUnlocked: Boolean(student && loadSuperAdminState().profileEditUnlocks?.[String(student.id)]),
       majorName: majorInfo ? majorInfo.name : null,
       degreeName: majorInfo ? ICT_DEGREES.find((d) => d.code === majorInfo.degreeCode)?.name || null : null,
     });
@@ -377,8 +379,10 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
       if (nickname !== undefined) {
         updateData.nickname = nickname ? String(nickname).trim() : null;
       }
-      if (nameEn && String(nameEn).trim() && String(nameEn).trim() !== "-") {
-        updateData.nameEn = String(nameEn).trim();
+      // ชื่อภาษาอังกฤษล็อกเหมือนชื่อไทย: แก้ได้เมื่อ admin เปิดให้ (ด้านล่าง) หรือยังไม่เคยมีค่า (เติมครั้งแรก)
+      const currentNameEn = String(existingStudent.nameEn || "").trim();
+      if ((!currentNameEn || currentNameEn === "-") && nameEn && String(nameEn).trim() && String(nameEn).trim() !== "-") {
+        updateData.nameEn = String(nameEn).replace(/\s+/g, " ").trim().slice(0, 200);
       }
       if (advisorId !== undefined && !existingStudent.advisorId) {
         updateData.advisorId = advisorId ? parseInt(advisorId, 10) : null;
@@ -387,10 +391,40 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
         updateData.profileImageUrl = profileImageUrl;
       }
 
+      // admin เปิดให้แก้ข้อมูลที่ล็อกตาม REG (ชื่อ-สกุลไทย/อังกฤษ / GPAX) ได้ 1 ครั้ง → บันทึกครั้งนี้ใช้สิทธิ์และล็อกกลับ
+      const unlockKey = String(existingStudent.id);
+      const editUnlocked = Boolean(loadSuperAdminState().profileEditUnlocks?.[unlockKey]);
+      if (editUnlocked) {
+        const cleanNameTh = String(nameTh ?? "").replace(/\s+/g, " ").trim();
+        if (!cleanNameTh || cleanNameTh.length > 200) {
+          return res.status(400).json({ success: false, message: "กรุณากรอกชื่อ-สกุล (ภาษาไทย) ให้ถูกต้อง (ไม่เกิน 200 ตัวอักษร)" });
+        }
+        updateData.nameTh = cleanNameTh;
+        const cleanNameEn = String(nameEn ?? "").replace(/\s+/g, " ").trim();
+        if (!cleanNameEn || cleanNameEn.length > 200) {
+          return res.status(400).json({ success: false, message: "กรุณากรอก Name & Surname (English) ให้ถูกต้อง (ไม่เกิน 200 ตัวอักษร)" });
+        }
+        updateData.nameEn = cleanNameEn;
+        const gpaRaw = String(gpa ?? "").trim();
+        if (gpaRaw) {
+          const gpaNum = Number(gpaRaw);
+          if (!/^\d(\.\d{1,2})?$/.test(gpaRaw) || !Number.isFinite(gpaNum) || gpaNum < 0 || gpaNum > 4) {
+            return res.status(400).json({ success: false, message: "GPAX ต้องเป็นตัวเลข 0.00 - 4.00 (ทศนิยมไม่เกิน 2 ตำแหน่ง)" });
+          }
+          updateData.gpa = gpaNum;
+        }
+      }
+
       student = await prisma.student.update({
         where: { userId },
         data: updateData,
       });
+
+      if (editUnlocked) {
+        const state = loadSuperAdminState();
+        if (state.profileEditUnlocks) delete state.profileEditUnlocks[unlockKey];
+        saveSuperAdminState(state);
+      }
     } else {
       const createData: any = {
         userId,

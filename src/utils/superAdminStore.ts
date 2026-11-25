@@ -239,6 +239,16 @@ export interface SuperAdminState {
   companyInfoEditUnlocks?: Record<string, CompanyInfoEditUnlock>; // key = companyId
   /** เรื่องที่นิสิตแจ้งปัญหาการใช้งานระบบ (ใหม่สุดอยู่หน้า) — ดู src/utils/issueReports.ts */
   issueReports?: IssueReport[];
+  /**
+   * นิสิตที่ admin เปิดให้แก้ข้อมูลส่วนตัวที่ล็อกตาม REG (ชื่อ-สกุล / GPAX) ได้ 1 ครั้ง (key = studentId)
+   * นิสิตกดบันทึกยืนยันแล้ว → ลบออก (ล็อกกลับ) จนกว่า admin จะเปิดให้ใหม่
+   */
+  profileEditUnlocks?: Record<string, ProfileEditUnlock>;
+}
+
+export interface ProfileEditUnlock {
+  unlockedAt: string;
+  unlockedBy: string; // อีเมล/ชื่อผู้เปิด
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -509,6 +519,7 @@ export function loadSuperAdminState(): SuperAdminState {
       // ต้องโหลดกลับด้วย ไม่งั้นการบันทึก state ครั้งถัดไป (ส่วนอื่น) จะลบทิ้งทั้งหมด
       letterBatches: parsed.letterBatches || {},
       issueReports: Array.isArray(parsed.issueReports) ? parsed.issueReports : [],
+      profileEditUnlocks: parsed.profileEditUnlocks || {},
     };
   } catch (err) {
     console.error("Failed to load super_admin_state.json, using default:", err);

@@ -45,8 +45,8 @@ const STUDENT_PROFILE_CONTENT_HTML = `
           <input class="input-field" id="prof-nameTh" readonly />
         </div>
         <div class="student-profile-field">
-          <label for="prof-nameEn">Name &amp; Surname (English)</label>
-          <input class="input-field" id="prof-nameEn" />
+          <label for="prof-nameEn">Name &amp; Surname (English) <span class="student-profile-reg-badge">🔒 REG</span></label>
+          <input class="input-field" id="prof-nameEn" readonly />
         </div>
         <div class="student-profile-field">
           <label for="prof-studentCode">รหัสนิสิต <span class="student-profile-reg-badge">🔒 REG</span></label>
