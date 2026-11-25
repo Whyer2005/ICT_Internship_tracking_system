@@ -976,7 +976,7 @@ ${thaiProvincesDataScript()}
                   
                     <!-- ขั้นตอนที่ 3: ชั่วโมงอบรมเตรียมความพร้อม -->
                     <div class="status-group-header">🎓 3. ชั่วโมงอบรมเตรียมความพร้อม</div>
-                    <div class="status-option" data-val="training_not_checked" onclick="window.selectStatusFilter('training_not_checked', '⏳ ชม.ครบ ยังไม่ตรวจ')">⏳ ชม.ครบ ยังไม่ตรวจ</div>
+                    <div class="status-option" data-val="training_not_checked" onclick="window.selectStatusFilter('training_not_checked', '⏳ ชม.ครบ ยังไม่ตรวจ')">⏳ ชม.ครบ รอตรวจ</div>
                     <div class="status-option" data-val="training_incomplete" onclick="window.selectStatusFilter('training_incomplete', '⏳ ชั่วโมงยังไม่ครบ')">⏳ ชั่วโมงยังไม่ครบ</div>
                     <div class="status-option" data-val="training_passed" onclick="window.selectStatusFilter('training_passed', '🟢 ผ่านการตรวจชม.ครบ')">🟢 ผ่านการตรวจชม.ครบ</div>
                     <div class="status-option" data-val="training_failed" onclick="window.selectStatusFilter('training_failed', '🔴 ตรวจแล้ว ยังไม่ผ่าน')">🔴 ตรวจแล้ว ยังไม่ผ่าน</div>
@@ -1022,7 +1022,7 @@ ${thaiProvincesDataScript()}
                   <th style="width: 17%;">อาจารย์ที่ปรึกษา</th>
                   <th style="width: 24%;">สถานะความพร้อม &amp; การตรวจสอบ</th>
                   <th style="width: 8%; min-width: 90px;" class="text-center">
-                    <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="เลือกนักศึกษาทั้งหมดในหน้านี้">
+                    <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="เลือกนิสิตทั้งหมดในหน้านี้">
                       <span style="font-size:12px;">เลือกทั้งหมด</span>
                       <input type="checkbox" id="select-all-students" style="width:16px;height:16px;cursor:pointer;" />
                     </label>
@@ -3068,7 +3068,7 @@ ${majorOptionsHtml("              ")}
             <span class="material-icons" style="font-size:24px;">sync_alt</span>
             <div>
               <h3 style="font-size:16px; font-weight:700; margin:0;">ส่งออกข้อมูล Co-op ICT (Co-op 01 Export)</h3>
-              <p style="font-size:11.5px; color:#D1FAE5; margin:2px 0 0 0;">ไฟล์ CSV มาตรฐานพร้อมนำเข้าสู่ระบบ Co-op ICT ของพี่แดง</p>
+              <p style="font-size:11.5px; color:#D1FAE5; margin:2px 0 0 0;">ไฟล์ CSV มาตรฐานสำหรับนำเข้าสู่ระบบ Co-op ICT ของพี่แดง</p>
             </div>
           </div>
           <button onclick="window.closeCoopExportModal ? window.closeCoopExportModal() : null" style="background:none; border:none; color:white; cursor:pointer; display:flex; align-items:center; opacity:0.85;">
