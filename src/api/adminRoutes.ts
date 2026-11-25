@@ -13,6 +13,7 @@ import {
   getStudentRoundState,
   MasterCompanyRecord,
 } from "../utils/superAdminStore";
+import { ISSUE_ADMIN_NOTE_MAX, ISSUE_STATUS, isIssueStatus } from "../utils/issueReports";
 import {
   ImportedCompanyRow,
   buildCompanyImportTemplate,
@@ -3227,6 +3228,40 @@ router.post("/super-admin/companies", async (req: Request, res: Response) => {
 });
 
 // 9.6.0 ดาวน์โหลดไฟล์ตัวอย่างสำหรับนำเข้าสถานประกอบการ
+// 9.5.x เรื่องที่นิสิตแจ้งปัญหาการใช้งานระบบ (เมนู "อื่นๆ" → แจ้งปัญหา ของนิสิต)
+router.get("/super-admin/issue-reports", (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, reports: loadSuperAdminState().issueReports || [] });
+  } catch (err) {
+    console.error("GET /api/admin/super-admin/issue-reports error:", err);
+    res.status(500).json({ success: false, message: "โหลดเรื่องที่แจ้งปัญหาไม่สำเร็จ" });
+  }
+});
+
+// เปลี่ยนสถานะ + หมายเหตุตอบกลับนิสิต (นิสิตเห็นหมายเหตุนี้ในรายการ "เรื่องที่เคยแจ้ง")
+router.post("/super-admin/issue-reports/:id/status", (req: Request, res: Response) => {
+  try {
+    const { status, adminNote } = req.body || {};
+    if (!isIssueStatus(status)) {
+      return res.status(400).json({ success: false, message: "สถานะไม่ถูกต้อง" });
+    }
+    const state = loadSuperAdminState();
+    const report = (state.issueReports || []).find((r) => r.id === req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: "ไม่พบเรื่องที่แจ้ง" });
+    report.status = status;
+    if (adminNote !== undefined) {
+      const note = String(adminNote || "").trim().slice(0, ISSUE_ADMIN_NOTE_MAX);
+      report.adminNote = note || undefined;
+    }
+    report.updatedAt = new Date().toISOString();
+    saveSuperAdminStateOrThrow(state);
+    res.json({ success: true, message: `อัปเดต ${report.id} เป็น "${ISSUE_STATUS[status]}" แล้ว`, report });
+  } catch (err) {
+    console.error("POST /api/admin/super-admin/issue-reports/:id/status error:", err);
+    res.status(500).json({ success: false, message: "อัปเดตสถานะไม่สำเร็จ" });
+  }
+});
+
 router.get("/super-admin/companies/import-template", (_req: Request, res: Response) => {
   try {
     const buffer = buildCompanyImportTemplate();

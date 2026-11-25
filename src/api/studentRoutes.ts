@@ -19,11 +19,22 @@ import { analyzeAcceptanceForm } from "../utils/acceptanceOcr";
 import {
   loadSuperAdminState,
   saveSuperAdminState,
+  saveSuperAdminStateOrThrow,
   getStudentRoundState,
   saveStudentRoundState,
   StudentRoundState,
 } from "../utils/superAdminStore";
 import { resolveGoogleMapsLink } from "../utils/googleMapsLink";
+import {
+  IssueReport,
+  ISSUE_CATEGORIES,
+  ISSUE_PAGES,
+  ISSUE_FILE_EXTS,
+  ISSUE_FILE_MAX_BYTES,
+  ISSUE_MAX_FILES,
+  nextIssueId,
+  validateIssueInput,
+} from "../utils/issueReports";
 import { studentCoopRouter } from "./coopRoutes";
 import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
 import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
@@ -82,6 +93,95 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter,
+});
+
+// ==========================================
+// แจ้งปัญหาการใช้งานระบบ (เมนู "อื่นๆ" → แจ้งปัญหา) — เก็บใน super_admin_state.json
+// ==========================================
+const issueUpload = multer({
+  storage,
+  limits: { fileSize: ISSUE_FILE_MAX_BYTES, files: ISSUE_MAX_FILES },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ISSUE_FILE_EXTS.includes(ext)) cb(null, true);
+    else cb(new Error("แนบได้เฉพาะไฟล์ PNG, JPG หรือ PDF"));
+  },
+}).array("attachments", ISSUE_MAX_FILES);
+
+// เรื่องที่นิสิตคนนี้เคยแจ้ง (ไม่ส่งข้อมูลภายในอื่นของเจ้าหน้าที่ นอกจากสถานะและหมายเหตุตอบกลับ)
+router.get("/issue-reports", async (req: Request, res: Response) => {
+  try {
+    // ตัวเลือกในฟอร์มส่งจาก server ที่เดียว (หน้าเว็บไม่ต้องเก็บรายการซ้ำ)
+    const options = { categories: ISSUE_CATEGORIES, pages: ISSUE_PAGES };
+    const student = await prisma.student.findUnique({ where: { userId: req.session.user!.id }, select: { id: true } });
+    if (!student) return res.json({ success: true, reports: [], options });
+    const reports = (loadSuperAdminState().issueReports || [])
+      .filter((r) => r.studentId === student.id)
+      .map(({ studentId, email, ...rest }) => rest);
+    res.json({ success: true, reports, options });
+  } catch (err) {
+    console.error("GET /api/student/issue-reports error:", err);
+    res.status(500).json({ success: false, message: "โหลดเรื่องที่เคยแจ้งไม่สำเร็จ" });
+  }
+});
+
+router.post("/issue-reports", (req: Request, res: Response) => {
+  issueUpload(req, res, async (uploadErr: any) => {
+    if (uploadErr) {
+      const message = uploadErr.code === "LIMIT_FILE_SIZE"
+        ? "ไฟล์แนบต้องมีขนาดไม่เกิน 5MB ต่อไฟล์"
+        : uploadErr.code === "LIMIT_FILE_COUNT" || uploadErr.code === "LIMIT_UNEXPECTED_FILE"
+          ? `แนบไฟล์ได้สูงสุด ${ISSUE_MAX_FILES} ไฟล์`
+          : uploadErr.message || "อัปโหลดไฟล์แนบไม่สำเร็จ";
+      return res.status(400).json({ success: false, message });
+    }
+    try {
+      const { value, error } = validateIssueInput(req.body || {});
+      if (!value) return res.status(400).json({ success: false, message: error });
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.session.user!.id },
+        select: { email: true, student: { select: { id: true, studentCode: true, nameTh: true } } },
+      });
+      if (!user?.student) {
+        return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลส่วนตัวนิสิตก่อนแจ้งปัญหา" });
+      }
+
+      const files = (req.files as Express.Multer.File[]) || [];
+      const attachments: IssueReport["attachments"] = [];
+      for (const f of files) {
+        // multer อ่านชื่อไฟล์เป็น latin1 → ชื่อภาษาไทยเพี้ยน แปลงกลับเป็น UTF-8 (วิธีเดียวกับอัปโหลดใบตอบรับ)
+        const utf8Name = Buffer.from(f.originalname, "latin1").toString("utf8");
+        const name = (utf8Name.includes("�") ? f.originalname : utf8Name).slice(0, 200);
+        attachments.push({ name, url: await uploadToCloudinary(f.buffer, name, "issue-reports") });
+      }
+
+      // อัปโหลดเสร็จแล้วค่อยโหลด state ล่าสุด → ลดโอกาสทับการบันทึกของคนอื่นระหว่างรออัปโหลด
+      const state = loadSuperAdminState();
+      const list = state.issueReports || [];
+      const now = new Date().toISOString();
+      const report: IssueReport = {
+        id: nextIssueId(list),
+        studentId: user.student.id,
+        studentCode: user.student.studentCode,
+        studentName: user.student.nameTh,
+        email: user.email,
+        ...value,
+        attachments,
+        status: "OPEN",
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.issueReports = [report, ...list];
+      saveSuperAdminStateOrThrow(state);
+
+      const { studentId, email, ...publicReport } = report;
+      res.json({ success: true, message: `ส่งเรื่อง ${report.id} เรียบร้อยแล้ว`, report: publicReport });
+    } catch (err) {
+      console.error("POST /api/student/issue-reports error:", err);
+      res.status(500).json({ success: false, message: "ส่งเรื่องไม่สำเร็จ กรุณาลองใหม่" });
+    }
+  });
 });
 
 // Helper: ดึงหรือสร้าง student id ของ user ปัจจุบัน

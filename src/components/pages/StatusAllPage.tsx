@@ -68,6 +68,14 @@ const STUDENT_PROFILE_CONTENT_HTML = `
           <label for="prof-email">Email (@up.ac.th) <span class="student-profile-reg-badge">🔒 REG</span></label>
           <input class="input-field" id="prof-email" value="" readonly />
         </div>
+        <div class="student-profile-field">
+          <label for="prof-year">ชั้นปี <span class="student-profile-reg-badge">🔒 REG</span></label>
+          <input class="input-field" id="prof-year" inputmode="numeric" placeholder="ยังไม่มีข้อมูลจาก REG" readonly />
+        </div>
+        <div class="student-profile-field">
+          <label for="prof-gpa">เกรดเฉลี่ยสะสม (GPAX) <span class="student-profile-reg-badge">🔒 REG</span></label>
+          <input class="input-field" id="prof-gpa" inputmode="decimal" placeholder="ยังไม่มีข้อมูลจาก REG" readonly />
+        </div>
       </div>
     </section>
   </div>
@@ -95,8 +103,6 @@ const STUDENT_PROFILE_CONTENT_HTML = `
           <input class="input-field" id="prof-internship-end" value="" placeholder="เจ้าหน้าที่ยังไม่กำหนด" readonly />
         </div>
       </div>
-      <input id="prof-year" type="hidden" />
-      <input id="prof-gpa" type="hidden" />
     </section>
 
     <section class="student-profile-card">

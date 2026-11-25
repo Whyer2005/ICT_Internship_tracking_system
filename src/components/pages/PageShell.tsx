@@ -22,6 +22,7 @@ const STUDENT_PAGE_KEYS = new Set<string>([
   "CV",
   "Certificate",
   "submission_status",
+  "report_issue",
 ]);
 
 function resolveScriptUrl(src: string): string {

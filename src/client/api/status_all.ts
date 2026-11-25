@@ -66,8 +66,10 @@ async function loadProfile() {
         document.getElementById('prof-nameTh').value = s.nameTh || '';
         document.getElementById('prof-nameEn').value = s.nameEn || '';
         document.getElementById('prof-studentCode').value = s.studentCode || '';
-        document.getElementById('prof-year').value = s.year || '3';
-        document.getElementById('prof-gpa').value = s.gpa || '';
+        // ชั้นปี / GPAX แสดงให้เห็น (ล็อกตาม REG) — ไม่มีข้อมูลให้เว้นว่าง ไม่เดาค่าเอง (server ตั้งปี 3 ให้ตอนสร้างโปรไฟล์ใหม่)
+        document.getElementById('prof-year').value = s.year ? String(s.year) : '';
+        const gpaNum = Number(s.gpa);
+        document.getElementById('prof-gpa').value = s.gpa !== null && s.gpa !== undefined && s.gpa !== '' && Number.isFinite(gpaNum) ? gpaNum.toFixed(2) : '';
         // แสดงชื่อ หลักสูตร → สาขาวิชา จากรายชื่อกลาง (ค่าที่บันทึกยังเป็นชื่อสาขาเดิมใน data-value)
         const rawMajor = s.major || 'วิศวกรรมซอฟต์แวร์';
         const majorInfo = findIctMajorInfo(rawMajor);

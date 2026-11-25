@@ -43,6 +43,31 @@ function initPersistentHeader(templateUrl) {
             }
             const menuWired = Boolean(menuToggle && headerNav && headerNav.isConnected);
 
+            // เมนู "อื่นๆ" (dropdown): คลิกเปิด/ปิด, คลิกนอกเมนูหรือกด Esc เพื่อปิด
+            const moreWrap = document.getElementById('nav-student-more');
+            const moreToggle = document.getElementById('nav-more-toggle');
+            const moreMenu = document.getElementById('nav-more-menu');
+            if (moreWrap && moreToggle && moreMenu && moreWrap.isConnected) {
+                const setMoreOpen = (open) => {
+                    moreMenu.hidden = !open;
+                    moreWrap.classList.toggle('is-open', open);
+                    moreToggle.setAttribute('aria-expanded', String(open));
+                };
+                moreToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    setMoreOpen(moreMenu.hidden);
+                });
+                document.addEventListener('click', (e) => {
+                    if (!moreWrap.contains(e.target)) setMoreOpen(false);
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && !moreMenu.hidden) {
+                        setMoreOpen(false);
+                        moreToggle.focus();
+                    }
+                });
+            }
+
             fetch('/auth/me')
                 .then(r => r.json())
                 .then(async (data) => {
@@ -229,6 +254,9 @@ function initPersistentHeader(templateUrl) {
                                 a.classList.add('active');
                             }
                         });
+                        // อยู่หน้าที่อยู่ในเมนู "อื่นๆ" → ไฮไลต์ปุ่ม "อื่นๆ" ด้วย
+                        const moreToggleEl = document.getElementById('nav-more-toggle');
+                        if (moreToggleEl) moreToggleEl.classList.toggle('active', Boolean(headerNav.querySelector('.nav-more-menu a.active')));
                     }
                 })
                 .catch(() => {});

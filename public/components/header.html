@@ -36,10 +36,20 @@
             <span class="material-icons" style="font-size:16px;">tune</span>
             <span>จัดการข้อมูลฝึกงาน</span>
         </a>
-        <a href="/checklist" class="nav-link" id="nav-student-checklist">
-            <span class="material-icons" style="font-size:16px;">fact_check</span>
-            <span>Checklist บริษัท</span>
-        </a>
+        <!-- เมนู "อื่นๆ" (แจ้งปัญหา ฯลฯ) — เปิด/ปิดโดย header.js -->
+        <div class="nav-more" id="nav-student-more">
+            <button type="button" class="nav-link nav-more-toggle" id="nav-more-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="nav-more-menu">
+                <span class="material-icons" style="font-size:16px;">more_horiz</span>
+                <span>อื่นๆ</span>
+                <span class="material-icons nav-more-caret" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="nav-more-menu" id="nav-more-menu" role="menu" hidden>
+                <a href="/report-issue" class="nav-more-item" role="menuitem">
+                    <span class="nav-more-icon"><span class="material-icons" aria-hidden="true">support_agent</span></span>
+                    <span class="nav-more-text"><b>แจ้งปัญหา</b><small>พบปัญหาการใช้งาน ส่งเรื่องและติดตามได้ที่นี่</small></span>
+                </a>
+            </div>
+        </div>
         <!-- ออกจากระบบ: แสดงในเมนู 3 ขีดเฉพาะจอเล็ก (จอใหญ่ใช้ปุ่มขวาบน) -->
         <a href="/auth/logout" class="nav-link nav-logout" id="nav-logout">
             <span class="material-icons" style="font-size:16px;">logout</span>

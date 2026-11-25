@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import type { AcceptanceOcrResult } from "./acceptanceOcr";
+import type { IssueReport } from "./issueReports";
 
 export interface MajorUnlockRule {
   code: string;
@@ -236,6 +237,8 @@ export interface SuperAdminState {
   /** ฉบับหนังสือราชการที่ออกแล้ว (key = batchId) */
   letterBatches?: Record<string, LetterBatch>;
   companyInfoEditUnlocks?: Record<string, CompanyInfoEditUnlock>; // key = companyId
+  /** เรื่องที่นิสิตแจ้งปัญหาการใช้งานระบบ (ใหม่สุดอยู่หน้า) — ดู src/utils/issueReports.ts */
+  issueReports?: IssueReport[];
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -503,6 +506,9 @@ export function loadSuperAdminState(): SuperAdminState {
         : DEFAULT_STATE.archivedApplications,
       studentRoundsMap: parsed.studentRoundsMap || {},
       companyInfoEditUnlocks: parsed.companyInfoEditUnlocks || {},
+      // ต้องโหลดกลับด้วย ไม่งั้นการบันทึก state ครั้งถัดไป (ส่วนอื่น) จะลบทิ้งทั้งหมด
+      letterBatches: parsed.letterBatches || {},
+      issueReports: Array.isArray(parsed.issueReports) ? parsed.issueReports : [],
     };
   } catch (err) {
     console.error("Failed to load super_admin_state.json, using default:", err);

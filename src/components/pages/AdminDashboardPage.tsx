@@ -730,11 +730,56 @@ const PAGE_STYLES: string[] = [`
     #admin-dashboard .adm-filter-field { flex-basis: calc(50% - 5px); }
     #admin-dashboard .adm-filter-field[data-filter="major-filter"] { flex-basis: 100%; }
   }
+
+  /* ===== เรื่องที่นิสิตแจ้งปัญหา (workspace-issues / admin_issue_reports.js) ===== */
+  #admin-dashboard .air-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  #admin-dashboard .air-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #admin-dashboard .air-chips button { padding: 6px 12px; border: 1px solid #E2E8F0; border-radius: 999px; background: #fff; font: inherit; font-size: 12.5px; font-weight: 700; color: #475569; cursor: pointer; }
+  #admin-dashboard .air-chips button[aria-pressed="true"] { border-color: #4338CA; background: #EEF2FF; color: #4338CA; }
+  #admin-dashboard .air-chips b { margin-left: 4px; }
+  #admin-dashboard .air-select { height: 38px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 10px; background: #fff; font: inherit; font-size: 13px; color: #0F172A; }
+  #admin-dashboard .air-search { flex: 1 1 240px; min-width: 0; height: 38px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 10px; background: #fff; }
+  #admin-dashboard .air-search .material-icons { font-size: 18px; color: #94A3B8; }
+  #admin-dashboard .air-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 13px; }
+  #admin-dashboard .air-table-wrap { overflow-x: auto; }
+  #admin-dashboard .air-table tbody tr { cursor: pointer; }
+  #admin-dashboard .air-table tbody tr:hover { background: #F8FAFC; }
+  #admin-dashboard .air-title { font-weight: 700; color: #0F172A; }
+  #admin-dashboard .air-sub { font-size: 12px; color: #64748B; }
+  #admin-dashboard .air-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  #admin-dashboard .air-badge--OPEN { background: #FEF3C7; color: #92400E; }
+  #admin-dashboard .air-badge--IN_PROGRESS { background: #DBEAFE; color: #1E40AF; }
+  #admin-dashboard .air-badge--RESOLVED { background: #DCFCE7; color: #166534; }
+  #admin-dashboard .air-urg { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+  #admin-dashboard .air-urg i { width: 8px; height: 8px; border-radius: 999px; }
+  .air-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,23,42,0.55); }
+  .air-modal[hidden] { display: none; }
+  .air-modal-box { width: 640px; max-width: 100%; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(15,23,42,0.3); overflow: hidden; }
+  .air-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid #E2E8F0; }
+  .air-modal-id { font-size: 12px; font-weight: 800; color: #4338CA; }
+  .air-modal-head h3 { margin: 2px 0 0; font-size: 16px; font-weight: 800; color: #0F172A; overflow-wrap: anywhere; }
+  .air-icon-btn { display: inline-flex; padding: 4px; border: 0; border-radius: 8px; background: none; color: #64748B; cursor: pointer; }
+  .air-icon-btn:hover { background: #F1F5F9; }
+  .air-modal-body { padding: 16px 20px; overflow-y: auto; font-size: 13px; color: #334155; }
+  .air-modal-body dl { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 6px 12px; margin: 0 0 12px; }
+  .air-modal-body dt { color: #64748B; }
+  .air-modal-body dd { margin: 0; font-weight: 600; color: #0F172A; overflow-wrap: anywhere; }
+  .air-detail { padding: 12px 14px; border-radius: 12px; background: #F8FAFC; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+  .air-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .air-files a { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: #EEF2FF; color: #3730A3; font-size: 12px; font-weight: 600; text-decoration: none; }
+  .air-modal-form { display: grid; gap: 6px; padding: 12px 20px; border-top: 1px solid #F1F5F9; font-size: 12.5px; font-weight: 700; color: #334155; }
+  .air-textarea { min-height: 80px; padding: 8px 10px; border: 1px solid #CBD5E1; border-radius: 10px; font: inherit; font-size: 13px; resize: vertical; }
+  .air-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #E2E8F0; background: #F8FAFC; }
+  .air-btn-ghost { padding: 8px 16px; border: 1px solid #CBD5E1; border-radius: 10px; background: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .air-btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border: 0; border-radius: 10px; background: #4338CA; color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .air-btn-primary[disabled] { opacity: .6; cursor: wait; }
+  @media (max-width: 640px) { .air-modal-body dl { grid-template-columns: minmax(0,1fr); } }
 `];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
   "../api/admin_dashboard.js",
-  "../api/admin_coop_postings.js"
+  "../api/admin_coop_postings.js",
+  "../api/admin_issue_reports.js"
 ];
 const PAGE_BODY_HTML = `
 ${ictMajorsDataScript()}
@@ -790,6 +835,11 @@ ${thaiProvincesDataScript()}
           <button type="button" id="ws-tab-coop" aria-current="false" onclick="switchAdminWorkspace('coop')">
             <span class="material-icons" aria-hidden="true">cloud_upload</span>
             <span>ส่งต่อระบบ Co-op</span>
+          </button>
+          <button type="button" id="ws-tab-issues" aria-current="false" onclick="switchAdminWorkspace('issues')">
+            <span class="material-icons" aria-hidden="true">support_agent</span>
+            <span>แจ้งปัญหาจากนิสิต</span>
+            <span id="badge-issue-open" class="admin-nav-badge" style="display:none;">0 ใหม่</span>
           </button>
           
         </nav>
@@ -1884,6 +1934,72 @@ ${majorOptionsHtml("                    ")}
           </table>
         </div>
       </section>
+    </div>
+
+    <!-- =====================================================================
+         WORKSPACE: เรื่องที่นิสิตแจ้งปัญหา (สคริปต์ admin_issue_reports.js)
+         ===================================================================== -->
+    <div id="workspace-issues" style="display:none;">
+      <section class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="material-icons header-icon">support_agent</span>
+            <div>
+              <h2 class="card-title" style="margin:0;">เรื่องที่นิสิตแจ้งปัญหา</h2>
+              <p style="margin:2px 0 0 0; font-size:12px; color:#E0E7FF;">ดูรายละเอียด เปิดไฟล์แนบ เปลี่ยนสถานะ และตอบกลับนิสิต (นิสิตเห็นสถานะและข้อความตอบกลับในหน้าแจ้งปัญหา)</p>
+            </div>
+          </div>
+          <button type="button" onclick="window.loadIssueReports && window.loadIssueReports()" style="background:#FFFFFF; color:#1E3A8A; border:none; padding:8px 14px; border-radius:10px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+            <span class="material-icons" style="font-size:16px;">refresh</span> โหลดใหม่
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="air-toolbar">
+            <div class="air-chips" id="air-status-chips" role="group" aria-label="กรองตามสถานะ"></div>
+            <select id="air-category" class="air-select" aria-label="กรองตามประเภท"><option value="">ทุกประเภท</option></select>
+            <label class="air-search"><span class="material-icons" aria-hidden="true">search</span><input id="air-search" type="search" placeholder="ค้นหาเลขเรื่อง หัวข้อ รหัส หรือชื่อนิสิต" /></label>
+          </div>
+          <div class="air-table-wrap">
+            <table class="data-table air-table">
+              <thead>
+                <tr>
+                  <th style="width:11%;">เลขเรื่อง</th>
+                  <th>หัวข้อ / นิสิต</th>
+                  <th style="width:16%;">ประเภท</th>
+                  <th style="width:10%;">เร่งด่วน</th>
+                  <th style="width:12%;">วันที่แจ้ง</th>
+                  <th style="width:14%;">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="air-tbody"><tr><td colspan="6" class="text-center py-6 text-gray-400">กำลังโหลด...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- หน้าต่างรายละเอียดเรื่องที่แจ้ง + เปลี่ยนสถานะ -->
+    <div id="air-modal" class="air-modal" hidden role="dialog" aria-modal="true" aria-labelledby="air-modal-title">
+      <div class="air-modal-box">
+        <div class="air-modal-head">
+          <div style="min-width:0;">
+            <div class="air-modal-id" id="air-modal-id"></div>
+            <h3 id="air-modal-title"></h3>
+          </div>
+          <button type="button" class="air-icon-btn" aria-label="ปิด" onclick="window.closeIssueReport()"><span class="material-icons">close</span></button>
+        </div>
+        <div class="air-modal-body" id="air-modal-body"></div>
+        <div class="air-modal-form">
+          <label for="air-modal-status">สถานะ</label>
+          <select id="air-modal-status" class="air-select"></select>
+          <label for="air-modal-note">ข้อความตอบกลับนิสิต <span style="font-weight:500; color:#94A3B8;">(ไม่บังคับ)</span></label>
+          <textarea id="air-modal-note" class="air-textarea" maxlength="1000" placeholder="เช่น แก้ไขข้อมูลให้แล้ว กรุณาออกจากระบบแล้วเข้าใหม่"></textarea>
+        </div>
+        <div class="air-modal-foot">
+          <button type="button" class="air-btn-ghost" onclick="window.closeIssueReport()">ยกเลิก</button>
+          <button type="button" class="air-btn-primary" id="air-modal-save" onclick="window.saveIssueReport()"><span class="material-icons" style="font-size:16px;">save</span>บันทึก</button>
+        </div>
+      </div>
     </div>
 
     <!-- =====================================================================

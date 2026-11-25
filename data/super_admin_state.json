@@ -1300,5 +1300,29 @@
       "issuedAt": "2026-11-17T00:00:00.000Z",
       "legacy": true
     }
-  }
+  },
+  "issueReports": [
+    {
+      "id": "RP-0001",
+      "studentId": 12,
+      "studentCode": "67023110",
+      "studentName": "เอกัทร อินทร์สวัสดิ์",
+      "email": "67023110@up.ac.th",
+      "category": "OTHER",
+      "title": "test",
+      "page": "Dashboard",
+      "detail": "test",
+      "urgency": "HIGH",
+      "contactByEmail": true,
+      "attachments": [
+        {
+          "name": "1.jpg",
+          "url": "https://res.cloudinary.com/j5ccelrs/image/upload/v1795579519/se_internship/issue-reports/1795579518462-1.jpg"
+        }
+      ],
+      "status": "RESOLVED",
+      "createdAt": "2026-11-25T04:05:20.193Z",
+      "updatedAt": "2026-11-25T04:06:08.036Z"
+    }
+  ]
 }

@@ -14,6 +14,7 @@ import StatusAllPage from "./StatusAllPage";
 import SubmissionStatusPage from "./SubmissionStatusPage";
 import AdvisorChecklistReviewPage from "./AdvisorChecklistReviewPage";
 import AdminStudentDetailPage from "./AdminStudentDetailPage";
+import ReportIssuePage from "./ReportIssuePage";
 
 export const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   // Clean Routes (แบบที่ 1: มาตรฐาน Clean URL สากล)
@@ -30,6 +31,7 @@ export const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   "checklist": ChecklistPage,
   "status-all": StatusAllPage,
   "submission-status": SubmissionStatusPage,
+  "report-issue": ReportIssuePage,
 
   // PascalCase aliases
   "AdminDashboard": AdminDashboardPage,
@@ -45,6 +47,7 @@ export const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   "ChecklistPage": ChecklistPage,
   "StatusAllPage": StatusAllPage,
   "SubmissionStatusPage": SubmissionStatusPage,
+  "ReportIssuePage": ReportIssuePage,
 
   // Legacy aliases (รองรับลิงก์เก่าทั้งภาษาไทยและอังกฤษ)
   "dashboard": StudentDashboardPage,
@@ -96,6 +99,8 @@ export const CLEAN_ROUTE_MAP: Record<string, string> = {
   "status-all": "/status-all",
   "submission_status": "/submission-status",
   "submission-status": "/submission-status",
+  "report-issue": "/report-issue",
+  "report_issue": "/report-issue",
   "login": "/login",
 };
 
@@ -138,4 +143,5 @@ export {
   SubmissionStatusPage,
   AdvisorChecklistReviewPage,
   AdminStudentDetailPage,
+  ReportIssuePage,
 };

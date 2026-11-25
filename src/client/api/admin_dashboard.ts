@@ -2235,7 +2235,7 @@ let superAdminData = {
   letterBatches: [] as any[],
 };
 
-type AdminWorkspace = 'overview' | 'unlock' | 'events' | 'companies' | 'coopjobs' | 'documents' | 'coop' | 'checklist';
+type AdminWorkspace = 'overview' | 'unlock' | 'events' | 'companies' | 'coopjobs' | 'documents' | 'coop' | 'checklist' | 'issues';
 
 let currentWorkspace: AdminWorkspace = 'overview';
 
@@ -2266,7 +2266,7 @@ window.switchAdminWorkspace = function(wsKey: AdminWorkspace) {
     }
   }
   currentWorkspace = wsKey;
-  const workspaces: AdminWorkspace[] = ['overview', 'unlock', 'events', 'companies', 'coopjobs', 'documents', 'coop', 'checklist'];
+  const workspaces: AdminWorkspace[] = ['overview', 'unlock', 'events', 'companies', 'coopjobs', 'documents', 'coop', 'checklist', 'issues'];
   workspaces.forEach(k => {
     const panel = document.getElementById(`workspace-${k}`);
     const tabBtn = document.getElementById(`ws-tab-${k}`);
@@ -2282,6 +2282,8 @@ window.switchAdminWorkspace = function(wsKey: AdminWorkspace) {
   if (wsKey === 'unlock' && window.loadCohorts) window.loadCohorts();
   // ประกาศสหกิจศึกษา (admin_coop_postings.js)
   if (wsKey === 'coopjobs' && window.loadCoopPostings) window.loadCoopPostings();
+  // เรื่องที่นิสิตแจ้งปัญหา (admin_issue_reports.js)
+  if (wsKey === 'issues' && window.loadIssueReports) window.loadIssueReports();
   if (wsKey === 'checklist') {
     if (typeof (window as any).hasUnsavedChecklistChanges === 'function' && (window as any).hasUnsavedChecklistChanges()) {
       return;

@@ -626,6 +626,38 @@ body {
   }
 }
 
+/* ===== เมนู "อื่นๆ" ของนิสิต (dropdown ใน topbar) ===== */
+.nav-more { position: relative; }
+.ict-topbar-center .nav-more-toggle { border: 0; background: transparent; font-family: inherit; cursor: pointer; }
+.nav-more-caret { font-size: 16px !important; transition: transform 0.18s ease; }
+.nav-more.is-open .nav-more-caret { transform: rotate(180deg); }
+.nav-more-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; min-width: 280px;
+  padding: 6px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+}
+.nav-more-menu[hidden] { display: none; }
+.ict-topbar-center .nav-more-item {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+  color: #0F172A; text-decoration: none;
+}
+.ict-topbar-center .nav-more-item:hover, .ict-topbar-center .nav-more-item:focus-visible, .ict-topbar-center .nav-more-item.active { background: #EEF2FF; color: #0F172A; outline: none; }
+.nav-more-icon {
+  width: 36px; height: 36px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: #E0E7FF; color: #4338CA;
+}
+.nav-more-icon .material-icons { font-size: 20px; }
+.nav-more-text { display: flex; flex-direction: column; min-width: 0; }
+.nav-more-text b { font-size: 13.5px; font-weight: 700; }
+.nav-more-text small { font-size: 11.5px; color: #64748B; }
+@media (max-width: 1200px) {
+  /* ในเมนู 3 ขีด: เมนูย่อยแสดงต่อท้ายในแนวตั้ง ไม่ลอย */
+  .ict-topbar-center.header-nav .nav-more-toggle { width: 100%; }
+  .ict-topbar-center.header-nav .nav-more-caret { margin-left: auto; }
+  .ict-topbar-center.header-nav .nav-more-menu { position: static; min-width: 0; margin: 2px 0 0; box-shadow: none; border-color: #F1F5F9; }
+  .ict-topbar-center.header-nav .nav-more-item { padding: 10px 12px; border-top: 0; font-size: inherit; }
+}
+
 /* จอใหญ่: เมนูอยู่แถวบน ใช้ปุ่มออกจากระบบขวาบนแทน */
 .ict-topbar-center.header-nav .nav-link.nav-logout {
   display: none;
