@@ -777,6 +777,7 @@ const PAGE_STYLES: string[] = [`
 `];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
+  "../components/official_letter.js",
   "../api/admin_dashboard.js",
   "../api/admin_coop_postings.js",
   "../api/admin_issue_reports.js"
@@ -1858,6 +1859,19 @@ ${majorOptionsHtml("                    ")}
               <label style="font-size:12.5px; font-weight:700; color:#334155;">ชื่อผู้ลงนามหนังสือราชการ</label>
               <input type="text" id="cfg-dean-name" class="input-field" value="ผู้ช่วยศาสตราจารย์ ดร.พรเทพ โรจนวสุ" style="margin-top:4px;" />
             </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:700; color:#334155;">ตำแหน่งผู้ลงนาม <span style="font-weight:500; color:#64748B;">(Enter = ขึ้นบรรทัดใหม่)</span></label>
+              <textarea id="cfg-dean-position" class="input-field" rows="2" maxlength="400" style="margin-top:4px; resize:vertical;" placeholder="เช่น รองคณบดีฝ่าย... รักษาการแทน&#10;คณบดีคณะเทคโนโลยีสารสนเทศและการสื่อสาร"></textarea>
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:700; color:#334155;">เบอร์โทรท้ายหนังสือ (งานวิชาการ)</label>
+              <input type="text" id="cfg-office-phone" class="input-field" maxlength="100" style="margin-top:4px;" placeholder="เช่น 0-5446-6666 ต่อ 2323" />
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div style="font-size:12.5px; font-weight:800; color:#334155; margin-bottom:6px;">อาจารย์รายวิชาฝึกงาน (ผู้ประสานงานในหนังสือขอความอนุเคราะห์) แยกตามสาขา</div>
+            <div id="cfg-course-instructors" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:8px;"></div>
           </div>
         </div>
       </section>
@@ -2341,7 +2355,7 @@ ${ICT_MAJORS.map((m) => `            <label style="display:flex; align-items:cen
 
     <!-- Modal: พรีวิวและพิมพ์หนังสือราชการ PDF (หนังสือขอความอนุเคราะห์ + แบบฟอร์มใบตอบรับ / หนังสือส่งตัว) -->
     <div id="official-letter-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:1100; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
-      <div style="background:white; border-radius:20px; width:820px; max-width:95%; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 25px 60px rgba(15,23,42,0.35); overflow:hidden;">
+      <div style="background:white; border-radius:20px; width:880px; max-width:95%; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 25px 60px rgba(15,23,42,0.35); overflow:hidden;">
         <div style="background:linear-gradient(135deg, #1E1B4B 0%, #4338CA 100%); padding:16px 24px; color:white; display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="material-icons" style="font-size:22px;">picture_as_pdf</span>
@@ -2362,7 +2376,7 @@ ${ICT_MAJORS.map((m) => `            <label style="display:flex; align-items:cen
             </button>
           </div>
         </div>
-        <div id="official-letter-print-area" style="padding:32px 40px; overflow-y:auto; flex:1; background:#FFFFFF; color:#0F172A; font-family:'Sarabun', sans-serif; line-height:1.7;"></div>
+        <div id="official-letter-print-area" style="padding:20px 16px; overflow:auto; flex:1; background:#E2E8F0; color:#0F172A; font-family:'Sarabun', sans-serif; line-height:1.7;"></div>
       </div>
     </div>
 

@@ -14,7 +14,7 @@ import {
   termSortKey,
   windowDisplayLabel,
 } from "../utils/internshipWindows";
-import { batchesForStudent, getLetterBatch, toBatchStudent } from "../utils/letterBatches";
+import { batchesForStudent, getLetterBatch, letterHeaderSnapshot, toBatchStudent } from "../utils/letterBatches";
 import { analyzeAcceptanceForm } from "../utils/acceptanceOcr";
 import {
   loadSuperAdminState,
@@ -779,11 +779,12 @@ function toStudentAcceptanceView(wf: any, state?: any, student?: any, letterStud
     requestLetterIssued: Boolean(wf.requestLetterIssued),
     requestLetterDocNo: wf.requestLetterDocNo || "",
     requestLetterDate: wf.requestLetterDate || "",
-    requestLetterSignatureSnapshot: wf.requestLetterSignatureSnapshot || cfg.signatureDataUrl || "",
+    // ลายเซ็น: ใช้ลายเซ็นปัจจุบันในตั้งค่าก่อนเสมอ · ไม่มี → ลายเซ็นที่เก็บไว้ตอนออกหนังสือ
+    requestLetterSignatureSnapshot: cfg.signatureDataUrl || wf.requestLetterSignatureSnapshot || "",
     dispatchLetterIssued: Boolean(wf.dispatchLetterIssued),
     dispatchLetterDocNo: wf.dispatchLetterDocNo || "",
     dispatchLetterDate: wf.dispatchLetterDate || "",
-    dispatchLetterSignatureSnapshot: wf.dispatchLetterSignatureSnapshot || cfg.signatureDataUrl || "",
+    dispatchLetterSignatureSnapshot: cfg.signatureDataUrl || wf.dispatchLetterSignatureSnapshot || "",
     companyName: wf.companyName || student?.placement?.companyNameTh || student?.companies?.[0]?.name || "",
     companyAddress: student?.placement?.companyAddress || "",
     status: wf.companyResponseStatus || "NOT_SENT",
@@ -799,6 +800,7 @@ function toStudentAcceptanceView(wf: any, state?: any, student?: any, letterStud
       currentAcademicYear: cfg.currentAcademicYear || "2568",
       deanSignatory: cfg.deanSignatory || "ผู้ช่วยศาสตราจารย์ ดร.พรเทพ โรจนวสุ",
       deanPosition: cfg.deanPosition || "คณบดีคณะเทคโนโลยีสารสนเทศและการสื่อสาร",
+      officePhone: cfg.officePhone || "",
     },
     letterStudents: letterStudents && letterStudents.length > 0 ? letterStudents : fallbackStudent,
   };
@@ -834,19 +836,40 @@ router.get("/acceptance-form", async (req: Request, res: Response) => {
     }
 
     const view: any = toStudentAcceptanceView(wf, state, student, letterStudents);
+
+    // ส่วนหัว/ท้ายหนังสือ (เรียน / ผู้ประสานงาน / ผู้ลงนาม): ฉบับที่ออกแล้วใช้ค่า ณ วันที่ออก
+    // ฉบับเก่าที่ไม่มีค่า → ใช้ข้อมูลปัจจุบัน (ผู้รับจากข้อมูลบริษัทของนิสิตเอง · อาจารย์รายวิชาตามสาขาในรายชื่อ)
+    // useOwnPlacement=false: หนังสือบริษัทเดิม (ฉบับก่อนหน้า) — ข้อมูลบริษัทปัจจุบันของนิสิตไม่ใช่ผู้รับของฉบับนั้น
+    const headerOf = (batch: any, listStudents: any[], useOwnPlacement = true) => {
+      const fallback = letterHeaderSnapshot(state.academicConfig, [
+        { major: student.major, placement: useOwnPlacement ? student.placement : null },
+        ...(listStudents || []).map((s: any) => ({ major: s?.major })),
+      ]);
+      return {
+        recipientName: batch?.recipientName || fallback.recipientName,
+        recipientPosition: batch?.recipientName ? batch.recipientPosition || "" : fallback.recipientPosition,
+        instructors: batch?.instructors?.length ? batch.instructors : fallback.instructors,
+        // ผู้ลงนาม: ใช้ค่าตั้งค่าปัจจุบันเสมอ (แก้ในตั้งค่าแล้วหนังสือทุกฉบับเปลี่ยนตาม) · ไม่มีค่า → ค่าที่เก็บไว้ในฉบับ
+        signatoryName: fallback.signatoryName || batch?.signatoryName || "",
+        signatoryPosition: fallback.signatoryPosition || batch?.signatoryPosition || "",
+      };
+    };
+    view.requestLetterHeader = headerOf(reqBatch, view.letterStudents);
+
     if (wf) {
       if (reqBatch) {
         view.requestLetterDocNo = reqBatch.docNo;
         view.requestLetterDate = reqBatch.letterDate;
-        view.requestLetterSignatureSnapshot = reqBatch.signatureSnapshot || view.requestLetterSignatureSnapshot;
+        view.requestLetterSignatureSnapshot = state.academicConfig?.signatureDataUrl || reqBatch.signatureSnapshot || "";
         view.companyName = reqBatch.companyName || view.companyName;
       }
       // หนังสือส่งตัวแนบรายชื่อเฉพาะนิสิตที่บริษัทตอบรับ (ไม่ใช่รายชื่อของหนังสือขอความอนุเคราะห์)
       view.dispatchLetterStudents = dspBatch ? dspBatch.students : view.letterStudents;
+      view.dispatchLetterHeader = headerOf(dspBatch, view.dispatchLetterStudents);
       if (dspBatch) {
         view.dispatchLetterDocNo = dspBatch.docNo;
         view.dispatchLetterDate = dspBatch.letterDate;
-        view.dispatchLetterSignatureSnapshot = dspBatch.signatureSnapshot || view.dispatchLetterSignatureSnapshot;
+        view.dispatchLetterSignatureSnapshot = state.academicConfig?.signatureDataUrl || dspBatch.signatureSnapshot || "";
       }
     }
     // หนังสือฉบับก่อนหน้าที่มีชื่อนิสิต (เช่น บริษัทเดิมที่ปฏิเสธ) — ยังดาวน์โหลดย้อนหลังได้
@@ -859,8 +882,9 @@ router.get("/acceptance-form", async (req: Request, res: Response) => {
         companyName: b.companyName,
         docNo: b.docNo,
         letterDate: b.letterDate,
-        signatureSnapshot: b.signatureSnapshot,
+        signatureSnapshot: state.academicConfig?.signatureDataUrl || b.signatureSnapshot || "",
         students: b.students,
+        header: headerOf(b, b.students, false),
       }));
 
     res.json({ success: true, acceptance: view });

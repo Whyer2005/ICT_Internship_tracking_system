@@ -5,11 +5,50 @@
 //  - หนังสือส่งตัว: ออกให้เฉพาะนิสิตที่บริษัทตอบรับแล้ว และยังไม่ได้ส่งตัว
 //  - แบบตอบรับเป็นรายคน (นิสิตแต่ละคนอัปโหลดเอง)
 import type {
+  CourseInstructorContact,
   LetterBatch,
   LetterBatchStudent,
   LetterType,
   StudentDocWorkflowRecord,
 } from "./superAdminStore";
+import { findMajor } from "./majors";
+
+/**
+ * ข้อมูลส่วนหัว/ท้ายหนังสือที่ต้องเก็บ ณ วันที่ออก (แก้ข้อมูลภายหลังไม่กระทบฉบับที่ออกไปแล้ว)
+ * - ผู้รับ ("เรียน ... ตำแหน่ง ...") = บุคคลที่ให้หนังสือความอนุเคราะห์ ที่นิสิตกรอกใน Checklist (คนแรกที่มีข้อมูล)
+ * - ผู้ประสานงาน = อาจารย์รายวิชาของแต่ละสาขาที่มีนิสิตในฉบับ (ตั้งค่าในการ์ดตั้งค่าภาคการศึกษา)
+ */
+export function letterHeaderSnapshot(
+  config: {
+    deanSignatory?: string;
+    deanPosition?: string;
+    courseInstructors?: Record<string, CourseInstructorContact>;
+  },
+  students: Array<{
+    major?: string | null;
+    placement?: { contactPersonName?: string | null; contactPersonPosition?: string | null } | null;
+  }>
+): Pick<LetterBatch, "recipientName" | "recipientPosition" | "instructors" | "signatoryName" | "signatoryPosition"> {
+  const withContact = students.find((s) => (s.placement?.contactPersonName || "").trim());
+  // courseInstructors ใช้รหัสสาขาเป็น key (เช่น "SE") เพราะชื่อสาขาในข้อมูลนิสิตเขียนได้หลายแบบ
+  const majorCodes = Array.from(
+    new Set(students.map((s) => findMajor(s.major)?.code || "").filter(Boolean))
+  );
+  const instructors = majorCodes
+    .map((code) => {
+      const c = config.courseInstructors?.[code];
+      const major = findMajor(code)?.name || code;
+      return { major, name: (c?.name || "").trim(), phone: (c?.phone || "").trim() };
+    })
+    .filter((c) => c.name || c.phone);
+  return {
+    recipientName: (withContact?.placement?.contactPersonName || "").trim(),
+    recipientPosition: (withContact?.placement?.contactPersonPosition || "").trim(),
+    instructors,
+    signatoryName: (config.deanSignatory || "").trim(),
+    signatoryPosition: (config.deanPosition || "").trim(),
+  };
+}
 
 type BatchState = {
   docWorkflowMap: Record<string, StudentDocWorkflowRecord>;
@@ -28,6 +67,7 @@ export function toBatchStudent(s: {
   nameTh: string;
   major?: string | null;
   phone?: string | null;
+  year?: number | null;
   placement?: { position?: string | null; companyAddress?: string | null } | null;
   internshipWindow?: { internStartDate?: Date | null; internEndDate?: Date | null } | null;
 }): LetterBatchStudent {
@@ -40,6 +80,7 @@ export function toBatchStudent(s: {
     phone: s.phone || "-",
     companyAddress: s.placement?.companyAddress || "",
   };
+  if (typeof s.year === "number" && s.year > 0) out.year = s.year;
   // ช่วงฝึกตามรอบออกฝึกของนิสิต (เก็บลงฉบับหนังสือ ณ วันที่ออก — แก้วันของรอบภายหลังไม่กระทบฉบับที่ออกไปแล้ว)
   const start = s.internshipWindow?.internStartDate;
   const end = s.internshipWindow?.internEndDate;

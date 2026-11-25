@@ -389,7 +389,7 @@ function parseIsoDate(value) {
   return { y: dt.getFullYear(), m: dt.getMonth() + 1, d: dt.getDate() };
 }
 
-// ===== ช่วงฝึกในหนังสือ ("ในระหว่างวันที่ … ถึงวันที่ …") — กติกาเดียวกับฝั่งเจ้าหน้าที่ (admin_dashboard.ts) =====
+// ===== วันที่ภาษาไทย ("2 พฤศจิกายน 2569") — ใช้แสดงวันเริ่ม/สิ้นสุดฝึกในโปรไฟล์ (แบบหนังสือใช้ official_letter.ts) =====
 const LETTER_THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
 /** "2026-11-02" -> "2 พฤศจิกายน 2569" */
@@ -397,25 +397,6 @@ function letterThaiDate(ymd) {
   const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return '';
   return `${parseInt(m[3], 10)} ${LETTER_THAI_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
-}
-
-function letterPeriodText(start, end) {
-  const a = letterThaiDate(start);
-  const b = letterThaiDate(end);
-  if (a && b) return `ในระหว่างวันที่ ${a} ถึงวันที่ ${b}`;
-  if (a) return `ตั้งแต่วันที่ ${a} เป็นต้นไป`;
-  return '';
-}
-
-/** ทุกคนช่วงเดียวกัน -> ใส่ในประโยค · คนละช่วง -> แสดงใต้ชื่อแต่ละคน · ไม่มีข้อมูล (ฉบับเก่า) -> ไม่ใส่ */
-function letterPeriodInfo(students) {
-  const perStudent = students.map(s => letterPeriodText(s.internStartDate, s.internEndDate));
-  const uniq = Array.from(new Set(perStudent.filter(Boolean)));
-  const same = uniq.length === 1 && perStudent.every(p => p === uniq[0]);
-  return {
-    sentence: same ? ` <strong>${uniq[0]}</strong>` : (uniq.length ? ' ตามช่วงเวลาที่ระบุใต้ชื่อนิสิตแต่ละคน' : ''),
-    perStudent: same ? students.map(() => '') : perStudent,
-  };
 }
 
 // "13 พ.ย. 2569" / ช่วงวัน "7–8 พ.ย. 2569", "30 ต.ค. – 2 พ.ย. 2569"
@@ -2584,44 +2565,44 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
         phone: document.getElementById('prof-phone')?.value || '-',
       }];
 
-  const first = students[0];
   const cfg = acc.academicConfig || {};
   const docNo = past
     ? past.docNo
     : type === 'DISPATCH'
-    ? (acc.dispatchLetterDocNo || 'อว 7316/ว 0512')
-    : (acc.requestLetterDocNo || 'อว 7316/ว 0142');
-  const rawDate = past ? past.letterDate : type === 'DISPATCH' ? acc.dispatchLetterDate : acc.requestLetterDate;
-  const dateObj = rawDate ? new Date(rawDate) : new Date();
-  const thaiDate = !isNaN(dateObj.getTime())
-    ? dateObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-    : new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+    ? (acc.dispatchLetterDocNo || '')
+    : (acc.requestLetterDocNo || '');
+  const letterDate = past ? past.letterDate : type === 'DISPATCH' ? acc.dispatchLetterDate : acc.requestLetterDate;
   const signatureDataUrl = past
     ? (past.signatureSnapshot || '')
     : type === 'DISPATCH'
     ? (acc.dispatchLetterSignatureSnapshot || '')
     : (acc.requestLetterSignatureSnapshot || '');
   const targetCompName = past?.companyName || acc.companyName || (currentSubmissionsData[0]?.name) || 'สถานประกอบการ';
-  const rawCompAddress = past
-    ? ((past.students || []).find(s => s.companyAddress && s.companyAddress !== '-')?.companyAddress || '')
-    : acc.companyAddress;
-  const targetCompAddress = rawCompAddress && rawCompAddress !== '-' ? rawCompAddress : '';
-  const targetMajor = first.major || 'วิศวกรรมซอฟต์แวร์';
-  const subjectText = type === 'DISPATCH'
-    ? 'ขอส่งตัวนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา'
-    : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา และนัดหมายสัมภาษณ์';
+  // เรียน / ผู้ประสานงาน / ผู้ลงนาม (เซิร์ฟเวอร์ส่งค่า ณ วันที่ออกหนังสือมาให้)
+  const header = (past ? past.header : type === 'DISPATCH' ? acc.dispatchLetterHeader : acc.requestLetterHeader) || {};
+  // ชั้นปีของตัวเอง (ฉบับเก่าที่ไม่ได้เก็บชั้นปีไว้)
+  const myCode = document.getElementById('prof-studentCode')?.value || '';
+  const myYear = document.getElementById('prof-year')?.value || '';
 
-  const period = letterPeriodInfo(students);
-  const studentRowsHtml = students.map((s, idx) => `
-    <tr>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${idx + 1}</td>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${escapeStudentHtml(s.studentCode)}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${escapeStudentHtml(s.nameTh)}${period.perStudent[idx] ? `<div style="font-size:11.5px; color:#334155;">${period.perStudent[idx]}</div>` : ''}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">วท.บ. (${escapeStudentHtml(s.major || targetMajor)})</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${escapeStudentHtml(s.position || 'นิสิตฝึกงาน')}</td>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${escapeStudentHtml(s.phone || '-')}</td>
-    </tr>
-  `).join('');
+  if (typeof window.buildOfficialLetterHtml !== 'function') {
+    alert('โหลดแบบหนังสือไม่สำเร็จ กรุณารีเฟรชหน้า (Ctrl+F5) แล้วลองใหม่');
+    return;
+  }
+  // แบบหนังสือกลาง: src/client/components/official_letter.ts (ฝั่งเจ้าหน้าที่ใช้แบบเดียวกัน)
+  const letterHtml = window.buildOfficialLetterHtml({
+    type,
+    docNo,
+    letterDate: letterDate || '',
+    companyName: targetCompName,
+    recipientName: header.recipientName || '',
+    recipientPosition: header.recipientPosition || '',
+    instructors: header.instructors || [],
+    signatoryName: cfg.deanSignatory || header.signatoryName || '',
+    signatoryPosition: cfg.deanPosition || header.signatoryPosition || '',
+    signatureDataUrl,
+    officePhone: cfg.officePhone || '',
+    students: students.map(s => ({ ...s, year: s.year || (s.studentCode === myCode ? myYear : '') })),
+  });
 
   const win = window.open('', '_blank', 'width=920,height=800');
   if (!win) {
@@ -2635,85 +2616,33 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
       <head>
         <meta charset="utf-8" />
         <title>${escapeStudentHtml(letterFileTitle(type, targetCompName))}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
         <style>
-          body { font-family: 'Sarabun', sans-serif; padding: 24px 36px; color: #0F172A; line-height: 1.65; background: #F1F5F9; margin: 0; }
+          @page { size: A4 portrait; margin: 0; } /* ระยะขอบตามระเบียบสารบรรณอยู่ในแบบหนังสือแล้ว (แผ่น A4 เต็มแผ่น — official_letter.ts) */
+          * { box-sizing: border-box; }
+          body { font-family: 'Sarabun', sans-serif; padding: 24px 16px; color: #000; background: #F1F5F9; margin: 0; }
           .print-toolbar {
             max-width: 760px; margin: 0 auto 16px auto; background: #1E293B; color: white;
-            padding: 10px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px;
           }
-          .print-sheet {
-            max-width: 720px; margin: 0 auto; background: white; padding: 32px 40px;
-            border-radius: 10px; box-shadow: 0 4px 20px rgba(15,23,42,0.08);
-          }
+          .print-sheet { width: 210mm; margin: 0 auto; }
           @media print {
             body { padding: 0; background: white; }
-            .print-toolbar { display: none !important; }
-            .print-sheet { box-shadow: none; padding: 0; max-width: 100%; }
+            .print-toolbar, .letter-preview-sep { display: none !important; }
+            .official-letter-sheet { box-shadow: none !important; }
           }
         </style>
       </head>
       <body>
         <div class="print-toolbar">
           <div style="font-size:13.5px; font-weight:700;">
-            📄 ${type === 'DISPATCH' ? 'หนังสือส่งตัวนิสิตเข้าฝึกงาน' : 'หนังสือขอความอนุเคราะห์ฝึกงาน'} — เลขที่ ${escapeStudentHtml(docNo)}
+            📄 ${type === 'DISPATCH' ? 'หนังสือส่งตัวนิสิตเข้าฝึกงาน' : 'หนังสือขอความอนุเคราะห์ฝึกงาน'} — เลขที่ ${escapeStudentHtml(docNo || '-')}
           </div>
           <button onclick="window.print()" style="background:#2563EB; color:white; border:none; padding:7px 16px; border-radius:8px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;">
             🖨️ พิมพ์ / บันทึกเป็น PDF (Save as PDF)
           </button>
         </div>
-        <div class="print-sheet" style="font-size:14px; color:#0F172A;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
-            <div><div style="font-weight:700;">ที่ ${escapeStudentHtml(docNo)}</div></div>
-            <div style="text-align:center;">
-              <div style="font-size:17px; font-weight:800; color:#1E1B4B;">คณะเทคโนโลยีสารสนเทศและการสื่อสาร</div>
-              <div style="font-size:14px; font-weight:700;">มหาวิทยาลัยพะเยา จ.พะเยา 56000</div>
-            </div>
-            <div style="text-align:right;"><div>วันที่ ${escapeStudentHtml(thaiDate)}</div></div>
-          </div>
-
-          <div style="margin-bottom:10px;"><strong>เรื่อง</strong> &nbsp;&nbsp;${subjectText}</div>
-          <div style="margin-bottom:10px;"><strong>เรียน</strong> &nbsp;&nbsp;ผู้จัดการฝ่ายทรัพยากรบุคคล / ผู้บริหาร <strong>${escapeStudentHtml(targetCompName)}</strong></div>
-          ${type === 'REQUEST' ? `<div style="margin-bottom:14px;"><strong>สิ่งที่ส่งมาด้วย</strong> &nbsp;&nbsp;1. แบบตอบรับ/ปฏิเสธ การรับนิสิตฝึกงาน และประวัติย่อ (CV) จำนวน ${students.length} ชุด</div>` : ''}
-
-          <p style="text-indent:40px; margin-bottom:12px; text-align:justify;">
-            ด้วย คณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา ได้กำหนดให้นิสิตระดับปริญญาตรี ชั้นปีที่ 3-4 เข้ารับการฝึกงานวิชาชีพและสหกิจศึกษาในสถานประกอบการ เพื่อให้นิสิตได้เพิ่มพูนทักษะและประสบการณ์การทำงานจริงในสายวิชาชีพเทคโนโลยีสารสนเทศ พิจารณาแล้วเห็นว่าหน่วยงานของท่านมีความเหมาะสมและมีมาตรฐานทางวิชาชีพเป็นอย่างดียิ่ง
-          </p>
-
-          <p style="text-indent:40px; margin-bottom:14px;">
-            ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong>${period.sentence} ประจำปีการศึกษา ${escapeStudentHtml(cfg.currentAcademicYear || '2568')} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
-          </p>
-
-          <table style="width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13px;">
-            <thead>
-              <tr style="background:#F1F5F9;">
-                <th style="border:1px solid #334155; padding:6px 10px;">ลำดับ</th>
-                <th style="border:1px solid #334155; padding:6px 10px;">รหัสนิสิต</th>
-                <th style="border:1px solid #334155; padding:6px 10px;">ชื่อ - นามสกุล</th>
-                <th style="border:1px solid #334155; padding:6px 10px;">หลักสูตร/สาขาวิชา</th>
-                <th style="border:1px solid #334155; padding:6px 10px;">ตำแหน่งที่ยื่นฝึกงาน</th>
-                <th style="border:1px solid #334155; padding:6px 10px;">เบอร์โทรศัพท์</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${studentRowsHtml}
-            </tbody>
-          </table>
-
-          <p style="text-indent:40px; margin-bottom:24px;">
-            จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์ และขอขอบพระคุณในความร่วมมือด้วยดีเสมอมา ณ โอกาสนี้
-          </p>
-
-          <div style="text-align:center; margin-left:240px; margin-bottom:20px;">
-            <div>ขอแสดงความนับถือ</div>
-            <div style="height:68px; display:flex; align-items:flex-end; justify-content:center;">
-              ${signatureDataUrl ? `<img src="${signatureDataUrl}" alt="ลายเซ็นผู้ลงนาม" style="max-width:150px; max-height:64px; object-fit:contain;" />` : ''}
-            </div>
-            <div style="font-weight:700;">(${escapeStudentHtml(cfg.deanSignatory || 'ผู้ช่วยศาสตราจารย์ ดร.พรเทพ โรจนวสุ')})</div>
-            <div>${escapeStudentHtml(cfg.deanPosition || 'คณบดีคณะเทคโนโลยีสารสนเทศและการสื่อสาร')}</div>
-            <div>มหาวิทยาลัยพะเยา</div>
-          </div>
-        </div>
+        <div class="print-sheet">${letterHtml}</div>
       </body>
     </html>
   `);

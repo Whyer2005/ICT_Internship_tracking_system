@@ -35,10 +35,12 @@ import {
 import {
   backfillLegacyBatches,
   findIneligibleForLetter,
+  letterHeaderSnapshot,
   newBatchId,
   saveLetterBatch,
   toBatchStudent,
 } from "../utils/letterBatches";
+import { findMajor } from "../utils/majors";
 import { cohortAcademicYear, cohortCodeOf, ymd } from "../utils/internshipWindowRules";
 
 const upload = multer({
@@ -2405,6 +2407,9 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
         companyAddress: s.placement?.companyAddress || "-",
         companyProvince: s.placement?.province || "-",
         contactPersonName: s.placement?.contactPersonName || "ฝ่ายทรัพยากรบุคคล (HR)",
+        // ผู้รับหนังสือ ("เรียน ... ตำแหน่ง ...") ในพรีวิวร่าง — ค่าว่างถ้านิสิตยังไม่กรอก
+        letterRecipientName: s.placement?.contactPersonName || "",
+        letterRecipientPosition: s.placement?.contactPersonPosition || "",
         contactPersonPhone: s.placement?.companyPhone1 || "-",
         checklistStatus,
         interviewDate: wf.interviewDate || "2026-02-15",
@@ -2497,14 +2502,38 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
 router.post("/super-admin/academic-config", async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
-    const { currentAcademicYear, currentSemester, defaultDocPrefix, deanSignatory, deanPosition } =
-      req.body;
+    const {
+      currentAcademicYear,
+      currentSemester,
+      defaultDocPrefix,
+      deanSignatory,
+      deanPosition,
+      officePhone,
+      courseInstructors,
+    } = req.body;
 
     if (currentAcademicYear) state.academicConfig.currentAcademicYear = String(currentAcademicYear).trim();
     if (currentSemester) state.academicConfig.currentSemester = String(currentSemester).trim();
     if (defaultDocPrefix !== undefined) state.academicConfig.defaultDocPrefix = String(defaultDocPrefix).trim();
-    if (deanSignatory !== undefined) state.academicConfig.deanSignatory = String(deanSignatory).trim();
-    if (deanPosition !== undefined) state.academicConfig.deanPosition = String(deanPosition).trim();
+    if (deanSignatory !== undefined) state.academicConfig.deanSignatory = String(deanSignatory).trim().slice(0, 200);
+    // ตำแหน่งผู้ลงนามขึ้นบรรทัดใหม่ได้ (เช่น "รองคณบดี... รักษาการแทน\nคณบดี...")
+    if (deanPosition !== undefined) state.academicConfig.deanPosition = String(deanPosition).trim().slice(0, 400);
+    if (officePhone !== undefined) state.academicConfig.officePhone = String(officePhone).trim().slice(0, 100);
+    if (courseInstructors !== undefined) {
+      if (!courseInstructors || typeof courseInstructors !== "object" || Array.isArray(courseInstructors)) {
+        return res.status(400).json({ success: false, message: "รูปแบบข้อมูลอาจารย์รายวิชาไม่ถูกต้อง" });
+      }
+      const cleaned: Record<string, { name: string; phone: string }> = {};
+      for (const [major, v] of Object.entries(courseInstructors as Record<string, any>).slice(0, 30)) {
+        // key = รหัสสาขา (เช่น "SE") — รับเฉพาะสาขาที่มีในระบบ
+        const key = findMajor(String(major).trim())?.code || "";
+        const name = String(v?.name ?? "").trim().slice(0, 200);
+        const phone = String(v?.phone ?? "").trim().slice(0, 50);
+        if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+        if (key && (name || phone)) cleaned[key] = { name, phone };
+      }
+      state.academicConfig.courseInstructors = cleaned;
+    }
     state.academicConfig.updatedAt = new Date().toISOString();
 
     saveSuperAdminState(state);
@@ -3629,6 +3658,7 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
       letterDate: finalDate,
       interviewDate: interviewDate || "",
       signatureSnapshot,
+      ...letterHeaderSnapshot(state.academicConfig, students),
       students: students.map(toBatchStudent),
       issuedAt: new Date().toISOString(),
       issuedBy: req.session.user?.email || "",
@@ -3961,6 +3991,7 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
       docNo: finalDocNo,
       letterDate: finalDate,
       signatureSnapshot,
+      ...letterHeaderSnapshot(state.academicConfig, students),
       students: students.map(toBatchStudent),
       issuedAt: new Date().toISOString(),
       issuedBy: req.session.user?.email || "",

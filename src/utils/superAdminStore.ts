@@ -119,6 +119,8 @@ export interface LetterBatchStudent {
   major: string;
   position: string;
   phone: string;
+  /** ชั้นปี ณ วันที่ออกหนังสือ (ฉบับเก่าไม่มีค่า) */
+  year?: number;
   companyAddress?: string;
   /** ช่วงฝึกตามรอบออกฝึก ณ วันที่ออกหนังสือ (YYYY-MM-DD) — ฉบับเก่าที่ออกก่อนมีช่องนี้จะไม่มีค่า */
   internStartDate?: string;
@@ -139,6 +141,14 @@ export interface LetterBatch {
   letterDate: string;
   interviewDate?: string;
   signatureSnapshot: string;
+  /** ผู้รับหนังสือ ("เรียน ... ตำแหน่ง ...") ณ วันที่ออก — ฉบับเก่าไม่มีค่า (พรีวิวใช้ข้อมูลปัจจุบันแทน) */
+  recipientName?: string;
+  recipientPosition?: string;
+  /** อาจารย์รายวิชาผู้ประสานงาน ณ วันที่ออก (1 คนต่อสาขาในฉบับ) */
+  instructors?: Array<{ major: string; name: string; phone: string }>;
+  /** ผู้ลงนาม ณ วันที่ออก */
+  signatoryName?: string;
+  signatoryPosition?: string;
   students: LetterBatchStudent[];
   issuedAt: string;
   issuedBy?: string;
@@ -225,6 +235,10 @@ export interface SuperAdminState {
     deanSignatory: string;
     deanPosition: string;
     signatureDataUrl: string;
+    /** เบอร์โทรท้ายหนังสือ (บรรทัด "งานวิชาการ ... โทร ...") */
+    officePhone?: string;
+    /** อาจารย์รายวิชาฝึกงานของแต่ละสาขา (key = รหัสสาขาใน src/utils/majors.ts เช่น "SE") — ใส่ในหนังสือเป็นผู้ประสานงาน */
+    courseInstructors?: Record<string, CourseInstructorContact>;
     updatedAt: string;
   };
   majorUnlockRules: MajorUnlockRule[];
@@ -244,6 +258,11 @@ export interface SuperAdminState {
    * นิสิตกดบันทึกยืนยันแล้ว → ลบออก (ล็อกกลับ) จนกว่า admin จะเปิดให้ใหม่
    */
   profileEditUnlocks?: Record<string, ProfileEditUnlock>;
+}
+
+export interface CourseInstructorContact {
+  name: string;
+  phone: string;
 }
 
 export interface ProfileEditUnlock {

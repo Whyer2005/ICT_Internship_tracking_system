@@ -2375,6 +2375,11 @@ window.loadSuperAdminOverview = async function() {
       if (semEl) semEl.value = data.academicConfig.currentSemester || '2';
       if (prefEl) prefEl.value = data.academicConfig.defaultDocPrefix || 'อว 7316/';
       if (deanEl) deanEl.value = data.academicConfig.deanSignatory || '';
+      const deanPosEl = document.getElementById('cfg-dean-position') as HTMLTextAreaElement | null;
+      if (deanPosEl) deanPosEl.value = data.academicConfig.deanPosition || '';
+      const officePhoneEl = document.getElementById('cfg-office-phone') as HTMLInputElement | null;
+      if (officePhoneEl) officePhoneEl.value = data.academicConfig.officePhone || '';
+      renderCourseInstructorInputs(data.academicConfig.courseInstructors || {});
       renderAcademicSignaturePreview(data.academicConfig.signatureDataUrl || '');
     }
 
@@ -2461,6 +2466,32 @@ window.deleteAcademicSignature = async function(event) {
   }
 };
 
+// อาจารย์รายวิชาฝึกงานแต่ละสาขา (key = รหัสสาขา เช่น "SE") — ชื่อ/เบอร์ไปอยู่ในหนังสือขอความอนุเคราะห์
+function renderCourseInstructorInputs(map: Record<string, { name?: string; phone?: string }>) {
+  const box = document.getElementById('cfg-course-instructors');
+  if (!box) return;
+  box.innerHTML = getIctMajors().map(m => {
+    const v = map[m.code] || {};
+    return `
+      <div data-major-code="${escapeHtmlText(m.code)}" style="display:grid; grid-template-columns:110px 1fr 140px; gap:6px; align-items:center; padding:6px 8px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px;">
+        <span style="font-size:12px; font-weight:700; color:#1E1B4B;" title="${escapeHtmlText(m.fullName)}">${escapeHtmlText(m.name)}</span>
+        <input type="text" class="input-field cfg-ci-name" maxlength="200" placeholder="ชื่ออาจารย์รายวิชา" value="${escapeHtmlText(v.name || '')}" style="font-size:12.5px; padding:6px 8px;" />
+        <input type="text" class="input-field cfg-ci-phone" maxlength="50" placeholder="เบอร์โทร" value="${escapeHtmlText(v.phone || '')}" style="font-size:12.5px; padding:6px 8px;" />
+      </div>`;
+  }).join('');
+}
+
+function collectCourseInstructorInputs(): Record<string, { name: string; phone: string }> {
+  const out: Record<string, { name: string; phone: string }> = {};
+  document.querySelectorAll<HTMLElement>('#cfg-course-instructors [data-major-code]').forEach(row => {
+    const code = row.dataset.majorCode || '';
+    const name = (row.querySelector('.cfg-ci-name') as HTMLInputElement | null)?.value.trim() || '';
+    const phone = (row.querySelector('.cfg-ci-phone') as HTMLInputElement | null)?.value.trim() || '';
+    if (code && (name || phone)) out[code] = { name, phone };
+  });
+  return out;
+}
+
 // =========================================================================
 // WORKSPACE 2: รอบปีการศึกษา & การปลดล็อก (Unlock) แยกตาม 8 สาขาวิชา
 // =========================================================================
@@ -2469,6 +2500,11 @@ window.saveAcademicConfig = async function() {
   const currentSemester = document.getElementById('cfg-semester')?.value || '2';
   const defaultDocPrefix = document.getElementById('cfg-doc-prefix')?.value || 'อว 7316/';
   const deanSignatory = document.getElementById('cfg-dean-name')?.value || '';
+  const deanPosition = (document.getElementById('cfg-dean-position') as HTMLTextAreaElement | null)?.value || '';
+  const officePhone = (document.getElementById('cfg-office-phone') as HTMLInputElement | null)?.value || '';
+  // ช่องอาจารย์รายวิชายังไม่ถูกสร้าง (โหลด overview ไม่สำเร็จ) → ไม่ส่ง กันค่าที่บันทึกไว้ถูกล้าง
+  const ciRendered = document.querySelector('#cfg-course-instructors [data-major-code]');
+  const courseInstructors = ciRendered ? collectCourseInstructorInputs() : undefined;
 
   try {
     const res = await fetch('/api/admin/super-admin/academic-config', {
@@ -2479,6 +2515,9 @@ window.saveAcademicConfig = async function() {
         currentSemester,
         defaultDocPrefix,
         deanSignatory,
+        deanPosition: ciRendered ? deanPosition : undefined,
+        officePhone: ciRendered ? officePhone : undefined,
+        courseInstructors,
       }),
     });
     const data = await res.json();
@@ -6375,40 +6414,6 @@ function thaiDateOf(ymd) {
   return (isNaN(d.getTime()) ? new Date() : d).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// ===== ช่วงฝึกในหนังสือ ("ในระหว่างวันที่ … ถึงวันที่ …") จากวันเริ่ม/สิ้นสุดของรอบออกฝึก =====
-const LETTER_THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-
-/** "2026-11-02" -> "2 พฤศจิกายน 2569" (แยกส่วนเอง ไม่ผ่าน Date เพื่อไม่ให้วันเลื่อนตามโซนเวลา) */
-function letterThaiDate(ymd) {
-  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return '';
-  return `${parseInt(m[3], 10)} ${LETTER_THAI_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
-}
-
-function letterPeriodText(start, end) {
-  const a = letterThaiDate(start);
-  const b = letterThaiDate(end);
-  if (a && b) return `ในระหว่างวันที่ ${a} ถึงวันที่ ${b}`;
-  if (a) return `ตั้งแต่วันที่ ${a} เป็นต้นไป`;
-  return '';
-}
-
-/**
- * ช่วงฝึกของรายชื่อในหนังสือ 1 ฉบับ
- * - ทุกคนช่วงเดียวกัน -> ใส่ในประโยค
- * - คนละช่วง (เช่น คนละสาขาในบริษัทเดียวกัน) -> ประโยคอ้างถึงตาราง แล้วแสดงช่วงใต้ชื่อแต่ละคน
- * - ไม่มีข้อมูล (รอบยังไม่กำหนดวันเริ่ม / ฉบับเก่าที่ออกก่อนมีช่องนี้) -> ไม่ใส่
- */
-function letterPeriodInfo(students) {
-  const perStudent = students.map(s => letterPeriodText(s.internStartDate, s.internEndDate));
-  const uniq = Array.from(new Set(perStudent.filter(Boolean)));
-  const same = uniq.length === 1 && perStudent.every(p => p === uniq[0]);
-  return {
-    sentence: same ? ` <strong>${uniq[0]}</strong>` : (uniq.length ? ' ตามช่วงเวลาที่ระบุใต้ชื่อนิสิตแต่ละคน' : ''),
-    perStudent: same ? students.map(() => '') : perStudent,
-  };
-}
-
 /** ฉบับที่ควรใช้พรีวิว: ระบุตรง ๆ หรือฉบับเดียวกันของนิสิตที่เลือกทั้งหมด (ปุ่มในแถวนิสิต -> หนังสือทั้งฉบับของคนนั้น) */
 function resolveLetterBatch(type, studentIds, batchId) {
   if (batchId) return letterBatchById(batchId);
@@ -6426,7 +6431,7 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
   if (!modal || !areaEl) return;
 
   const cfg = superAdminData.academicConfig || {};
-  // ออกแล้ว -> ใช้ฉบับจริง (เลขที่/วันที่/ลายเซ็น/รายชื่อ ณ วันที่ออก) · ยังไม่ออก -> พรีวิวร่างจากรายชื่อที่เลือก
+  // ออกแล้ว -> ใช้ฉบับจริง (เลขที่/วันที่/รายชื่อ ณ วันที่ออก · ลายเซ็น/ผู้ลงนามใช้ค่าปัจจุบัน) · ยังไม่ออก -> พรีวิวร่างจากรายชื่อที่เลือก
   const batch = resolveLetterBatch(type, studentIds, batchId);
   const isDraft = !batch;
   const students = batch
@@ -6438,12 +6443,9 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
   // ชื่อเอกสาร = ชื่อไฟล์ตอน "บันทึกเป็น PDF" (browser ใช้ <title> เป็นชื่อไฟล์เริ่มต้น)
   window.currentLetterDocTitle = letterFileTitle(type, companyName);
 
-  const signatureDataUrl = batch ? (batch.signatureSnapshot || '') : (cfg.signatureDataUrl || '');
+  // ลายเซ็น/ผู้ลงนาม: ใช้ค่าตั้งค่าปัจจุบันเสมอ (ทั้งร่างและฉบับที่ออกแล้ว) · ไม่มีค่า → ค่าที่เก็บไว้ในฉบับ
+  const signatureDataUrl = cfg.signatureDataUrl || batch?.signatureSnapshot || '';
   const docNo = batch ? batch.docNo : `${cfg.defaultDocPrefix || 'อว 7316/'}ว ....... (ร่าง)`;
-  const thaiDate = thaiDateOf(batch?.letterDate);
-  const subjectText = type === 'DISPATCH'
-    ? 'ขอส่งตัวนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา'
-    : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ / สหกิจศึกษา และนัดหมายสัมภาษณ์';
 
   if (titleEl) {
     const kind = type === 'DISPATCH' ? 'หนังสือส่งตัวนิสิตเข้าฝึกงาน' : 'หนังสือขอความอนุเคราะห์ฝึกงาน';
@@ -6452,83 +6454,51 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
       : `พรีวิว${kind} เลขที่ ${docNo} (${students.length} คน)`;
   }
 
-  const period = letterPeriodInfo(students);
-  const studentRowsHtml = students.map((s, idx) => `
-    <tr>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${idx + 1}</td>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${s.studentCode}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${s.nameTh}${period.perStudent[idx] ? `<div style="font-size:11.5px; color:#334155;">${period.perStudent[idx]}</div>` : ''}</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">วท.บ. (${s.major})</td>
-      <td style="border:1px solid #334155; padding:6px 10px;">${s.position || 'นิสิตฝึกงาน'}</td>
-      <td style="border:1px solid #334155; padding:6px 10px; text-align:center;">${s.phone || '-'}</td>
-    </tr>
-  `).join('');
-
-  const acceptanceFormHtml = '';
-
-  areaEl.innerHTML = `
-    <div style="max-width:720px; margin:0 auto; font-size:14px; color:#0F172A;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
-        <div>
-          <div style="font-weight:700;">ที่ ${docNo}</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:17px; font-weight:800; color:#1E1B4B;">คณะเทคโนโลยีสารสนเทศและการสื่อสาร</div>
-          <div style="font-size:14px; font-weight:700;">มหาวิทยาลัยพะเยา จ.พะเยา 56000</div>
-        </div>
-        <div style="text-align:right;">
-          <div>วันที่ ${thaiDate}</div>
-        </div>
-      </div>
-
-      <div style="margin-bottom:10px;"><strong>เรื่อง</strong> &nbsp;&nbsp;${subjectText}</div>
-      <div style="margin-bottom:10px;"><strong>เรียน</strong> &nbsp;&nbsp;ผู้จัดการฝ่ายทรัพยากรบุคคล / ผู้บริหาร <strong>${companyName || first.companyName}</strong></div>
-      ${type === 'REQUEST' ? `<div style="margin-bottom:14px;"><strong>สิ่งที่ส่งมาด้วย</strong> &nbsp;&nbsp;1. แบบฟอร์มใบตอบรับการเข้าฝึกงานวิชาชีพ และประวัติย่อ (CV) จำนวน ${students.length} ชุด</div>` : ''}
-
-      <p style="text-indent:40px; margin-bottom:12px; text-align:justify;">
-        ด้วย คณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา ได้กำหนดให้นิสิตระดับปริญญาตรี ชั้นปีที่ 3-4 เข้ารับการฝึกงานวิชาชีพและสหกิจศึกษาในสถานประกอบการ เพื่อให้นิสิตได้เพิ่มพูนทักษะและประสบการณ์การทำงานจริงในสายวิชาชีพเทคโนโลยีสารสนเทศ พิจารณาแล้วเห็นว่าหน่วยงานของท่านมีความเหมาะสมและมีมาตรฐานทางวิชาชีพเป็นอย่างดียิ่ง
-      </p>
-
-      <p style="text-indent:40px; margin-bottom:14px;">
-        ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงใคร่<strong>${type === 'DISPATCH' ? 'ขอส่งตัวนิสิตเข้าปฏิบัติงานสหกิจศึกษา/ฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตเข้าฝึกงานวิชาชีพ/สหกิจศึกษา'}</strong>${period.sentence} ประจำปีการศึกษา ${cfg.currentAcademicYear || '2568'} จำนวน ${students.length} คน ดังรายชื่อต่อไปนี้:
-      </p>
-
-      <table style="width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13px;">
-        <thead>
-          <tr style="background:#F1F5F9;">
-            <th style="border:1px solid #334155; padding:6px 10px;">ลำดับ</th>
-            <th style="border:1px solid #334155; padding:6px 10px;">รหัสนิสิต</th>
-            <th style="border:1px solid #334155; padding:6px 10px;">ชื่อ - นามสกุล</th>
-            <th style="border:1px solid #334155; padding:6px 10px;">หลักสูตร/สาขาวิชา</th>
-            <th style="border:1px solid #334155; padding:6px 10px;">ตำแหน่งที่ยื่นฝึกงาน</th>
-            <th style="border:1px solid #334155; padding:6px 10px;">เบอร์โทรศัพท์</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${studentRowsHtml}
-        </tbody>
-      </table>
-
-      <p style="text-indent:40px; margin-bottom:24px;">
-        จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์ และขอขอบพระคุณในความร่วมมือด้วยดีเสมอมา ณ โอกาสนี้
-      </p>
-
-      <div style="text-align:center; margin-left:240px; margin-bottom:20px;">
-        <div>ขอแสดงความนับถือ</div>
-        <div style="height:68px; display:flex; align-items:flex-end; justify-content:center;">
-          ${signatureDataUrl ? `<img src="${signatureDataUrl}" alt="ลายเซ็นผู้ลงนาม" style="max-width:150px; max-height:64px; object-fit:contain;" />` : ''}
-        </div>
-        <div style="font-weight:700;">(${cfg.deanSignatory || 'ผู้ช่วยศาสตราจารย์ ดร.พรเทพ โรจนวสุ'})</div>
-        <div>${cfg.deanPosition || 'คณบดีคณะเทคโนโลยีสารสนเทศและการสื่อสาร'}</div>
-        <div>มหาวิทยาลัยพะเยา</div>
-      </div>
-
-      ${acceptanceFormHtml}
-    </div>
-  `;
+  // ชั้นปี: ฉบับใหม่เก็บไว้ในฉบับแล้ว · ฉบับเก่า/ร่างใช้ข้อมูลปัจจุบันจากคิวเอกสาร
+  const queueById = new Map((superAdminData.documentQueue || []).map(d => [d.studentId, d]));
+  const recipient = letterRecipient(batch, students);
+  // แบบหนังสือกลาง: src/client/components/official_letter.ts (ฝั่งนิสิตใช้แบบเดียวกัน)
+  // โหลดฟอนต์สำรอง Sarabun (ฟอนต์หลัก TH Sarabun New ประกาศ @font-face ในแบบหนังสือเอง)
+  ensureSarabunFont();
+  areaEl.innerHTML = window.buildOfficialLetterHtml({
+    type,
+    docNo,
+    letterDate: batch?.letterDate || '',
+    companyName: companyName || first.companyName || '',
+    recipientName: recipient.name,
+    recipientPosition: recipient.position,
+    instructors: letterInstructors(batch, students, cfg),
+    signatoryName: cfg.deanSignatory || batch?.signatoryName || '',
+    signatoryPosition: cfg.deanPosition || batch?.signatoryPosition || '',
+    signatureDataUrl,
+    officePhone: cfg.officePhone || '',
+    students: students.map(s => ({ ...s, year: s.year || queueById.get(s.studentId)?.year || '' })),
+  });
 
   modal.style.display = 'flex';
 };
+
+/** อาจารย์รายวิชาผู้ประสานงาน: ฉบับที่ออกแล้วใช้ค่าที่เก็บไว้ · ร่าง/ฉบับเก่าใช้ค่าตั้งค่าปัจจุบันตามสาขาของนิสิต */
+function letterInstructors(batch, students, cfg) {
+  if (batch?.instructors?.length) return batch.instructors;
+  const map = cfg.courseInstructors || {};
+  const codes = Array.from(new Set(students.map(s => findIctMajor(s.major)?.code || '').filter(Boolean)));
+  return codes
+    .map(code => ({ major: findIctMajor(code)?.name || code, name: map[code]?.name || '', phone: map[code]?.phone || '' }))
+    .filter(c => c.name || c.phone);
+}
+
+/** ผู้รับหนังสือ: ฉบับที่ออกแล้วใช้ค่าที่เก็บไว้ · ร่าง/ฉบับเก่าใช้ "บุคคลที่ให้หนังสือความอนุเคราะห์" ที่นิสิตกรอก */
+function letterRecipient(batch, students) {
+  if (batch?.recipientName) return { name: batch.recipientName, position: batch.recipientPosition || '' };
+  const ids = students.map(s => s.studentId);
+  const rows = (superAdminData.documentQueue || []).filter(d => ids.includes(d.studentId));
+  const withName = rows.find(d => String(d.letterRecipientName || '').trim());
+  return {
+    name: withName ? withName.letterRecipientName : '',
+    position: withName ? (withName.letterRecipientPosition || '') : '',
+  };
+}
 
 // ชื่อไฟล์ PDF ของหนังสือราชการ (ตัดอักขระที่ใช้ในชื่อไฟล์ Windows ไม่ได้: \ / : * ? " < > |)
 // ฝั่งนิสิตใช้รูปแบบเดียวกัน (status_all.ts → letterFileTitle)
@@ -6567,21 +6537,131 @@ function loadHtml2Pdf(): Promise<any> {
   return html2pdfLoading;
 }
 
-// ฟอนต์ Sarabun ต้องโหลดเสร็จก่อนวาด ไม่งั้นตัวอักษรใน PDF จะเป็นฟอนต์สำรอง
+// ฟอนต์ต้องโหลดเสร็จก่อนวาด (TH Sarabun New จาก public/fonts + Sarabun สำรอง) ไม่งั้นตัวอักษรใน PDF จะเป็นฟอนต์สำรองของเครื่อง
 async function ensureSarabunFont() {
   if (!document.querySelector('link[data-font="sarabun"]')) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap';
+    link.href = 'https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap';
     link.dataset.font = 'sarabun';
     document.head.appendChild(link);
     await new Promise((r) => { link.onload = r; link.onerror = r; });
   }
   try {
-    await Promise.all(['400', '700'].map((w) => (document as any).fonts.load(`${w} 16pt Sarabun`)));
+    await Promise.all(['400', '700'].map((w) => (document as any).fonts.load(`${w} 16pt "TH Sarabun New"`)));
   } catch {
     // โหลดฟอนต์ไม่ได้ → ใช้ฟอนต์สำรองของเครื่อง
   }
+}
+
+// ===== วาดแต่ละแผ่นของหนังสือเป็นภาพด้วยตัววาดข้อความของ browser เอง =====
+// html2canvas วาดตัวอักษรเองทีละช่วง ทำให้สระ/วรรณยุกต์ไทย (ำ ่ ้ ิ ี ุ) หลุดตำแหน่ง
+// → ใส่ HTML ของแต่ละแผ่นใน SVG <foreignObject> แล้ววาดลง canvas (browser จัดสระ/วรรณยุกต์ถูกต้องเหมือนบนจอ)
+// SVG ที่ใช้เป็นภาพโหลดไฟล์ภายนอกไม่ได้ → ฝังฟอนต์เป็น data URL
+// รูป (ตรา มพ. / ลายเซ็น) ไม่ใส่ใน SVG: รูปซ้อนใน SVG บางครั้งยังถอดรหัสไม่เสร็จตอนวาด (ตราหาย) → วาดลง canvas เองตามตำแหน่งจริงบนจอ
+const letterDataUrlCache: Record<string, Promise<string>> = {};
+function fetchAsDataUrl(url: string): Promise<string> {
+  if (!letterDataUrlCache[url]) {
+    letterDataUrlCache[url] = fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`โหลด ${url} ไม่สำเร็จ`);
+        return r.blob();
+      })
+      .then((b) => new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result));
+        fr.onerror = () => reject(fr.error);
+        fr.readAsDataURL(b);
+      }))
+      .catch((err) => {
+        delete letterDataUrlCache[url];
+        throw err;
+      });
+  }
+  return letterDataUrlCache[url];
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`โหลดรูป ${src.slice(0, 40)} ไม่สำเร็จ`));
+    img.src = src;
+  });
+}
+
+function loadSvgImage(svg: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('วาดหน้าหนังสือไม่สำเร็จ'));
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+}
+
+/** แผ่นหนังสือทุกแผ่น (A4) ต่อกันเป็น canvas เดียว — สูงแผ่นละ (กว้าง x 297/210) พอดีหน้า PDF */
+async function renderLetterPagesToCanvas(areaEl: HTMLElement, scale = 2): Promise<HTMLCanvasElement> {
+  const letterEl = areaEl.querySelector('.official-letter') as HTMLElement | null;
+  const pages = Array.from(areaEl.querySelectorAll('.official-letter-sheet')) as HTMLElement[];
+  if (!letterEl || pages.length === 0) throw new Error('ไม่พบหน้าหนังสือ');
+
+  const [regular, bold] = await Promise.all([
+    fetchAsDataUrl('/fonts/THSarabunNew.woff'),
+    fetchAsDataUrl('/fonts/THSarabunNew-Bold.woff'),
+  ]);
+  const fontCss = `
+    @font-face { font-family:'TH Sarabun New'; src:url('${regular}') format('woff'); font-weight:400; font-style:normal; }
+    @font-face { font-family:'TH Sarabun New'; src:url('${bold}') format('woff'); font-weight:700; font-style:normal; }
+    .official-letter p { margin:0; font-size:inherit; color:#000; line-height:6.37mm; }`;
+
+  const MM = 96 / 25.4; // px ต่อ mm (CSS)
+  const pageW = 210 * MM;
+  const pageH = 297 * MM;
+  const outW = Math.round(pageW * scale);
+  const outH = Math.floor((outW * 297) / 210); // ตรงกับที่ html2pdf ตัดหน้า → ไม่มีหน้าว่างเกิน
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH * pages.length;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const serializer = new XMLSerializer();
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i].cloneNode(true) as HTMLElement;
+    page.style.boxShadow = 'none';
+    // รูปในสำเนา SVG: ซ่อนไว้ (คงที่ว่างเดิม) แล้ววาดเองด้านล่าง
+    for (const img of Array.from(page.querySelectorAll('img'))) {
+      img.removeAttribute('src');
+      img.style.visibility = 'hidden';
+    }
+    const wrap = document.createElement('div');
+    wrap.setAttribute('style', `${letterEl.getAttribute('style') || ''}; margin:0; width:210mm; transform:scale(${scale}); transform-origin:0 0;`);
+    wrap.className = 'official-letter';
+    const style = document.createElement('style');
+    style.textContent = fontCss;
+    wrap.appendChild(style);
+    wrap.appendChild(page);
+    const xhtml = serializer.serializeToString(wrap);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${Math.ceil(pageH * scale)}">`
+      + `<foreignObject x="0" y="0" width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+    const img = await loadSvgImage(svg);
+    // รอให้ browser ถอดรหัสฟอนต์ที่ฝังใน SVG ให้เสร็จ (ครั้งแรกบางเครื่องวาดก่อนฟอนต์พร้อม)
+    await new Promise((r) => setTimeout(r, 50));
+    ctx.drawImage(img, 0, i * outH, outW, Math.ceil(pageH * scale));
+
+    // วาดรูปตามตำแหน่ง/ขนาดที่แสดงจริงในแผ่นนั้น (รองรับหน้าที่ถูก zoom: เทียบสัดส่วนกับความกว้างแผ่น)
+    const pageRect = pages[i].getBoundingClientRect();
+    const f = outW / pageRect.width;
+    for (const el of Array.from(pages[i].querySelectorAll('img')) as HTMLImageElement[]) {
+      const r = el.getBoundingClientRect();
+      const src = el.getAttribute('src') || '';
+      if (!src || r.width === 0 || r.height === 0) continue;
+      const pic = await loadImage(src.startsWith('data:') ? src : await fetchAsDataUrl(src));
+      ctx.drawImage(pic, (r.left - pageRect.left) * f, i * outH + (r.top - pageRect.top) * f, r.width * f, r.height * f);
+    }
+  }
+  return canvas;
 }
 
 window.downloadOfficialLetterPdf = async function(btn?: HTMLButtonElement) {
@@ -6593,35 +6673,22 @@ window.downloadOfficialLetterPdf = async function(btn?: HTMLButtonElement) {
   if (btn) btn.disabled = true;
   if (label) label.textContent = 'กำลังสร้าง PDF...';
 
-  // สำเนาเนื้อหาในกรอบกว้างเท่าพื้นที่พิมพ์ A4 (210 - ซ้าย 30 - ขวา 20 = 160mm) วางนอกจอ
-  const holder = document.createElement('div');
-  holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:160mm; background:#fff;';
-  holder.innerHTML = `
-    <style>
-      .pdf-letter { font-family:'Sarabun','TH Sarabun New',sans-serif; font-size:16pt; line-height:1.6; color:#000; word-break:keep-all; overflow-wrap:break-word; }
-      .pdf-letter p { text-align:justify; line-height:1.6; margin:0 0 12px; }
-      .pdf-letter table { width:100%; border-collapse:collapse; }
-    </style>
-    <div class="pdf-letter">${areaEl.innerHTML}</div>`;
-  document.body.appendChild(holder);
   try {
-    const [html2pdf] = await Promise.all([loadHtml2Pdf(), ensureSarabunFont()]);
+    const [html2pdf, canvas] = await Promise.all([loadHtml2Pdf(), renderLetterPagesToCanvas(areaEl)]);
+    // ส่ง canvas ให้ html2pdf ตรง ๆ (ข้าม html2canvas) แล้วตัดเป็นหน้า A4 ตามความสูงแผ่น
     await html2pdf()
       .set({
-        margin: [25, 30, 20, 20], // [บน, ซ้าย, ล่าง, ขวา] mm ตามระเบียบสารบรรณ
+        margin: 0, // ระยะขอบตามระเบียบสารบรรณอยู่ในแบบหนังสือแล้ว (แผ่น A4 เต็มแผ่น)
         filename: `${fileTitle}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '.official-acceptance-page', avoid: ['tr', 'img'] },
       })
-      .from(holder.querySelector('.pdf-letter'))
+      .from(canvas, 'canvas')
       .save();
   } catch (err) {
     console.error('download letter pdf error:', err);
     if (confirm('สร้างไฟล์ PDF ไม่สำเร็จ ต้องการเปิดหน้าพิมพ์แทนไหม?')) window.printOfficialLetter();
   } finally {
-    holder.remove();
     if (btn) btn.disabled = false;
     if (label) label.textContent = prevLabel;
   }
@@ -6646,11 +6713,11 @@ window.printOfficialLetter = function() {
       <head>
         <meta charset="utf-8" />
         <title>${escapeHtmlText(docTitle)}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
         <style>
           @page {
             size: A4 portrait;
-            margin: 25mm 20mm 20mm 30mm; /* ระเบียบสารบรรณ: ซ้าย 30mm (3 ซม.), ขวา 20mm (2 ซม.), บน 25mm (2.5 ซม.), ล่าง 20mm (2 ซม.) */
+            margin: 0; /* ระยะขอบตามระเบียบสารบรรณอยู่ในแบบหนังสือแล้ว (แผ่น A4 เต็มแผ่น — official_letter.ts) */
           }
           * { box-sizing: border-box; }
           body {
@@ -6670,6 +6737,8 @@ window.printOfficialLetter = function() {
             line-height: 1.6;
             margin-bottom: 12px;
           }
+          .letter-preview-sep { display: none; }
+          .official-letter-sheet { box-shadow: none !important; }
           @media print {
             body { padding: 0; }
             .official-acceptance-page {
@@ -6684,7 +6753,7 @@ window.printOfficialLetter = function() {
       </head>
       <body>
         ${areaEl.innerHTML}
-        <script>window.onload = function() { window.print(); };<\/script>
+        <script>window.onload = function() { (document.fonts ? document.fonts.ready : Promise.resolve()).then(function() { window.print(); }); };<\/script>
       </body>
     </html>
   `);
