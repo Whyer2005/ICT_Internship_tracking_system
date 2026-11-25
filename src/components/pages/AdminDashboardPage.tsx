@@ -2351,8 +2351,11 @@ ${ICT_MAJORS.map((m) => `            <label style="display:flex; align-items:cen
             </div>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
-            <button type="button" onclick="printOfficialLetter()" style="background:#10B981; color:white; border:none; padding:7px 14px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
-              <span class="material-icons" style="font-size:16px;">print</span> พิมพ์ / ดาวน์โหลด PDF
+            <button type="button" onclick="downloadOfficialLetterPdf(this)" title="ดาวน์โหลดเป็นไฟล์ PDF (ตั้งชื่อไฟล์ตามบริษัทให้อัตโนมัติ)" style="background:#10B981; color:white; border:none; padding:7px 14px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
+              <span class="material-icons" style="font-size:16px;">download</span> <span class="pdf-btn-label">ดาวน์โหลด PDF</span>
+            </button>
+            <button type="button" onclick="printOfficialLetter()" title="เปิดหน้าพิมพ์ของ browser" style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4); padding:7px 12px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
+              <span class="material-icons" style="font-size:16px;">print</span> พิมพ์
             </button>
             <button onclick="closeOfficialLetterModal()" style="background:none; border:none; color:white; cursor:pointer;">
               <span class="material-icons">close</span>

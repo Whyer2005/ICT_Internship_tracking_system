@@ -6435,10 +6435,8 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
   const first = students[0] || { companyName: companyName || '' };
   companyName = batch?.companyName || companyName;
 
-  const cleanCompName = String(companyName || 'สถานประกอบการ').trim();
-  window.currentLetterDocTitle = type === 'DISPATCH'
-    ? `หนังสือส่งตัวนิสิตฝึกงาน (${cleanCompName})`
-    : `ขอความอนุเคราะห์รับนิสิตฝึกงาน มหาวิทยาลัยพะเยา (${cleanCompName})`;
+  // ชื่อเอกสาร = ชื่อไฟล์ตอน "บันทึกเป็น PDF" (browser ใช้ <title> เป็นชื่อไฟล์เริ่มต้น)
+  window.currentLetterDocTitle = letterFileTitle(type, companyName);
 
   const signatureDataUrl = batch ? (batch.signatureSnapshot || '') : (cfg.signatureDataUrl || '');
   const docNo = batch ? batch.docNo : `${cfg.defaultDocPrefix || 'อว 7316/'}ว ....... (ร่าง)`;
@@ -6532,9 +6530,101 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
   modal.style.display = 'flex';
 };
 
+// ชื่อไฟล์ PDF ของหนังสือราชการ (ตัดอักขระที่ใช้ในชื่อไฟล์ Windows ไม่ได้: \ / : * ? " < > |)
+// ฝั่งนิสิตใช้รูปแบบเดียวกัน (status_all.ts → letterFileTitle)
+function letterFileTitle(type, companyName) {
+  const comp = String(companyName || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'สถานประกอบการ';
+  return type === 'DISPATCH'
+    ? `หนังสือส่งตัวมหาวิทยาลัยพะเยา (${comp})`
+    : `ขอความอนุเคราะห์รับนิสิตฝึกงาน มหาวิทยาลัยพะเยา (${comp})`;
+}
+
 window.closeOfficialLetterModal = function() {
   const modal = document.getElementById('official-letter-modal');
   if (modal) modal.style.display = 'none';
+};
+
+// ===== ดาวน์โหลดหนังสือเป็นไฟล์ PDF ตรง (ไม่ผ่านหน้าพิมพ์) — ชื่อไฟล์ตาม letterFileTitle เสมอ =====
+// html2pdf.js วาดหน้าเว็บเป็นภาพแล้วใส่ใน PDF (ภาษาไทยถูกต้องเพราะใช้ฟอนต์ที่ browser แสดงอยู่)
+// โหลดจาก cdnjs พร้อม SRI (integrity) — ถ้าไฟล์บน CDN ถูกแก้ browser จะไม่ยอมรัน
+const HTML2PDF_JS = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+const HTML2PDF_SRI = 'sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==';
+let html2pdfLoading: Promise<any> | null = null;
+
+function loadHtml2Pdf(): Promise<any> {
+  if ((window as any).html2pdf) return Promise.resolve((window as any).html2pdf);
+  if (html2pdfLoading) return html2pdfLoading;
+  html2pdfLoading = new Promise((resolve, reject) => {
+    const js = document.createElement('script');
+    js.src = HTML2PDF_JS;
+    js.integrity = HTML2PDF_SRI;
+    js.crossOrigin = 'anonymous';
+    js.referrerPolicy = 'no-referrer';
+    js.onload = () => resolve((window as any).html2pdf);
+    js.onerror = () => { html2pdfLoading = null; reject(new Error('โหลดตัวสร้าง PDF ไม่สำเร็จ')); };
+    document.head.appendChild(js);
+  });
+  return html2pdfLoading;
+}
+
+// ฟอนต์ Sarabun ต้องโหลดเสร็จก่อนวาด ไม่งั้นตัวอักษรใน PDF จะเป็นฟอนต์สำรอง
+async function ensureSarabunFont() {
+  if (!document.querySelector('link[data-font="sarabun"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap';
+    link.dataset.font = 'sarabun';
+    document.head.appendChild(link);
+    await new Promise((r) => { link.onload = r; link.onerror = r; });
+  }
+  try {
+    await Promise.all(['400', '700'].map((w) => (document as any).fonts.load(`${w} 16pt Sarabun`)));
+  } catch {
+    // โหลดฟอนต์ไม่ได้ → ใช้ฟอนต์สำรองของเครื่อง
+  }
+}
+
+window.downloadOfficialLetterPdf = async function(btn?: HTMLButtonElement) {
+  const areaEl = document.getElementById('official-letter-print-area');
+  if (!areaEl) return;
+  const fileTitle = window.currentLetterDocTitle || 'หนังสือราชการ คณะ ICT มหาวิทยาลัยพะเยา';
+  const label = btn?.querySelector('.pdf-btn-label');
+  const prevLabel = label?.textContent || '';
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'กำลังสร้าง PDF...';
+
+  // สำเนาเนื้อหาในกรอบกว้างเท่าพื้นที่พิมพ์ A4 (210 - ซ้าย 30 - ขวา 20 = 160mm) วางนอกจอ
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:160mm; background:#fff;';
+  holder.innerHTML = `
+    <style>
+      .pdf-letter { font-family:'Sarabun','TH Sarabun New',sans-serif; font-size:16pt; line-height:1.6; color:#000; word-break:keep-all; overflow-wrap:break-word; }
+      .pdf-letter p { text-align:justify; line-height:1.6; margin:0 0 12px; }
+      .pdf-letter table { width:100%; border-collapse:collapse; }
+    </style>
+    <div class="pdf-letter">${areaEl.innerHTML}</div>`;
+  document.body.appendChild(holder);
+  try {
+    const [html2pdf] = await Promise.all([loadHtml2Pdf(), ensureSarabunFont()]);
+    await html2pdf()
+      .set({
+        margin: [25, 30, 20, 20], // [บน, ซ้าย, ล่าง, ขวา] mm ตามระเบียบสารบรรณ
+        filename: `${fileTitle}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], before: '.official-acceptance-page', avoid: ['tr', 'img'] },
+      })
+      .from(holder.querySelector('.pdf-letter'))
+      .save();
+  } catch (err) {
+    console.error('download letter pdf error:', err);
+    if (confirm('สร้างไฟล์ PDF ไม่สำเร็จ ต้องการเปิดหน้าพิมพ์แทนไหม?')) window.printOfficialLetter();
+  } finally {
+    holder.remove();
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = prevLabel;
+  }
 };
 
 window.printOfficialLetter = function() {
@@ -6543,7 +6633,11 @@ window.printOfficialLetter = function() {
   const docTitle = window.currentLetterDocTitle || 'หนังสือราชการ คณะ ICT มหาวิทยาลัยพะเยา';
   const win = window.open('', '_blank', 'width=900,height=750');
   if (!win) {
+    // เปิดป๊อปอัปไม่ได้ → พิมพ์จากหน้านี้ ตั้งชื่อหน้าชั่วคราวให้เป็นชื่อไฟล์
+    const prevTitle = document.title;
+    document.title = docTitle;
     window.print();
+    document.title = prevTitle;
     return;
   }
   win.document.write(`
@@ -6551,7 +6645,7 @@ window.printOfficialLetter = function() {
     <html lang="th">
       <head>
         <meta charset="utf-8" />
-        <title>${docTitle}</title>
+        <title>${escapeHtmlText(docTitle)}</title>
         <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet" />
         <style>
           @page {

@@ -900,6 +900,15 @@ window.openTrainingModal = function() {
   (document.getElementById('trn-f-title') as HTMLInputElement)?.focus();
 };
 
+// ชื่อไฟล์ PDF ของหนังสือราชการ (browser ใช้ <title> เป็นชื่อไฟล์เริ่มต้นตอน "บันทึกเป็น PDF")
+// ตัดอักขระที่ใช้ในชื่อไฟล์ Windows ไม่ได้ — รูปแบบเดียวกับฝั่งเจ้าหน้าที่ (admin_dashboard.ts → letterFileTitle)
+function letterFileTitle(type, companyName) {
+  const comp = String(companyName || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'สถานประกอบการ';
+  return type === 'DISPATCH'
+    ? `หนังสือส่งตัวมหาวิทยาลัยพะเยา (${comp})`
+    : `ขอความอนุเคราะห์รับนิสิตฝึกงาน มหาวิทยาลัยพะเยา (${comp})`;
+}
+
 // ลิงก์ที่กดได้อย่างปลอดภัย (http/https เท่านั้น)
 function isHttpLink(value) {
   try {
@@ -2625,7 +2634,7 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
     <html lang="th">
       <head>
         <meta charset="utf-8" />
-        <title>${type === 'DISPATCH' ? 'หนังสือส่งตัวนิสิตเข้าฝึกงาน' : 'หนังสือขอความอนุเคราะห์ฝึกงาน'} (${escapeStudentHtml(docNo)})</title>
+        <title>${escapeStudentHtml(letterFileTitle(type, targetCompName))}</title>
         <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet" />
         <style>
           body { font-family: 'Sarabun', sans-serif; padding: 24px 36px; color: #0F172A; line-height: 1.65; background: #F1F5F9; margin: 0; }
