@@ -6462,6 +6462,7 @@ window.openOfficialLetterPreview = function(type, studentIds, companyName, batch
   ensureSarabunFont();
   areaEl.innerHTML = window.buildOfficialLetterHtml({
     type,
+    academicYear: cfg.currentAcademicYear || '', // หนังสือส่งตัว: "ประจำปีการศึกษา ..."
     docNo,
     letterDate: batch?.letterDate || '',
     companyName: companyName || first.companyName || '',

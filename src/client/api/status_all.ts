@@ -2491,6 +2491,7 @@ window.downloadStudentOfficialLetter = function(type, batchId) {
   // แบบหนังสือกลาง: src/client/components/official_letter.ts (ฝั่งเจ้าหน้าที่ใช้แบบเดียวกัน)
   const letterHtml = window.buildOfficialLetterHtml({
     type,
+    academicYear: cfg.currentAcademicYear || '', // หนังสือส่งตัว: "ประจำปีการศึกษา ..."
     docNo,
     letterDate: letterDate || '',
     companyName: targetCompName,
