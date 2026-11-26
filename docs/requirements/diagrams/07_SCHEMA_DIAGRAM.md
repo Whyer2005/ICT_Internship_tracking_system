@@ -54,6 +54,8 @@ erDiagram
         SkillType skillType "SOFT/HARD"
         INT hours "จำนวนชั่วโมง"
         TEXT certificateFileUrl "ไฟล์ใบประกาศ (null ได้)"
+        TEXT certificateLink "ลิงก์ประชาสัมพันธ์/ลงทะเบียน (null ได้)"
+        TEXT organizer "หน่วยงานผู้จัด (null ได้)"
         TEXT academicYear "ปีการศึกษา (null ได้)"
         TEXT source "แหล่งที่มา (null ได้)"
         ApprovalStatus status "ผลการอนุมัติ"
@@ -327,6 +329,8 @@ erDiagram
 | `skillType` | SkillType |  |  | SOFT/HARD |
 | `hours` | INT |  |  | จำนวนชั่วโมง |
 | `certificateFileUrl` | TEXT |  | ✓ | ไฟล์ใบประกาศ |
+| `certificateLink` | TEXT |  | ✓ | ลิงก์ประชาสัมพันธ์ / ลงทะเบียน / ตรวจสอบใบรับรอง (http/https) — บังคับเมื่อนิสิตอัปโหลดเอง (BR-14.1) |
+| `organizer` | TEXT |  | ✓ | หน่วยงานผู้จัด — บังคับเมื่อนิสิตอัปโหลดเอง (BR-14.1) · รายการเก่า/นำเข้า/Check-in ว่างได้ |
 | `academicYear` | TEXT |  | ✓ | ปีการศึกษา |
 | `source` | TEXT |  | ✓ | แหล่งที่มา |
 | `status` | ApprovalStatus |  |  | ผลการอนุมัติ |

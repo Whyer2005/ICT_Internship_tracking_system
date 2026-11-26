@@ -411,50 +411,9 @@ function formatThaiDateRange(startValue, endValue) {
   return `${fmt(a)} – ${fmt(b)}`;
 }
 
-// แยกข้อมูลแสดงผลจาก record เดิม (API ไม่มี field วันที่/ช่วงเวลา → อ่านจาก title/note ที่ระบบ Check-in เขียนไว้)
-// title:  "[Check-in กิจกรรมคณะ] <ชื่อกิจกรรม> - <ช่วงที่ 1 (2026-11-13) | ทั้งกิจกรรม>"
-// note:   "บันทึก Check-in หน้างาน (...) โดยพี่จอม เมื่อวันที่ 2026-11-07 ถึง 2026-11-08 (09:00-16:00 น.)"
+// แยกข้อมูลแสดงผลจาก TrainingRecord — ใช้ตัวกลางร่วมกับหน้าอาจารย์ (src/client/components/training_view.ts)
 function getTrainingView(t) {
-  const rawTitle = String(t.title || '');
-  const note = String(t.note || '');
-  const isCheckIn = t.source === 'STAFF_IMPORT' && /^\[Check-in[^\]]*\]/.test(rawTitle);
-  const isStudentUpload = !t.source || t.source === 'STUDENT_UPLOAD';
-
-  let title = rawTitle;
-  let session = '';
-  if (isCheckIn) {
-    title = rawTitle.replace(/^\[Check-in[^\]]*\]\s*/, '');
-    const sep = title.lastIndexOf(' - ');
-    if (sep > 0) {
-      session = title.slice(sep + 3).replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim();
-      title = title.slice(0, sep).trim();
-    }
-  }
-
-  let dateText = '';
-  let timeText = '';
-  const noteDate = note.match(/เมื่อวันที่\s+(\d{4}-\d{2}-\d{2})(?:\s*ถึง\s*(\d{4}-\d{2}-\d{2}))?(?:\s*\((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*น\.\))?/);
-  if (noteDate) {
-    dateText = formatThaiDateRange(noteDate[1], noteDate[2]);
-    if (noteDate[3]) timeText = `${noteDate[3]}–${noteDate[4]} น.`;
-  }
-  if (!dateText) dateText = formatThaiDateRange(t.createdAt);
-
-  const subParts = [];
-  if (isCheckIn) {
-    if (session) subParts.push(session);
-    if (timeText) subParts.push(timeText);
-  } else if (isStudentUpload) {
-    subParts.push(t.status === 'APPROVED' ? 'อัปโหลดโดยนิสิต · อาจารย์อนุมัติแล้ว' : t.status === 'REJECTED' ? 'อัปโหลดโดยนิสิต · ไม่ผ่านการตรวจ' : 'อัปโหลดโดยนิสิต · รออาจารย์ตรวจ');
-  } else {
-    subParts.push(t.source === 'ADMIN_IMPORT' ? 'อาจารย์ประจำวิชาเพิ่มให้' : 'นำเข้าโดยเจ้าหน้าที่คณะ');
-  }
-
-  // หมายเหตุที่ระบบเขียนเอง (Check-in) ถูกแยกเป็นวันที่/เวลาแล้ว → แสดงเฉพาะหมายเหตุที่มีความหมายเพิ่ม
-  const extraNote = isCheckIn ? '' : note.trim();
-  const sourceKey = isCheckIn ? 'CHECKIN' : isStudentUpload ? 'UPLOAD' : 'IMPORT';
-  const statusKey = t.status === 'APPROVED' ? 'APPROVED' : t.status === 'REJECTED' ? 'REJECTED' : 'PENDING';
-  return { title: title || '-', sub: subParts.join(' · '), dateText: dateText || '-', extraNote, sourceKey, statusKey, isStudentUpload };
+  return window.TrainingView.view(t);
 }
 
 function getTrainingFilters() {
@@ -555,52 +514,21 @@ function renderTrainingsPage() {
     </div></td></tr>`;
   } else {
     tbody.innerHTML = pageItems.map(({ t, v, order }) => {
-      const typeBadge = t.skillType === 'HARD'
-        ? '<span class="trn-pill trn-pill--hard">Hard skill</span>'
-        : '<span class="trn-pill trn-pill--soft">Soft skill</span>';
-      // ไฟล์ Certificate ดูได้ในหน้าต่าง "ดูรายละเอียด" (แสดงตัวอย่างไฟล์ใต้หัวข้อ Certificate)
-      const sourceChip = v.sourceKey === 'CHECKIN'
-        ? '<span class="trn-chip trn-chip--blue"><span class="material-icons">verified_user</span>Check-in</span>'
-        : v.sourceKey === 'UPLOAD'
-        ? '<span class="trn-chip trn-chip--amber"><span class="material-icons">upload_file</span>อัปโหลด Cert</span>'
-        : `<span class="trn-chip trn-chip--slate"><span class="material-icons">domain</span>${t.source === 'ADMIN_IMPORT' ? 'อาจารย์เพิ่มให้' : 'นำเข้าโดยคณะ'}</span>`;
-      const statusBadge = v.statusKey === 'APPROVED'
-        ? '<span class="trn-status trn-status--pass"><span class="material-icons">check</span>ผ่าน</span>'
-        : v.statusKey === 'REJECTED'
-        ? '<span class="trn-status trn-status--fail"><span class="material-icons">close</span>ไม่ผ่าน</span>'
-        : '<span class="trn-status trn-status--wait"><span class="material-icons">schedule</span>รอตรวจ</span>';
-
-      // ลบได้เฉพาะรายการที่นิสิตอัปโหลดเองและยังรอตรวจ
+      // แก้ไขได้: รายการที่นิสิตอัปโหลดเองและยังไม่ผ่านการตรวจ (รอตรวจ / ไม่ผ่าน) · ลบได้เฉพาะที่ยังรอตรวจ
       const lockReason = isInternshipLocked
         ? 'ล็อกระหว่างฝึกงาน แก้ไขไม่ได้'
         : !v.isStudentUpload
         ? 'บันทึกโดยเจ้าหน้าที่ แก้ไขไม่ได้'
-        : v.statusKey !== 'PENDING'
-        ? 'ตรวจแล้ว แก้ไขไม่ได้'
+        : v.statusKey === 'APPROVED'
+        ? 'ตรวจผ่านแล้ว แก้ไขไม่ได้'
         : '';
-      const actionBtn = lockReason
+      const actionsHtml = lockReason
         ? `<span class="trn-icon-btn trn-icon-btn--lock" tabindex="0" title="${lockReason}" aria-label="${lockReason}"><span class="material-icons">lock</span></span>`
-        : `<button type="button" class="trn-icon-btn trn-icon-btn--danger" title="ลบรายการ" aria-label="ลบรายการ" onclick="deleteTraining(${t.id})"><span class="material-icons">delete_outline</span></button>`;
-
-      const noteTip = v.extraNote ? ` title="หมายเหตุ: ${escapeStudentHtml(v.extraNote)}"` : '';
-      return `
-        <tr class="trn-row trn-row--${v.statusKey.toLowerCase()}">
-          <td class="trn-col-no" data-label="ลำดับ">${order}</td>
-          <td class="trn-col-title" data-label="ชื่อกิจกรรม">
-            <div class="trn-title"${noteTip}>${escapeStudentHtml(v.title)}</div>
-            <div class="trn-sub">${escapeStudentHtml(v.sub)}${v.extraNote ? `<span class="trn-note-flag"${noteTip}><span class="material-icons">sticky_note_2</span>มีหมายเหตุ</span>` : ''}</div>
-          </td>
-          <td class="trn-col-type" data-label="ประเภท">${typeBadge}</td>
-          <td class="trn-col-hours" data-label="ชั่วโมง"><b>${Number(t.hours) || 0}</b> ชม.</td>
-          <td class="trn-col-source" data-label="แหล่งที่มา"><div class="trn-source">${sourceChip}</div></td>
-          <td class="trn-col-status" data-label="สถานะ">${statusBadge}</td>
-          <td class="trn-col-actions" data-label="จัดการ">
-            <div class="trn-actions">
-              <button type="button" class="trn-icon-btn" title="ดูรายละเอียด" aria-label="ดูรายละเอียด" onclick="viewTraining(${t.id})"><span class="material-icons">visibility</span></button>
-              ${actionBtn}
-            </div>
-          </td>
-        </tr>`;
+        : `<button type="button" class="trn-icon-btn" title="แก้ไขรายการ" aria-label="แก้ไขรายการ" onclick="openTrainingModal(${t.id})"><span class="material-icons">edit</span></button>`
+          + (v.statusKey === 'PENDING'
+            ? `<button type="button" class="trn-icon-btn trn-icon-btn--danger" title="ลบรายการ" aria-label="ลบรายการ" onclick="deleteTraining(${t.id})"><span class="material-icons">delete_outline</span></button>`
+            : '');
+      return window.TrainingView.rowHtml(t, order, { viewOnclick: `viewTraining(${t.id})`, actionsHtml });
     }).join('');
   }
 
@@ -661,145 +589,32 @@ window.deleteTraining = async function(id) {
   }
 };
 
-// ---- Modal กลาง (สร้างครั้งเดียว ต่อท้าย body เพื่อไม่ให้ถูก overflow/transform ของ panel ตัด) ----
-function getTrainingModalRoot() {
-  let root = document.getElementById('trn-modal-root');
-  if (!root) {
-    root = document.createElement('div');
-    root.id = 'trn-modal-root';
-    root.className = 'trn-modal-backdrop';
-    root.hidden = true;
-    root.addEventListener('click', (e) => { if (e.target === root) closeTrainingModal(); });
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const lightbox = document.getElementById('trn-lightbox');
-      if (lightbox && !lightbox.hidden) { closeCertificateLightbox(); return; }
-      if (!root.hidden) closeTrainingModal();
-    });
-    document.body.appendChild(root);
-  }
-  return root;
-}
-
+// ---- หน้าต่างกลาง / lightbox / รายละเอียด: ใช้ตัวกลางร่วมกับหน้าอาจารย์ (src/client/components/training_view.ts) ----
 function closeTrainingModal() {
-  closeCertificateLightbox();
-  const root = document.getElementById('trn-modal-root');
-  if (root) {
-    root.hidden = true;
-    root.innerHTML = '';
-  }
-  document.body.classList.remove('trn-modal-open');
+  window.TrainingView.close();
 }
 window.closeTrainingModal = closeTrainingModal;
 
 function showTrainingModal(title, bodyHtml, footHtml) {
-  const root = getTrainingModalRoot();
-  root.innerHTML = `
-    <div class="trn-modal" role="dialog" aria-modal="true" aria-labelledby="trn-modal-title">
-      <div class="trn-modal-head">
-        <h3 id="trn-modal-title">${title}</h3>
-        <button type="button" class="trn-icon-btn" aria-label="ปิด" onclick="closeTrainingModal()"><span class="material-icons">close</span></button>
-      </div>
-      <div class="trn-modal-body">${bodyHtml}</div>
-      <div class="trn-modal-foot">${footHtml}</div>
-    </div>`;
-  root.hidden = false;
-  document.body.classList.add('trn-modal-open');
+  window.TrainingView.show(title, bodyHtml, footHtml);
 }
 
-// URL รูปของ Certificate: รูปภาพใช้ตรง ๆ, PDF บน Cloudinary → .jpg (หน้าแรก), อื่น ๆ → '' (ใช้ PDF viewer)
 function getCertificateImageUrl(url) {
-  const u = String(url || '');
-  if (!u) return '';
-  if (/.pdf($|[?#])/i.test(u)) return u.includes('cloudinary.com') ? u.replace(/.pdf($|[?#])/i, '.jpg$1') : '';
-  return u;
+  return window.TrainingView.certImageUrl(url);
 }
-
-// รูปโหลดไม่ขึ้น → เปลี่ยนเป็น PDF viewer (ถ้าเป็น PDF) หรือซ่อนกรอบ
-window.certificatePreviewFallback = function(imgEl) {
-  const box = imgEl.closest('.trn-cert-preview');
-  if (!box) return;
-  const src = box.getAttribute('data-src') || '';
-  if (/.pdf($|[?#])/i.test(src)) {
-    box.innerHTML = '';
-    const frame = document.createElement('iframe');
-    frame.src = src;
-    frame.title = 'ตัวอย่างไฟล์ Certificate';
-    box.appendChild(frame);
-  } else {
-    box.style.display = 'none';
-  }
-};
-
-// Lightbox: รูปใหญ่บนพื้นหลังสีเทาเข้ม กดพื้นหลัง / ปุ่มปิด / Esc เพื่อปิด
-window.openCertificateLightbox = function(src) {
-  if (!src) return;
-  let box = document.getElementById('trn-lightbox');
-  if (!box) {
-    box = document.createElement('div');
-    box.id = 'trn-lightbox';
-    box.className = 'trn-lightbox';
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-modal', 'true');
-    box.setAttribute('aria-label', 'รูป Certificate ขนาดใหญ่');
-    box.innerHTML = '<button type="button" class="trn-lightbox-close" aria-label="ปิด"><span class="material-icons">close</span></button><img alt="Certificate" />';
-    box.addEventListener('click', (e) => {
-      if (e.target === box || (e.target as HTMLElement).closest('.trn-lightbox-close')) closeCertificateLightbox();
-    });
-    document.body.appendChild(box);
-  }
-  box.querySelector('img').src = src;
-  box.hidden = false;
-};
 
 function closeCertificateLightbox() {
-  const box = document.getElementById('trn-lightbox');
-  if (box) box.hidden = true;
+  window.TrainingView.closeLightbox();
 }
-window.closeCertificateLightbox = closeCertificateLightbox;
 
-// ดูรายละเอียดรายการ (รวมหมายเหตุยาว ๆ ที่ย้ายออกจากตาราง)
+// ปิดหน้าต่าง (ปุ่มปิด / Esc / คลิกพื้นหลัง) -> คืนหน่วยความจำของตัวอย่างไฟล์ที่เลือก
+window.TrainingView.onClose(() => releaseTrainingPreviewUrl());
+
+// ดูรายละเอียดรายการ (หน้าต่างเดียวกับหน้าอาจารย์)
 window.viewTraining = function(id) {
   const t = (currentTrainingsData || []).find((x) => x.id === id);
   if (!t) return;
-  const v = getTrainingView(t);
-  const row = (label, value) => `<div class="trn-detail-row"><div class="trn-detail-label">${label}</div><div class="trn-detail-value">${value}</div></div>`;
-  const statusText = v.statusKey === 'APPROVED' ? 'ผ่าน' : v.statusKey === 'REJECTED' ? 'ไม่ผ่าน' : 'รอตรวจ';
-  const sourceText = v.sourceKey === 'CHECKIN' ? 'Check-in หน้างาน' : v.sourceKey === 'UPLOAD' ? 'นิสิตอัปโหลด Certificate' : (t.source === 'ADMIN_IMPORT' ? 'อาจารย์ประจำวิชาเพิ่มให้' : 'นำเข้าโดยเจ้าหน้าที่คณะ');
-  const certUrl = t.certificateFileUrl || '';
-  const safeUrl = escapeStudentHtml(certUrl);
-  // แสดงเป็นรูป: PDF บน Cloudinary แปลงหน้าแรกเป็น .jpg (วิธีเดียวกับตัวอย่าง CV) → กดรูปเพื่อดูภาพใหญ่
-  // ถ้าแปลงเป็นรูปไม่ได้ (ไม่ใช่ Cloudinary / โหลดรูปไม่ขึ้น) → แสดง PDF viewer แทน
-  const certImg = getCertificateImageUrl(certUrl);
-  const certPreview = !certUrl ? '' : `
-    <div class="trn-cert">
-      <div class="trn-cert-head">
-        <span class="trn-detail-label">Certificate</span>
-        <a class="trn-file-link" href="${safeUrl}" target="_blank" rel="noopener">เปิดไฟล์ Certificate<span class="material-icons">open_in_new</span></a>
-      </div>
-      <div class="trn-cert-preview" data-src="${safeUrl}">
-        ${certImg
-          ? `<button type="button" class="trn-cert-thumb" onclick="openCertificateLightbox(this.querySelector('img').src)" aria-label="ดูรูป Certificate ขนาดใหญ่">
-              <img src="${escapeStudentHtml(certImg)}" alt="ตัวอย่างไฟล์ Certificate" onerror="certificatePreviewFallback(this)" />
-              <span class="trn-cert-zoom"><span class="material-icons">zoom_in</span>คลิกเพื่อดูภาพใหญ่</span>
-            </button>`
-          : `<iframe src="${safeUrl}" title="ตัวอย่างไฟล์ Certificate" loading="lazy"></iframe>`}
-      </div>
-    </div>`;
-  showTrainingModal('รายละเอียดการอบรม', `
-    ${row('ชื่อกิจกรรม', escapeStudentHtml(v.title))}
-    ${v.sub ? row('ช่วง / เวลา', escapeStudentHtml(v.sub)) : ''}
-    ${row('ประเภท', t.skillType === 'HARD' ? 'Hard skill' : 'Soft skill')}
-    ${row('ชั่วโมง', `${Number(t.hours) || 0} ชม.`)}
-    ${row('วันที่', escapeStudentHtml(v.dateText))}
-    ${row('แหล่งที่มา', sourceText)}
-    ${row('สถานะ', statusText)}
-    ${t.note ? row('หมายเหตุ', escapeStudentHtml(t.note)) : ''}
-    ${isHttpLink(t.certificateLink)
-      ? row('ลิงก์ของ Certificate', `<a class="trn-file-link trn-cert-link" href="${escapeStudentHtml(t.certificateLink)}" target="_blank" rel="noopener noreferrer">${escapeStudentHtml(t.certificateLink)}<span class="material-icons">open_in_new</span></a>`)
-      : ''}
-    ${certPreview}
-  `, '<button type="button" class="trn-btn trn-btn--ghost" onclick="closeTrainingModal()">ปิด</button>');
+  window.TrainingView.openDetail(t);
 };
 
 // ---- Modal "เพิ่มข้อมูลการอบรม" (ใช้ POST /api/student/trainings เดิม: title, skillType, hours, certificate) ----
@@ -807,13 +622,20 @@ const TRAINING_CERT_EXTS = ['.pdf', '.jpg', '.jpeg', '.png'];
 const TRAINING_CERT_MAX = 10 * 1024 * 1024;
 let trainingModalFile = null;
 const trainingModalTouched = new Set();
+// โหมดแก้ไข: id ของรายการที่แก้ (null = เพิ่มใหม่) — แก้แล้วไม่ต้องแนบไฟล์ใหม่ (ใช้ไฟล์เดิมได้)
+let trainingModalEditId = null;
 
-window.openTrainingModal = function() {
+window.openTrainingModal = function(editId) {
   if (isInternshipLocked) return;
+  const editing = editId ? (currentTrainingsData || []).find((x) => x.id === editId) : null;
+  if (editId && !editing) return;
+  trainingModalEditId = editing ? editing.id : null;
   trainingModalFile = null;
   trainingModalTouched.clear();
-  showTrainingModal('เพิ่มข้อมูลการอบรม', `
-    <p class="trn-modal-intro">สำหรับคอร์สออนไลน์/ภายนอก ชั่วโมงจาก Check-in หน้างานไม่ต้องเพิ่มเอง รายการใหม่จะมีสถานะ "รอตรวจ" จนกว่าอาจารย์จะอนุมัติ</p>
+  showTrainingModal(editing ? 'แก้ไขข้อมูลการอบรม' : 'เพิ่มข้อมูลการอบรม', `
+    <p class="trn-modal-intro">${editing
+      ? 'แก้ไขแล้วรายการจะกลับเป็น "รอตรวจ" ให้อาจารย์ตรวจใหม่ · ต้องกรอกหน่วยงานผู้จัดและลิงก์ให้ครบ · ไม่แนบไฟล์ใหม่ = ใช้ไฟล์ Certificate เดิม'
+      : 'สำหรับคอร์สออนไลน์/ภายนอก ชั่วโมงจาก Check-in หน้างานไม่ต้องเพิ่มเอง รายการใหม่จะมีสถานะ "รอตรวจ" จนกว่าอาจารย์จะอนุมัติ'}</p>
     <div class="trn-field">
       <label for="trn-f-title">ชื่อคอร์ส / กิจกรรม <span class="trn-req">*</span></label>
       <input id="trn-f-title" class="trn-input" type="text" maxlength="200" placeholder="เช่น Google Cybersecurity Professional Certificate" data-field="title" />
@@ -836,12 +658,17 @@ window.openTrainingModal = function() {
       </div>
     </div>
     <div class="trn-field">
-      <label for="trn-f-link">ลิงก์ของ Certificate <span class="trn-req">*</span></label>
-      <input id="trn-f-link" class="trn-input" type="url" maxlength="1000" inputmode="url" placeholder="เช่น ลิงก์ตรวจสอบใบรับรอง หรือหน้าประชาสัมพันธ์ของผู้จัด https://..." data-field="link" />
+      <label for="trn-f-org">หน่วยงานผู้จัด <span class="trn-req">*</span></label>
+      <input id="trn-f-org" class="trn-input" type="text" maxlength="200" placeholder="เช่น Google Developer Group, คณะ ICT ม.พะเยา" data-field="org" />
+      <div class="trn-field-error" data-error="org"></div>
+    </div>
+    <div class="trn-field">
+      <label for="trn-f-link">ลิงก์ประชาสัมพันธ์ / ลงทะเบียน <span class="trn-req">*</span></label>
+      <input id="trn-f-link" class="trn-input" type="url" maxlength="1000" inputmode="url" placeholder="หน้าประชาสัมพันธ์/ลงทะเบียนของผู้จัด หรือลิงก์ตรวจสอบใบรับรอง https://..." data-field="link" />
       <div class="trn-field-error" data-error="link"></div>
     </div>
     <div class="trn-field">
-      <label>แนบ Certificate <span class="trn-req">*</span></label>
+      <label>แนบ Certificate ${editing ? '<span style="font-weight:400; color:#64748B;">(ไม่บังคับ — ไม่แนบ = ใช้ไฟล์เดิม)</span>' : '<span class="trn-req">*</span>'}</label>
       <input id="trn-f-file" type="file" accept=".pdf,.jpg,.jpeg,.png" hidden />
       <div class="trn-drop" id="trn-f-drop" tabindex="0" role="button" aria-label="เลือกไฟล์ Certificate">
         <span class="material-icons">cloud_upload</span>
@@ -849,11 +676,23 @@ window.openTrainingModal = function() {
         <span class="trn-drop-help">PDF, JPG, PNG • ไม่เกิน 10MB</span>
       </div>
       <div class="trn-field-error" data-error="file"></div>
+      <!-- ตัวอย่างไฟล์ที่เลือก (รูป = แสดงรูป · PDF = ตัวดู PDF) ก่อนกดบันทึก -->
+      <div class="trn-pick-preview" id="trn-f-preview" hidden></div>
     </div>
   `, `
     <button type="button" class="trn-btn trn-btn--ghost" onclick="closeTrainingModal()">ยกเลิก</button>
     <button type="button" class="trn-btn trn-btn--primary" id="trn-f-submit" disabled onclick="submitTrainingModal()">บันทึก</button>
   `);
+
+  if (editing) {
+    (document.getElementById('trn-f-title') as HTMLInputElement).value = editing.title || '';
+    (document.getElementById('trn-f-type') as HTMLSelectElement).value = editing.skillType === 'HARD' ? 'hard' : 'soft';
+    (document.getElementById('trn-f-hours') as HTMLInputElement).value = String(editing.hours || '');
+    (document.getElementById('trn-f-org') as HTMLInputElement).value = editing.organizer || '';
+    (document.getElementById('trn-f-link') as HTMLInputElement).value = editing.certificateLink || '';
+    // รายการเก่าที่ยังไม่มีผู้จัด/ลิงก์ -> โชว์ข้อความให้กรอกทันที
+    ['org', 'link'].forEach((k) => trainingModalTouched.add(k));
+  }
 
   const root = document.getElementById('trn-modal-root');
   root.querySelectorAll('[data-field]').forEach((el) => {
@@ -870,6 +709,7 @@ window.openTrainingModal = function() {
     const nameEl = document.getElementById('trn-f-file-name');
     if (nameEl) nameEl.textContent = file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)` : 'ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์';
     drop.classList.toggle('has-file', Boolean(file));
+    renderTrainingFilePreview(file, editing);
     validateTrainingModal();
   };
   drop.addEventListener('click', () => fileInput.click());
@@ -878,8 +718,60 @@ window.openTrainingModal = function() {
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
   drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('is-over'); pick(e.dataTransfer?.files?.[0]); });
-  (document.getElementById('trn-f-title') as HTMLInputElement)?.focus();
+  if (editing) {
+    const nameEl = document.getElementById('trn-f-file-name');
+    if (nameEl && editing.certificateFileUrl) nameEl.textContent = 'ใช้ไฟล์เดิม — คลิกเพื่อเปลี่ยนไฟล์';
+    renderTrainingFilePreview(null, editing);
+    validateTrainingModal();
+  }
+  (document.getElementById(editing && !editing.organizer ? 'trn-f-org' : 'trn-f-title') as HTMLInputElement)?.focus();
 };
+
+// ---- ตัวอย่างไฟล์ Certificate ในหน้าต่างเพิ่ม/แก้ไข (ให้นิสิตเห็นไฟล์ก่อนกดบันทึก) ----
+let trainingPreviewUrl = null;
+
+function releaseTrainingPreviewUrl() {
+  if (trainingPreviewUrl) {
+    URL.revokeObjectURL(trainingPreviewUrl);
+    trainingPreviewUrl = null;
+  }
+}
+
+/**
+ * file = ไฟล์ที่เพิ่งเลือก (แสดงจากเครื่องนิสิต ยังไม่อัปโหลด)
+ * ไม่มีไฟล์ใหม่ + โหมดแก้ไข = แสดงไฟล์เดิมที่อัปโหลดไว้
+ */
+function renderTrainingFilePreview(file, editing) {
+  const box = document.getElementById('trn-f-preview');
+  if (!box) return;
+  releaseTrainingPreviewUrl();
+  box.innerHTML = '';
+  const name = String(file?.name || '').toLowerCase();
+  const isPdf = file ? (file.type === 'application/pdf' || name.endsWith('.pdf')) : false;
+  const isImage = file ? (/^image\/(png|jpe?g)$/.test(file.type) || /\.(png|jpe?g)$/.test(name)) : false;
+
+  let label = '';
+  if (file && (isPdf || isImage) && file.size <= TRAINING_CERT_MAX) {
+    trainingPreviewUrl = URL.createObjectURL(file);
+    label = 'ตัวอย่างไฟล์ที่เลือก (ยังไม่อัปโหลด)';
+    box.innerHTML = isImage
+      ? `<img src="${trainingPreviewUrl}" alt="ตัวอย่าง Certificate ที่เลือก" />`
+      : `<iframe src="${trainingPreviewUrl}" title="ตัวอย่าง PDF ที่เลือก"></iframe>`;
+  } else if (!file && editing && editing.certificateFileUrl) {
+    const url = escapeStudentHtml(editing.certificateFileUrl);
+    const img = getCertificateImageUrl(editing.certificateFileUrl);
+    label = 'ไฟล์เดิม (ไม่แนบไฟล์ใหม่ = ใช้ไฟล์นี้)';
+    box.innerHTML = img
+      ? `<img src="${escapeStudentHtml(img)}" alt="Certificate ไฟล์เดิม" />`
+      : `<iframe src="${url}" title="Certificate ไฟล์เดิม"></iframe>`;
+  }
+  if (!box.innerHTML) {
+    box.hidden = true;
+    return;
+  }
+  box.insertAdjacentHTML('afterbegin', `<div class="trn-pick-preview-label">${label}</div>`);
+  box.hidden = false;
+}
 
 // ชื่อไฟล์ PDF ของหนังสือราชการ (browser ใช้ <title> เป็นชื่อไฟล์เริ่มต้นตอน "บันทึกเป็น PDF")
 // ตัดอักขระที่ใช้ในชื่อไฟล์ Windows ไม่ได้ — รูปแบบเดียวกับฝั่งเจ้าหน้าที่ (admin_dashboard.ts → letterFileTitle)
@@ -906,15 +798,20 @@ function validateTrainingModal() {
   const hoursRaw = (document.getElementById('trn-f-hours') as HTMLInputElement)?.value.trim() || '';
   const hours = Number(hoursRaw);
   const link = (document.getElementById('trn-f-link') as HTMLInputElement)?.value.trim() || '';
-  const errors = { title: '', type: '', hours: '', link: '', file: '' };
+  const org = (document.getElementById('trn-f-org') as HTMLInputElement)?.value.trim() || '';
+  const errors = { title: '', type: '', hours: '', org: '', link: '', file: '' };
   if (!title) errors.title = 'กรุณากรอกชื่อคอร์ส';
-  if (!link) errors.link = 'กรุณากรอกลิงก์ของ Certificate';
+  // T-03: บังคับหน่วยงานผู้จัด + ลิงก์ (http/https) — API ตรวจซ้ำ
+  if (!org) errors.org = 'กรุณากรอกหน่วยงานผู้จัด';
+  if (!link) errors.link = 'กรุณากรอกลิงก์ประชาสัมพันธ์ / ลงทะเบียน';
   else if (!isHttpLink(link)) errors.link = 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://';
   if (!type) errors.type = 'กรุณาเลือกประเภท';
   if (!hoursRaw) errors.hours = 'กรุณากรอกจำนวนชั่วโมง';
   else if (!Number.isInteger(hours) || hours <= 0) errors.hours = 'จำนวนชั่วโมงต้องเป็นจำนวนเต็มมากกว่า 0';
-  if (!trainingModalFile) errors.file = 'กรุณาแนบไฟล์ Certificate';
-  else {
+  if (!trainingModalFile) {
+    // แก้ไข: ไม่แนบไฟล์ใหม่ได้ (ใช้ไฟล์เดิม)
+    if (!trainingModalEditId) errors.file = 'กรุณาแนบไฟล์ Certificate';
+  } else {
     const name = trainingModalFile.name.toLowerCase();
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
     if (!TRAINING_CERT_EXTS.includes(ext)) errors.file = 'รองรับเฉพาะไฟล์ PDF, JPG หรือ PNG';
@@ -935,7 +832,7 @@ function validateTrainingModal() {
 }
 
 window.submitTrainingModal = async function() {
-  ['title', 'type', 'hours', 'link', 'file'].forEach((k) => trainingModalTouched.add(k));
+  ['title', 'type', 'hours', 'org', 'link', 'file'].forEach((k) => trainingModalTouched.add(k));
   if (!validateTrainingModal()) return;
   const submit = document.getElementById('trn-f-submit') as HTMLButtonElement;
   submit.dataset.busy = '1';
@@ -946,9 +843,12 @@ window.submitTrainingModal = async function() {
     formData.append('hours', (document.getElementById('trn-f-hours') as HTMLInputElement).value.trim());
     formData.append('skillType', (document.getElementById('trn-f-type') as HTMLSelectElement).value);
     formData.append('title', (document.getElementById('trn-f-title') as HTMLInputElement).value.trim());
+    formData.append('organizer', (document.getElementById('trn-f-org') as HTMLInputElement).value.trim());
     formData.append('certificateLink', (document.getElementById('trn-f-link') as HTMLInputElement).value.trim());
-    formData.append('certificate', trainingModalFile);
-    const res = await fetch('/api/student/trainings', { method: 'POST', body: formData });
+    if (trainingModalFile) formData.append('certificate', trainingModalFile);
+    const res = trainingModalEditId
+      ? await fetch(`/api/student/trainings/${trainingModalEditId}`, { method: 'PUT', body: formData })
+      : await fetch('/api/student/trainings', { method: 'POST', body: formData });
     const data = await res.json().catch(() => null);
     if (data && data.success) {
       closeTrainingModal();

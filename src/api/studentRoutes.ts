@@ -38,6 +38,7 @@ import {
 import { studentCoopRouter } from "./coopRoutes";
 import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
 import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
+import { cleanOrganizer, isStudentUploadSource, normalizeHttpLink, studentCanEditTraining, trainingEvidenceError } from "../utils/trainingEvidence";
 import { CV_COMMENT_ROLE_LABEL, CV_STATE_LABEL, CvCommentRole, cvState, hasCv, isCommentForOlderFile, unseenCommentCount } from "../utils/cvReview";
 
 const router = express.Router();
@@ -516,21 +517,11 @@ router.post("/trainings", upload.single("certificate"), async (req: Request, res
       return res.status(400).json({ success: false, message: "กรุณาระบุจำนวนชั่วโมงให้ถูกต้อง" });
     }
 
-    // ลิงก์ Certificate: รับเฉพาะ http/https (กัน javascript: ฯลฯ เพราะหน้าเว็บนำไปทำเป็นลิงก์ให้กด)
-    const certificateLinkRaw = String(req.body.certificateLink || "").trim();
-    let certificateLink: string | null = null;
-    if (certificateLinkRaw) {
-      let parsedLink: URL | null = null;
-      try {
-        parsedLink = new URL(certificateLinkRaw);
-      } catch {
-        parsedLink = null;
-      }
-      if (!parsedLink || !["http:", "https:"].includes(parsedLink.protocol) || certificateLinkRaw.length > 1000) {
-        return res.status(400).json({ success: false, message: "ลิงก์ Certificate ไม่ถูกต้อง (ต้องขึ้นต้นด้วย http:// หรือ https://)" });
-      }
-      certificateLink = parsedLink.toString();
-    }
+    // T-03: นิสิตอัปโหลดเอง -> บังคับหน่วยงานผู้จัด + ลิงก์ประชาสัมพันธ์/ลงทะเบียน (http/https เท่านั้น กัน javascript: ฯลฯ)
+    const evidenceErr = trainingEvidenceError(req.body.organizer, req.body.certificateLink);
+    if (evidenceErr) return res.status(400).json({ success: false, message: evidenceErr });
+    const certificateLink = normalizeHttpLink(req.body.certificateLink);
+    const organizer = cleanOrganizer(req.body.organizer);
 
     let certificateFileUrl: string | null = null;
     if (req.file) {
@@ -552,6 +543,7 @@ router.post("/trainings", upload.single("certificate"), async (req: Request, res
         hours: parseInt(hours, 10),
         certificateFileUrl,
         certificateLink,
+        organizer,
         source: "STUDENT_UPLOAD",
         status: "PENDING",
       },
@@ -568,7 +560,9 @@ router.post("/trainings", upload.single("certificate"), async (req: Request, res
   }
 });
 
-router.put("/trainings/:id", async (req: Request, res: Response) => {
+// แก้รายการอบรมที่นิสิตอัปโหลดเอง (ยังไม่ผ่านการตรวจ) — ต้องกรอกหน่วยงานผู้จัด + ลิงก์ให้ครบ (T-03) · แนบไฟล์ใหม่ได้ (ไม่บังคับ)
+// บันทึกแล้วกลับเป็น "รอตรวจ" ให้อาจารย์ตรวจใหม่
+router.put("/trainings/:id", upload.single("certificate"), async (req: Request, res: Response) => {
   try {
     const student = await getStudentByUserId(req.session.user!.id);
     if (!student) {
@@ -588,11 +582,28 @@ router.put("/trainings/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "ไม่พบรายการอบรมนี้" });
     }
 
-    if (training.source === "STAFF_IMPORT" || training.source === "ADMIN_IMPORT") {
+    if (!isStudentUploadSource(training.source)) {
       return res.status(403).json({
         success: false,
         message: "ไม่สามารถแก้ไขรายการอบรมที่นำเข้าจากระบบคณะหรืออาจารย์ประจำวิชาได้",
       });
+    }
+    if (!studentCanEditTraining(training)) {
+      return res.status(400).json({ success: false, message: "รายการนี้อาจารย์อนุมัติแล้ว แก้ไขไม่ได้" });
+    }
+
+    // ค่าที่จะบันทึก = ค่าที่ส่งมา (ไม่ส่ง = ค่าเดิม) -> ต้องครบทั้งหน่วยงานผู้จัดและลิงก์ (รายการเก่าที่ยังไม่มีต้องกรอกก่อน)
+    const nextOrganizer = req.body.organizer !== undefined ? req.body.organizer : training.organizer;
+    const nextLink = req.body.certificateLink !== undefined ? req.body.certificateLink : training.certificateLink;
+    const evidenceErr = trainingEvidenceError(nextOrganizer, nextLink);
+    if (evidenceErr) return res.status(400).json({ success: false, message: evidenceErr });
+    if (hours !== undefined && hours !== "" && (!Number.isInteger(Number(hours)) || Number(hours) <= 0)) {
+      return res.status(400).json({ success: false, message: "จำนวนชั่วโมงต้องเป็นจำนวนเต็มมากกว่า 0" });
+    }
+
+    let certificateFileUrl = training.certificateFileUrl;
+    if (req.file) {
+      certificateFileUrl = await uploadToCloudinary(req.file.buffer, req.file.originalname, "certificates");
     }
 
     const updated = await prisma.trainingRecord.update({
@@ -601,6 +612,14 @@ router.put("/trainings/:id", async (req: Request, res: Response) => {
         title: title ? String(title).trim() : training.title,
         skillType: skillType ? (String(skillType).toLowerCase().includes("hard") ? "HARD" : "SOFT") : training.skillType,
         hours: hours ? parseInt(hours, 10) : training.hours,
+        organizer: cleanOrganizer(nextOrganizer),
+        certificateLink: normalizeHttpLink(nextLink),
+        certificateFileUrl,
+        // แก้แล้วให้อาจารย์ตรวจใหม่
+        status: "PENDING",
+        note: null,
+        reviewedById: null,
+        reviewedAt: null,
       },
     });
 

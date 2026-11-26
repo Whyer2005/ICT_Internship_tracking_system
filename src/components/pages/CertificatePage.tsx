@@ -68,6 +68,16 @@ const PAGE_BODY_HTML = `
             <input type="text" id="cert-title" placeholder="เช่น อบรม Software Testing / Hackathon" class="input-field w-[280px]" />
           </div>
 
+          <!-- หน่วยงานผู้จัด + ลิงก์ (T-03 บังคับ) -->
+          <div class="flex items-center gap-2">
+            <label for="cert-organizer" class="text-slate-700 text-sm font-bold whitespace-nowrap">หน่วยงานผู้จัด <span style="color:#DC2626;">*</span></label>
+            <input type="text" id="cert-organizer" maxlength="200" placeholder="เช่น Google Developer Group" class="input-field w-[240px]" />
+          </div>
+          <div class="flex items-center gap-2">
+            <label for="cert-link" class="text-slate-700 text-sm font-bold whitespace-nowrap">ลิงก์ประชาสัมพันธ์ / ลงทะเบียน <span style="color:#DC2626;">*</span></label>
+            <input type="url" id="cert-link" maxlength="1000" placeholder="https://..." class="input-field w-[280px]" />
+          </div>
+
           <!-- ประเภทของใบอบรม -->
           <div class="flex items-center gap-2">
             <label class="text-slate-700 text-sm font-bold whitespace-nowrap">ประเภททักษะ</label>

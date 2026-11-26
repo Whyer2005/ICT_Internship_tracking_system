@@ -132,10 +132,24 @@ async function saveTrainingRecord() {
         title = skillType === 'hard' ? 'อบรม Hard skill' : 'อบรม Soft skill';
     }
 
+    // T-03: บังคับหน่วยงานผู้จัด + ลิงก์ประชาสัมพันธ์/ลงทะเบียน (http/https) — API ตรวจซ้ำ
+    const organizer = (document.getElementById('cert-organizer')?.value || '').trim();
+    const link = (document.getElementById('cert-link')?.value || '').trim();
+    if (!organizer) {
+        alert('กรุณากรอกหน่วยงานผู้จัด');
+        return false;
+    }
+    if (!/^https?:\/\/\S+$/i.test(link)) {
+        alert('กรุณากรอกลิงก์ประชาสัมพันธ์ / ลงทะเบียน ที่ขึ้นต้นด้วย http:// หรือ https://');
+        return false;
+    }
+
     const formData = new FormData();
     formData.append('hours', hours);
     formData.append('skillType', skillType);
     formData.append('title', title);
+    formData.append('organizer', organizer);
+    formData.append('certificateLink', link);
     if (selectedFile) {
         formData.append('certificate', selectedFile);
     }
@@ -166,6 +180,8 @@ document.getElementById('add-cert-btn').addEventListener('click', async () => {
             selectedFile = null;
             fileInput.value = '';
             document.getElementById('cert-title').value = '';
+            if (document.getElementById('cert-organizer')) document.getElementById('cert-organizer').value = '';
+            if (document.getElementById('cert-link')) document.getElementById('cert-link').value = '';
             previewBox.style.display = 'none';
             uploadPrompt.style.display = 'flex';
         } else if (data) {

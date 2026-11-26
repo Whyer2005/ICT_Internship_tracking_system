@@ -286,6 +286,7 @@ model TrainingRecord {
   hours             Int            // จำนวนชั่วโมง
   certificateFileUrl String?
   certificateLink   String?        // ลิงก์อ้างอิงของ Certificate (หน้าผู้จัด/ประชาสัมพันธ์/ตรวจสอบใบรับรอง) — กันการปลอมแปลงไฟล์
+  organizer         String?        // หน่วยงานผู้จัด (T-03: บังคับเมื่อนิสิตอัปโหลดเอง · รายการเก่า/นำเข้า/Check-in ว่างได้)
   academicYear      String?        // ปีการศึกษา เช่น "2567"
   source            String?        @default("STUDENT_UPLOAD") // แหล่งที่มา: "STUDENT_UPLOAD" (นิสิตยื่นเอง), "STAFF_IMPORT" (พี่จอมนำเข้า), "ADMIN_IMPORT" (อาจารย์ประจำวิชาเพิ่มให้/นำเข้า)
 

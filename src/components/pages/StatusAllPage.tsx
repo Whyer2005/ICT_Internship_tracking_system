@@ -10,6 +10,7 @@ const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
   "../components/text_utils.js",
   "../components/official_letter.js",
+  "../components/training_view.js",
   "../api/status_all_tabs.js",
   "../api/status_all.js",
   "../api/status_coop.js"

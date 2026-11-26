@@ -287,95 +287,60 @@ function renderProfile(s) {
 // ==========================================
 // 2. ชั่วโมงการอบรม (admin ตรวจได้ — แบบ Figma)
 // ==========================================
+// ตารางชั่วโมงอบรม: คอลัมน์/หน้าตาเดียวกับหน้านิสิต (src/client/components/training_view.ts)
+// - อาจารย์ประจำวิชา: ติ๊กเลือกหลายรายการเพื่ออนุมัติพร้อมกัน + ปุ่ม ผ่าน/ไม่ผ่าน ในหน้าต่างรายละเอียด
+// - อาจารย์ที่ปรึกษา / เจ้าหน้าที่: ดูอย่างเดียว (ไม่มี checkbox / ปุ่มตัดสิน)
+let currentTrainings = [];
+
+function isFacultyTraining(t) {
+  return Boolean(t.source === 'STAFF_IMPORT' || t.source === 'ADMIN_IMPORT' || (t.title && /\[Check-in/i.test(t.title)));
+}
+
 function renderTrainings(trainings, summary) {
   const tbody = document.getElementById('admin-trainings-tbody');
   const summaryEl = document.getElementById('training-summary-text');
   const approvalArea = document.getElementById('training-approval-area');
   const saveArea = document.getElementById('training-save-area');
   const colHeader = document.getElementById('training-status-col-header');
-  tbody.innerHTML = '';
+  currentTrainings = Array.isArray(trainings) ? trainings : [];
 
   if (summaryEl) {
     summaryEl.textContent = `Soft: ${summary.approvedSoft}/${summary.totalSoft} ชม. | Hard: ${summary.approvedHard}/${summary.totalHard} ชม.`;
   }
 
-  // ปรับหัวตาราง: หากไม่ใช่ Course Admin ให้แสดงข้อความสถานะแบบอ่านอย่างเดียว ไม่มี Checkbox
+  // หัวคอลัมน์สถานะ: อาจารย์ประจำวิชามีช่องเลือกทั้งหมด
   if (colHeader) {
-    if (isActingAsCourseAdmin) {
-      colHeader.innerHTML = `
-        <label style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="training-select-all" style="width:16px; height:16px; cursor:pointer; accent-color:#4338CA;" title="เลือกทั้งหมด" />
-          <span>เลือก / สถานะ</span>
-        </label>
-      `;
-    } else {
-      colHeader.innerHTML = `<span>สถานะ</span>`;
-    }
+    colHeader.innerHTML = isActingAsCourseAdmin
+      ? `<label style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="training-select-all" style="width:15px; height:15px; cursor:pointer; accent-color:#4338CA;" title="เลือกทั้งหมด" aria-label="เลือกทั้งหมด" />
+          <span>สถานะ</span>
+        </label>`
+      : 'สถานะ';
   }
 
-  if (!trainings || trainings.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-gray-400">ยังไม่มีข้อมูลการอบรม</td></tr>';
+  if (!currentTrainings.length) {
+    tbody.innerHTML = `<tr class="trn-empty-row"><td colspan="7"><div class="trn-empty">
+      <span class="material-icons">school</span>
+      <div class="trn-empty-title">ยังไม่มีข้อมูลการอบรม</div>
+    </div></td></tr>`;
     if (approvalArea) approvalArea.style.display = 'none';
     if (saveArea) saveArea.style.display = 'none';
     return;
   }
 
-  const hasReviewableStudentCerts = trainings.some(t => {
-    const isFaculty = Boolean(t.source === 'STAFF_IMPORT' || (t.title && t.title.includes('[Check-in')) || (t.title && t.title.includes('[Check-In')) || t.source === 'ADMIN_IMPORT');
-    return !isFaculty;
-  });
+  // แสดงส่วนอนุมัติแบบหลายรายการ เฉพาะอาจารย์ประจำวิชาและมีรายการที่นิสิตอัปโหลดมาให้ตรวจ
+  const hasReviewableStudentCerts = currentTrainings.some((t) => !isFacultyTraining(t));
+  const showBulk = isActingAsCourseAdmin && hasReviewableStudentCerts;
+  if (approvalArea) approvalArea.style.display = showBulk ? 'flex' : 'none';
+  if (saveArea) saveArea.style.display = showBulk ? 'block' : 'none';
 
-  // แสดง approval area เฉพาะเมื่อเป็น Course Admin และมีรายการที่นิสิตอัปโหลด Cert มาให้ตรวจ
-  if (isActingAsCourseAdmin && hasReviewableStudentCerts) {
-    if (approvalArea) approvalArea.style.display = 'flex';
-    if (saveArea) saveArea.style.display = 'block';
-  } else {
-    if (approvalArea) approvalArea.style.display = 'none';
-    if (saveArea) saveArea.style.display = 'none';
-  }
-
-  trainings.forEach((t, idx) => {
-    const certUrl = t.certificateFileUrl || '';
-    const isFacultyEvent = Boolean(t.source === 'STAFF_IMPORT' || (t.title && t.title.includes('[Check-in')) || (t.title && t.title.includes('[Check-In')) || t.source === 'ADMIN_IMPORT');
-
-    let statusBadge = '<span style="color:#d97706; background:#fef3c7; border:1px solid #fde68a; font-size:13px; font-weight:600; padding:2px 8px; border-radius:6px;">⏳ รอตรวจ</span>';
-    if (isFacultyEvent) {
-      statusBadge = '<span style="color:#16a34a; background:#dcfce7; border:1px solid #86efac; font-size:13px; font-weight:600; padding:2px 8px; border-radius:6px;">✓ ผ่าน (กิจกรรมคณะ)</span>';
-    } else if (t.status === 'APPROVED') {
-      statusBadge = '<span style="color:#16a34a; background:#dcfce7; border:1px solid #86efac; font-size:13px; font-weight:600; padding:2px 8px; border-radius:6px;">✓ ผ่าน</span>';
-    } else if (t.status === 'REJECTED') {
-      statusBadge = '<span style="color:#dc2626; background:#fee2e2; border:1px solid #fca5a5; font-size:13px; font-weight:600; padding:2px 8px; border-radius:6px;">✗ ไม่ผ่าน</span>';
-    }
-
-    // กิจกรรมของคณะ/พี่จอมนำเข้า จะไม่มี Checkbox เพื่อไม่ให้เปลี่ยนสถานะกิจกรรมส่วนกลาง
-    // Checkbox จะแสดงเฉพาะรายการที่นิสิตอัปโหลดใบ Cert ยื่นมาเองเท่านั้น
-    const checkboxHtml = (isActingAsCourseAdmin && !isFacultyEvent)
-      ? `<input type="checkbox" class="training-cert-checkbox" data-id="${t.id}" style="width:18px; height:18px; cursor:pointer; accent-color:#2563eb;" />`
+  tbody.innerHTML = currentTrainings.map((t, idx) => {
+    // checkbox เฉพาะรายการที่นิสิตอัปโหลดเอง (กิจกรรมคณะ/นำเข้า เปลี่ยนสถานะไม่ได้)
+    const checkbox = (isActingAsCourseAdmin && !isFacultyTraining(t))
+      ? `<input type="checkbox" class="training-cert-checkbox" data-id="${t.id}" aria-label="เลือกรายการนี้" style="width:16px; height:16px; cursor:pointer; accent-color:#2563eb;" />`
       : '';
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="font-size:16px;">${idx + 1}</td>
-      <td style="font-size:16px;">${t.title}</td>
-      <td style="font-size:16px;">${t.skillType === 'HARD' ? 'Hard skill' : 'Soft skill'}</td>
-      <td style="font-size:16px;">${t.hours}</td>
-      <td style="text-align:center; vertical-align:middle;">
-        <div style="display:inline-flex; align-items:center; justify-content:center; gap:8px;">
-          ${checkboxHtml}
-          ${statusBadge}
-        </div>
-      </td>
-      <td style="text-align:center;">
-        ${isFacultyEvent
-          ? '<span style="color:#94a3b8; font-size:16px;">-</span>'
-          : certUrl
-            ? `<a href="${certUrl}" target="_blank" style="color:#2563eb; font-size:16px; text-decoration:none; white-space:nowrap;">ดูตัวอย่าง</a>`
-            : '<span style="color:#94a3b8; font-size:16px;">-</span>'
-        }
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
+    return window.TrainingView.rowHtml(t, idx + 1, { viewOnclick: `openAdminTrainingDetail(${t.id})`, statusPrefixHtml: checkbox });
+  }).join('');
 
   // ผูกการทำงาน Checkbox เลือกทั้งหมด (Select All) เฉพาะ Course Admin
   if (isActingAsCourseAdmin) {
@@ -390,6 +355,57 @@ function renderTrainings(trainings, summary) {
     }
   }
 }
+
+// หน้าต่างรายละเอียด (เหมือนฝั่งนิสิต) + อาจารย์ประจำวิชาตัดสิน ผ่าน/ไม่ผ่าน ได้ทันที
+window.openAdminTrainingDetail = function(id) {
+  const t = currentTrainings.find((x) => x.id === id);
+  if (!t) return;
+  const canDecide = isActingAsCourseAdmin && !isFacultyTraining(t);
+  if (!canDecide) {
+    window.TrainingView.openDetail(t);
+    return;
+  }
+  window.TrainingView.openDetail(t, {
+    extraBodyHtml: `
+      <div class="trn-field" style="margin-top:12px;">
+        <label for="trn-review-note">คอมเมนต์ / หมายเหตุถึงนิสิต <span style="font-weight:400; color:#64748B;">(บังคับเมื่อไม่ผ่าน)</span></label>
+        <textarea id="trn-review-note" class="trn-input" rows="2" maxlength="500" placeholder="เช่น ลิงก์ไม่ตรงกับใบรับรอง / ชั่วโมงไม่ตรงกับที่ผู้จัดประกาศ">${window.TrainingView.esc(t.note || '')}</textarea>
+        <div class="trn-field-error" id="trn-review-error"></div>
+      </div>`,
+    footHtml: `
+      <button type="button" class="trn-btn trn-btn--ghost" onclick="TrainingView.close()">ปิด</button>
+      <button type="button" class="trn-btn" onclick="decideTraining(${t.id}, 'REJECTED')" style="background:#ffffff; color:#B91C1C; border:1px solid #FCA5A5;">✗ ไม่ผ่าน</button>
+      <button type="button" class="trn-btn trn-btn--primary" onclick="decideTraining(${t.id}, 'APPROVED')">✓ ผ่าน</button>`,
+  });
+};
+
+window.decideTraining = async function(trainingId, status) {
+  const noteEl = document.getElementById('trn-review-note');
+  const errEl = document.getElementById('trn-review-error');
+  const note = noteEl ? noteEl.value.trim() : '';
+  if (status === 'REJECTED' && !note) {
+    if (errEl) errEl.textContent = 'กรุณาระบุเหตุผลที่ไม่ผ่าน ให้นิสิตรู้ว่าต้องแก้อะไร';
+    if (noteEl) noteEl.focus();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/admin/students/${studentId}/training/${trainingId}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, note }),
+    });
+    const data = await res.json().catch(() => ({ success: false }));
+    if (!data.success) {
+      if (errEl) errEl.textContent = data.message || 'บันทึกไม่สำเร็จ';
+      return;
+    }
+    window.TrainingView.close();
+    initStudentDetail();
+  } catch (err) {
+    console.error(err);
+    if (errEl) errEl.textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้';
+  }
+};
 
 // บันทึกสถานะชั่วโมงอบรม: นำสถานะจาก Dropdown ไปใช้กับรายการที่ติ๊ก Checkbox เลือกไว้
 window.saveBatchTrainingStatus = async function() {
@@ -1046,3 +1062,4 @@ function renderCoopSummary(coop) {
   body.innerHTML = html;
   section.style.display = 'block';
 }
+

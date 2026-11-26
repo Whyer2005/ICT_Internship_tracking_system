@@ -8,6 +8,7 @@ const PAGE_TITLE = "ตรวจสอบข้อมูลและสถาน
 const PAGE_STYLES: string[] = [];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
+  "../components/training_view.js",
   "../api/admin_student_detail.js",
   "../api/cv_previews.js"
 ];
@@ -188,26 +189,27 @@ ${ictMajorsDataScript()}
         <span id="training-summary-text" style="background:rgba(255,255,255,0.16); color:white; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700;"></span>
       </div>
       <div class="card-body">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>ลำดับ</th>
-              <th>ชื่อกิจกรรมอบรม / Certificate</th>
-              <th>ประเภทชั่วโมง</th>
-              <th>จำนวนชั่วโมง</th>
-              <th style="text-align:center;" id="training-status-col-header">
-                <label style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-                  <input type="checkbox" id="training-select-all" style="width:16px; height:16px; cursor:pointer; accent-color:#4338CA;" title="เลือกทั้งหมด" />
-                  <span>เลือก / สถานะ</span>
-                </label>
-              </th>
-              <th class="text-center">หลักฐาน</th>
-            </tr>
-          </thead>
-          <tbody id="admin-trainings-tbody">
-            <tr><td colspan="6" class="text-center py-4 text-gray-400">กำลังโหลด...</td></tr>
-          </tbody>
-        </table>
+        <!-- ตารางแบบเดียวกับหน้าชั่วโมงอบรมของนิสิต (src/client/components/training_view.ts) -->
+        <div class="trn-table-card">
+          <div class="trn-table-wrap">
+            <table class="trn-table">
+              <thead>
+                <tr>
+                  <th class="trn-col-no">ลำดับ</th>
+                  <th>ชื่อกิจกรรม / Certificate</th>
+                  <th class="trn-col-type">ประเภท</th>
+                  <th class="trn-col-hours">ชั่วโมง</th>
+                  <th class="trn-col-source">แหล่งที่มา</th>
+                  <th class="trn-col-status" id="training-status-col-header">สถานะ</th>
+                  <th class="trn-col-actions">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="admin-trainings-tbody">
+                <tr><td colspan="7" class="trn-loading">กำลังโหลด...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <!-- การอนุมัติชั่วโมงอบรม + คอมเมนต์ -->
         <div id="training-approval-area" style="display:none; margin-top:20px; gap:20px; flex-wrap:wrap; background:#F8FAFC; padding:16px 20px; border-radius:16px; border:1px solid #E2E8F0;">
