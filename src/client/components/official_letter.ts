@@ -48,7 +48,7 @@
   }
 
   // คำ/วลีที่ห้ามตัดกลาง — browser ตัดคำไทยต่างจาก Word (เช่น "ขอ|ความอนุเคราะห์", "ขอ|ขอบพระคุณ")
-  const KEEP_TOGETHER = ['ขอความอนุเคราะห์', 'มีความเหมาะสม', 'ข้อสงสัย', 'ขอขอบพระคุณมา', 'อาจารย์ที่ปรึกษานิสิตฝึกงาน', 'ผู้ประสานงาน', 'จะขอบคุณยิ่ง'];
+  const KEEP_TOGETHER = ['ได้รับความอนุเคราะห์', 'ขอความอนุเคราะห์', 'มีความเหมาะสม', 'ข้อสงสัย', 'เข้าฝึกงาน', 'ความร่วมมือ', 'จากสถานประกอบการ', 'ขอขอบพระคุณมา', 'อาจารย์ที่ปรึกษานิสิตฝึกงาน', 'ผู้ประสานงาน', 'จะขอบคุณยิ่ง'];
   function keepPhrases(html) {
     return KEEP_TOGETHER.reduce((h, w) => h.split(w).join(`<span style="white-space:nowrap;">${w}</span>`), html);
   }
@@ -96,7 +96,7 @@
 
   /**
    * @param d {
-   *   type: 'REQUEST' | 'DISPATCH', docNo, letterDate (YYYY-MM-DD · ว่าง = วันนี้), companyName,
+   *   type: 'REQUEST' | 'DISPATCH', academicYear (หนังสือส่งตัว: "ประจำปีการศึกษา ..."), docNo, letterDate (YYYY-MM-DD · ว่าง = วันนี้), companyName,
    *   recipientName, recipientPosition, instructors: [{ major, name, phone }],
    *   signatoryName, signatoryPosition (ขึ้นบรรทัดใหม่ได้), signatureDataUrl, officePhone,
    *   students: [{ studentCode, nameTh, major, position, phone, year, internStartDate, internEndDate }]
@@ -139,20 +139,24 @@
     const positionLines = String(d.signatoryPosition || 'คณบดีคณะเทคโนโลยีสารสนเทศและการสื่อสาร')
       .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
+    // หนังสือส่งตัว (ต้นแบบ "15. สภาเภสัชกรรม.pdf") ไม่มี "สิ่งที่ส่งมาด้วย" — ย่อหน้าแรกต่อจาก "เรียน"
     const enclosures = isDispatch
-      ? [['๑. รายชื่อนิสิต']]
+      ? []
       : [['๑. รายชื่อนิสิต'], ['๒. แบบตอบรับ/ปฏิเสธ การรับนิสิตเข้าฝึกงาน']];
+    const academicYearText = String(d.academicYear || '').trim() ? ` ประจำปีการศึกษา ${txt(d.academicYear)}` : '';
 
     // ย่อหน้า: บรรทัดแรกเริ่มที่ 55mm (ย่อ 25mm) · เต็มบรรทัดชิดขอบขวาแบบ Word ภาษาไทย บรรทัดสุดท้ายชิดซ้าย
     // text-justify:inter-character → กระจายช่องไฟทีละตัวอักษร (justify ธรรมดาขยายได้เฉพาะช่องว่าง → เกิดรูโหว่กลางบรรทัด)
     // ขอบขวาย่อหน้า 189.7mm ตามต้นฉบับ (ข้อความส่วนอื่นยาวได้ถึง 191mm)
-    // letter-spacing -0.1px: เผื่อที่ให้หน้าพิมพ์ของ Chrome (วาดตัวอักษรกว้างกว่าบนจอเล็กน้อย) ตัดบรรทัดตรงต้นฉบับ — justify ยืดกลับให้เต็มบรรทัดอยู่แล้ว
+    // letter-spacing ติดลบ: เผื่อที่ให้ตัดบรรทัดตรงต้นฉบับ — justify ยืดกลับให้เต็มบรรทัดอยู่แล้ว
+    //   ขอความอนุเคราะห์ -0.1px: หน้าพิมพ์ของ Chrome วาดตัวอักษรกว้างกว่าบนจอเล็กน้อย
+    //   ส่งตัว -0.2px: ข้อความหนังสือส่งตัวกว้างกว่าต้นฉบับ (SarabunIT๙) ~1.8% ในบางบรรทัด
     // กำหนดขนาด/สี/ระยะบรรทัดตรงนี้ด้วย — CSS ส่วนกลางของเว็บมี p { font-size:13px; color:#888; line-height:1.4 } ทับอยู่
-    const P = `margin:${GAP}mm ${(LEFT + TEXT_W - 189.7).toFixed(1)}mm 0 0; text-indent:25mm; text-align:justify; text-justify:inter-character; text-align-last:left; letter-spacing:-0.1px; font-size:inherit; color:#000; line-height:${LINE}mm;`;
+    const P = `margin:${GAP}mm ${(LEFT + TEXT_W - 189.7).toFixed(1)}mm 0 0; text-indent:25mm; text-align:justify; text-justify:inter-character; text-align-last:left; letter-spacing:${isDispatch ? -0.2 : -0.1}px; font-size:inherit; color:#000; line-height:${LINE}mm;`;
     const body = keepPhrases(isDispatch
       ? `
-        <p style="${P}">ตามที่หน่วยงานของท่านได้ให้ความอนุเคราะห์รับนิสิตคณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา เข้าฝึกงาน คณะฯ ขอขอบพระคุณเป็นอย่างสูงมา ณ โอกาสนี้</p>
-        <p style="${P}">ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร จึงขอส่งตัวนิสิตเข้ารับการฝึกงาน${periodSentence} ดังรายชื่อที่แนบมาพร้อมนี้ ทั้งนี้ หากมีข้อสงสัยสามารถสอบถามเพิ่มเติมได้ที่ ${contactHtml}</p>
+        <p style="${P}">ตามที่ คณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา ได้รับความอนุเคราะห์จากสถานประกอบการของท่านในการรับนิสิตฝึกงาน${academicYearText} และได้พิจารณาคัดเลือกนิสิตเข้าฝึกงานกับสถานประกอบการของท่านเรียบร้อยแล้ว นั้น</p>
+        <p style="${P}">ในการนี้ คณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา จึงขอส่งนิสิตเข้าฝึกงาน${periodSentence} โดยหวังเป็นอย่างยิ่งว่าจะได้รับความร่วมมือจากท่านในโอกาสต่อไป และขอขอบพระคุณมา ณ โอกาสนี้ ทั้งนี้ หากมีข้อสงสัยสามารถสอบถามได้ที่ ${contactHtml}</p>
         <p style="${P}">จึงเรียนมาเพื่อโปรดทราบ จะขอบคุณยิ่ง</p>`
       : `
         <p style="${P}">ด้วยคณะเทคโนโลยีสารสนเทศและการสื่อสาร มหาวิทยาลัยพะเยา ได้เปิดการเรียนการสอนรายวิชาการฝึกงาน ซึ่งรายวิชาดังกล่าวมีวัตถุประสงค์เพื่อให้นิสิตได้ฝึกทักษะความชำนาญทางด้านคอมพิวเตอร์ ตลอดจนการนำคอมพิวเตอร์เข้ามาประยุกต์ใช้กับงานด้านต่าง ๆ ในองค์กร</p>
@@ -207,7 +211,8 @@
           <!-- ตรา มพ. สูง 30mm กึ่งกลางพื้นที่ข้อความ (110mm) ด้านบน 19.6mm -->
           <img src="/img/up_logo.png" alt="ตรามหาวิทยาลัยพะเยา" style="position:absolute; top:19.6mm; left:110mm; transform:translateX(-50%); height:30mm; width:auto;" />
           <div style="${ABS(36.65, LEFT)}">ที่ ${formatDocNo(d.docNo)}</div>
-          <div style="${ABS(36.65, 135.1)}">
+          <!-- ที่อยู่ส่วนราชการ: ขอความอนุเคราะห์เริ่ม 135.1mm · ส่งตัวเริ่ม 131.6mm (ตามต้นแบบแต่ละฉบับ) -->
+          <div style="${ABS(36.65, isDispatch ? 131.6 : 135.1)}">
             คณะเทคโนโลยีสารสนเทศและการสื่อสาร<br />
             มหาวิทยาลัยพะเยา<br />
             ตำบลแม่กา${SP2}อำเภอเมือง<br />
@@ -218,11 +223,11 @@
           <div style="position:absolute; top:64.3mm; left:${LEFT}mm; width:${TEXT_W}mm;">
             <div style="margin-top:-0.8mm; margin-left:80mm; white-space:nowrap;">${toThaiDigits(issueDate).replace(/ /g, SP2)}</div>
 
-            <div style="margin-top:${GAP + 0.9}mm; display:flex;"><span style="width:10mm; flex:none;">เรื่อง</span><span>${isDispatch ? 'ขอส่งตัวนิสิตเข้าฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตฝึกงาน'}</span></div>
+            <div style="margin-top:${GAP + 0.9}mm; display:flex;"><span style="width:10mm; flex:none;">เรื่อง</span><span>${isDispatch ? 'ขอส่งนิสิตเข้าฝึกงาน' : 'ขอความอนุเคราะห์รับนิสิตฝึกงาน'}</span></div>
             <div style="margin-top:${GAP}mm; display:flex;"><span style="width:10mm; flex:none;">เรียน</span><span>${recipientHtml}</span></div>
-            <div style="margin-top:${GAP}mm; display:grid; grid-template-columns:25mm 76.6mm auto;">
+            ${enclosures.length ? `<div style="margin-top:${GAP}mm; display:grid; grid-template-columns:25mm 76.6mm auto;">
               ${enclosures.map(([a], i) => `<div>${i === 0 ? 'สิ่งที่ส่งมาด้วย' : ''}</div><div>${a}</div><div style="white-space:nowrap;">จำนวน${SP2}๑${SP2}ฉบับ</div>`).join('')}
-            </div>
+            </div>` : ''}
 
             ${body}
 
@@ -235,8 +240,8 @@
             ${positionLines.map((l) => `<div style="${signBox}">${txt(l)}</div>`).join('')}
           </div>
 
-          <!-- ท้ายหนังสือ 15pt ที่ 263mm -->
-          <div style="${ABS(263.7, LEFT)} font-size:${fs(15)}; line-height:6mm;">
+          <!-- ท้ายหนังสือ: ขอความอนุเคราะห์ 15pt · ส่งตัว 16pt (ตามต้นแบบ) -->
+          <div style="${ABS(263.7, LEFT)} font-size:${fs(isDispatch ? 16 : 15)}; line-height:${isDispatch ? LINE : 6}mm;">
             งานวิชาการ คณะเทคโนโลยีสารสนเทศและการสื่อสาร<br />
             โทร ${d.officePhone ? txt(d.officePhone) : DOTS}
           </div>
