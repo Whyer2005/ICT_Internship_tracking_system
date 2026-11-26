@@ -1,6 +1,6 @@
 # แผนภาพประกอบระบบ (Diagrams)
 
-> ปรับปรุงล่าสุด: 18 พ.ย. 2569 · ER/Schema สร้างตามฐานข้อมูลจริง (`prisma/schema.prisma`)
+> ปรับปรุงล่าสุด: 26 พ.ย. 2569 (สหกิจศึกษา · CV คอมเมนต์อย่างเดียว · ชั่วโมงอบรมอนุมัติโดยอาจารย์ประจำวิชา · แบบฟอร์มแยกสาขา · เปิดให้แก้ชื่อ-สกุล) · ER/Schema สร้างตามฐานข้อมูลจริง (`prisma/schema.prisma`)
 > ⚠️ แผนภาพอาจปรับหลังประชุมคณะ (ดู [04_OPEN_ISSUES.md](../04_OPEN_ISSUES.md))
 
 ## รายการแผนภาพ
@@ -9,11 +9,12 @@
 |:---:|---|---|---|---|
 | 05 | Use Case Diagram | [05_USE_CASE_DIAGRAM.md](05_USE_CASE_DIAGRAM.md) | [use_case_diagram.drawio](use_case_diagram.drawio) | สไลด์ประชุม, Proposal |
 | 06 | ER Diagram (Crow's Foot) | [06_ER_DIAGRAM.md](06_ER_DIAGRAM.md) | [er_diagram.drawio](er_diagram.drawio) | Proposal |
-| 06 | ER Diagram (Chen) | — | [er_diagram_chen.drawio](er_diagram_chen.drawio) | Proposal |
+| 06 | ER Diagram (Chen) — 2 หน้า (หน้า 2 = สหกิจ + คอมเมนต์ CV) | — | [er_diagram_chen.drawio](er_diagram_chen.drawio) | Proposal |
 | 07 | Schema Diagram | [07_SCHEMA_DIAGRAM.md](07_SCHEMA_DIAGRAM.md) | [schema_diagram.drawio](schema_diagram.drawio) | Proposal, ทีม Test |
 | 08 | Context Diagram (DFD Level 0) | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [context_diagram.drawio](context_diagram.drawio) | Proposal |
 | 08 | DFD Level 1 | [08_CONTEXT_DFD.md](08_CONTEXT_DFD.md) | [dfd_level1.drawio](dfd_level1.drawio) | Proposal |
 | 09 | Activity Diagram | [09_ACTIVITY_DIAGRAM.md](09_ACTIVITY_DIAGRAM.md) | [activity_main_flow.drawio](activity_main_flow.drawio) | สไลด์ประชุม, Proposal |
+| 09 | Activity Diagram — สหกิจศึกษา | [09_ACTIVITY_DIAGRAM.md](09_ACTIVITY_DIAGRAM.md#แผนภาพที่-2--สหกิจศึกษา-ทางเลือกแทนการยื่น-checklist) | [activity_coop_flow.drawio](activity_coop_flow.drawio) | Proposal |
 | 10 | Use Case แยกตามบทบาท (5 ภาพ) | [10_USE_CASE_BY_ROLE.md](10_USE_CASE_BY_ROLE.md) | `use_case_role_*.drawio` (5 ไฟล์) | สไลด์ประชุม (บทบาทละ 1 หน้า) |
 | — | สถาปัตยกรรมระบบ (System Architecture) | — | [architecture_diagram.drawio](architecture_diagram.drawio) | Proposal |
 

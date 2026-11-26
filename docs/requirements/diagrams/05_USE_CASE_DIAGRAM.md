@@ -1,6 +1,7 @@
 # 05 · Use Case Diagram (แผนภาพยูสเคส)
 
-> แผนภาพรวมของ Use Case 18 ข้อใน [03_USE_CASES.md](../03_USE_CASES.md) · ผู้ใช้ 5 บทบาท + ระบบภายนอก 2 ระบบ
+> แผนภาพรวมของ Use Case 23 ข้อใน [03_USE_CASES.md](../03_USE_CASES.md) · ผู้ใช้ 5 บทบาท + ระบบภายนอก 2 ระบบ
+> ปรับปรุงล่าสุด: 26 พ.ย. 2569 — CV คอมเมนต์อย่างเดียว · ชั่วโมงอบรมอนุมัติโดยอาจารย์ประจำวิชา · เพิ่มสหกิจศึกษา (UC-19–21) · แบบฟอร์มแยกสาขา (UC-22) · เปิดให้แก้ชื่อ-สกุล (UC-23)
 > ไฟล์ที่แก้ไขและ Export เป็นรูปได้: [use_case_diagram.drawio](use_case_diagram.drawio)
 > อาจารย์นิเทศก์ยังไม่ใส่ในแผนภาพ — รอเคาะในที่ประชุม ([OI-04](../04_OPEN_ISSUES.md#oi-04))
 
@@ -17,7 +18,7 @@ flowchart LR
         subgraph G1["1. เตรียมความพร้อม (Preparation)"]
             UC01(["UC-01 อัปโหลด/แก้ไข CV<br/>(Upload CV)"])
             UC03(["UC-03 บันทึกชั่วโมงอบรม<br/>(Record Training Hours)"])
-            UC02(["UC-02 ตรวจและอนุมัติ CV<br/>(Review CV)"])
+            UC02(["UC-02 คอมเมนต์ CV (ไม่ต้องอนุมัติ)<br/>(Comment on CV)"])
             UC04(["UC-04 อนุมัติชั่วโมงอบรม<br/>(Approve Training Hours)"])
             UC16(["UC-16 ลงทะเบียนอบรม/สแกน QR (*) ⏸<br/>(Training Check-in)"])
         end
@@ -26,11 +27,13 @@ flowchart LR
             UC05(["UC-05 สร้างรุ่นและเปิด/ปิดรอบออกฝึก<br/>(Manage Cohorts & Windows)"])
             UC05X(["เปิดต่อพิเศษ<br/>(Extend Window)"])
             UC17(["UC-17 นำเข้าข้อมูลบริษัท (*)<br/>(Import Companies)"])
+            UC23(["UC-23 เปิดให้แก้ชื่อ-สกุล / GPAX<br/>(Unlock Profile Edit)"])
         end
         subgraph G3["3. Checklist สถานประกอบการ (Checklist)"]
             UC06(["UC-06 ยื่น Checklist<br/>(Submit Checklist)"])
             UC06I(["ผูกรอบออกฝึกอัตโนมัติ<br/>(Auto-assign Window)"])
             UC07(["UC-07 อนุมัติ/ตีกลับ Checklist<br/>(Review Checklist)"])
+            UC22(["UC-22 แบบฟอร์มเลือกสถานประกอบการแยกตามสาขา<br/>(Checklist Forms)"])
         end
         subgraph G4["4. เอกสารราชการ (Official Documents)"]
             UC08(["UC-08 ออกหนังสือขอความอนุเคราะห์<br/>(Issue Request Letter)"])
@@ -45,6 +48,13 @@ flowchart LR
             UC18(["UC-18 เรียกตัวกลับ / ยุติการฝึก (*)<br/>(Recall / Terminate)"])
             UC14(["UC-14 Export Co-op 01 (*)<br/>(Export to Co-op System)"])
         end
+        subgraph G6["6. สหกิจศึกษา (Co-operative Education)"]
+            UC19(["UC-19 ประกาศรับนิสิตสหกิจศึกษา<br/>(Co-op Postings)"])
+            UC19X(["นำเข้าประกาศจาก Excel<br/>(Import Postings)"])
+            UC20(["UC-20 สมัครสหกิจ / พิจารณาผล<br/>(Co-op Application)"])
+            UC20I(["ดาวน์โหลดใบสมัคร PDF รวม<br/>(Merged PDF)"])
+            UC21(["UC-21 ยกเลิกใบสมัคร / เอกสารหลังผ่าน<br/>(Cancel / Post-acceptance Docs)"])
+        end
     end
 
     ADM["👤 อาจารย์ประจำวิชา<br/>(Course Admin)"]
@@ -53,10 +63,10 @@ flowchart LR
     MS["«system»<br/>Microsoft Entra ID"]
     COOP["«system»<br/>ระบบ Co-op กลาง"]
 
-    STU --- UC01 & UC03 & UC16 & UC06 & UC09 & UC12 & UC18
-    ADV --- UC02 & UC04 & UC07 & UC10 & UC13
-    UC02 & UC04 & UC15 & UC12 & UC13 --- ADM
-    UC16 & UC15 & UC05 & UC17 & UC08 & UC10 & UC11 & UC12 & UC18 & UC13 & UC14 --- STF
+    STU --- UC01 & UC03 & UC16 & UC23 & UC06 & UC09 & UC12 & UC18 & UC19 & UC20 & UC21
+    ADV --- UC02 & UC07 & UC10 & UC13 & UC21
+    UC02 & UC04 & UC15 & UC23 & UC12 & UC13 --- ADM
+    UC16 & UC15 & UC05 & UC17 & UC22 & UC08 & UC10 & UC11 & UC12 & UC18 & UC13 & UC14 & UC19 & UC20 & UC21 --- STF
     UC13 -.- PM
     UC00 --- MS
     UC14 --- COOP
@@ -64,6 +74,8 @@ flowchart LR
     UC06 -. "«include»" .-> UC06I
     UC10 -. "«include»" .-> UC10I
     UC05X -. "«extend»" .-> UC05
+    UC19X -. "«extend»" .-> UC19
+    UC20 -. "«include»" .-> UC20I
 
     classDef actor fill:#dae8fc,stroke:#6c8ebf,font-weight:bold
     classDef ext fill:#f5f5f5,stroke:#666666
@@ -72,7 +84,7 @@ flowchart LR
     class STU,ADV,ADM,STF,PM actor
     class MS,COOP ext
     class UC13,UC14,UC16,UC17,UC18 red
-    class UC05X,UC06I,UC10I sub
+    class UC05X,UC06I,UC10I,UC19X,UC20I sub
 ```
 
 > **หมายเหตุ:** บน GitHub แผนภาพนี้จัดวางอัตโนมัติ เส้นอาจตัดกันบ้าง — ฉบับจัดวางสวยสำหรับสไลด์/เล่ม ให้ใช้ไฟล์ `.drawio` (สีเส้นแยกตามผู้ใช้)
@@ -95,10 +107,10 @@ flowchart LR
 
 | ผู้ใช้ | Use Case |
 |---|---|
-| นิสิต | UC-01, 03, 06, 09, 12, 16, 18 |
-| อาจารย์ที่ปรึกษา | UC-02, 04, 07, 10, 13 |
-| อาจารย์ประจำวิชา | UC-02, 04, 12, 13, 15 (รุ่น/รอบออกฝึก: ดูและกรองได้อย่างเดียว — เปิด/ปิดรอบเป็นหน้าที่เจ้าหน้าที่) |
-| เจ้าหน้าที่ฝ่ายฝึกงาน | UC-05, 08, 10, 11, 12, 13, 14, 15, 16, 17, 18 |
+| นิสิต | UC-01, 03, 06, 09, 12, 16, 18, 19, 20, 21, 23 |
+| อาจารย์ที่ปรึกษา | UC-02 (คอมเมนต์ CV), 07, 10, 13, 21 (ดูสถานะสหกิจ) — ชั่วโมงอบรมดูได้อย่างเดียว |
+| อาจารย์ประจำวิชา | UC-02, 04, 12, 13, 15, 23 (รุ่น/รอบออกฝึก และแบบฟอร์มแยกสาขา: ดูได้อย่างเดียว — เป็นหน้าที่เจ้าหน้าที่) |
+| เจ้าหน้าที่ฝ่ายฝึกงาน | UC-05, 08, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 (CV: ดูได้อย่างเดียว) |
 | ผู้บริหาร (\*) | UC-13 |
 | Microsoft Entra ID | เข้าสู่ระบบ |
 | ระบบ Co-op กลาง | UC-14 |

@@ -1,7 +1,7 @@
 # เอกสาร Requirement — ระบบติดตามการฝึกงาน คณะ ICT มหาวิทยาลัยพะเยา
 
 > **ฉบับร่างสำหรับประชุมเคาะ Requirement ร่วมกับตัวแทนอาจารย์ทุกสาขา**
-> ปรับปรุงล่าสุด: 13 พฤศจิกายน 2569 · จัดทำโดยทีมนิสิตผู้พัฒนาระบบ
+> ปรับปรุงล่าสุด: 26 พฤศจิกายน 2569 (เพิ่มสหกิจศึกษา UC-19–21 · แบบฟอร์มแยกสาขา UC-22 · เปิดให้แก้ชื่อ-สกุล UC-23 · CV คอมเมนต์อย่างเดียว) · จัดทำโดยทีมนิสิตผู้พัฒนาระบบ
 
 ## เอกสารชุดนี้มีไว้ทำอะไร
 
@@ -31,7 +31,8 @@
 | ER Diagram (Crow's Foot / Chen) | [diagrams/06_ER_DIAGRAM.md](diagrams/06_ER_DIAGRAM.md) |
 | Schema Diagram | [diagrams/07_SCHEMA_DIAGRAM.md](diagrams/07_SCHEMA_DIAGRAM.md) |
 | Context Diagram & DFD Level 1 | [diagrams/08_CONTEXT_DFD.md](diagrams/08_CONTEXT_DFD.md) |
-| Activity Diagram | [diagrams/09_ACTIVITY_DIAGRAM.md](diagrams/09_ACTIVITY_DIAGRAM.md) |
+| Activity Diagram (ฝึกงาน + สหกิจศึกษา) | [diagrams/09_ACTIVITY_DIAGRAM.md](diagrams/09_ACTIVITY_DIAGRAM.md) |
+| Use Case แยกตามบทบาท | [diagrams/10_USE_CASE_BY_ROLE.md](diagrams/10_USE_CASE_BY_ROLE.md) |
 
 ## สัญลักษณ์ที่ใช้ในเอกสาร
 

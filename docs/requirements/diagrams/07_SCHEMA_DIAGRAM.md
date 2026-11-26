@@ -1,6 +1,6 @@
 # 07 · Schema Diagram (โครงสร้างตารางในฐานข้อมูล)
 
-> ตาราง คอลัมน์ ชนิดข้อมูล และคีย์ทั้งหมด ตาม `prisma/schema.prisma` (PostgreSQL) ณ วันที่ 16 พ.ย. 2569
+> ตาราง คอลัมน์ ชนิดข้อมูล และคีย์ทั้งหมด ตาม `prisma/schema.prisma` (PostgreSQL) ณ วันที่ 26 พ.ย. 2569
 > ไฟล์ที่แก้ไขได้: [schema_diagram.drawio](schema_diagram.drawio) · ไม่รวมตาราง `session` (ใช้เก็บการล็อกอิน)
 
 ## แผนภาพ
