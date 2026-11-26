@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import prisma from "../db";
 import requireAdmin from "../auth/requireAdmin";
+import { isStaffRequest, requireStaffOnly } from "../auth/requireStaffOnly";
 import { parseStudentSpreadsheet, parseCheckInSpreadsheet } from "../utils/studentImportParser";
 import {
   loadSuperAdminState,
@@ -83,6 +84,10 @@ const router = express.Router();
 
 // ต้อง login + เป็น admin หรือ staff ทุก route ภายใต้ /api/admin
 router.use(requireAdmin);
+
+// งานเอกสารราชการ / ตั้งค่าหนังสือ = งานของเจ้าหน้าที่ฝ่ายฝึกงานคนเดียว (Role Matrix ง.) — อาจารย์ประจำวิชาดูสถานะได้ แต่สั่งทำไม่ได้
+const requireDocumentStaff = requireStaffOnly("เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่ออกหนังสือ / บันทึกผลแบบตอบรับ / ล็อกเอกสารได้");
+const requireLetterSettingsStaff = requireStaffOnly("เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่ตั้งค่าหนังสือราชการ (เลขที่หนังสือ / ผู้ลงนาม / ลายเซ็น) ได้");
 
 // รุ่น & รอบออกฝึก (หน้า "รอบฝึกงาน & ปลดล็อก")
 router.use(cohortRouter);
@@ -2499,7 +2504,7 @@ router.get("/super-admin/overview", async (req: Request, res: Response) => {
 });
 
 // 9.1 บันทึกตั้งค่าปีการศึกษา / ภาคการศึกษา / เลขที่หนังสือราชการเริ่มต้น
-router.post("/super-admin/academic-config", async (req: Request, res: Response) => {
+router.post("/super-admin/academic-config", requireLetterSettingsStaff, async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     const {
@@ -2548,7 +2553,7 @@ router.post("/super-admin/academic-config", async (req: Request, res: Response) 
   }
 });
 
-router.post("/super-admin/academic-config/signature", parseAcademicSignatureUpload, (req: Request, res: Response) => {
+router.post("/super-admin/academic-config/signature", requireLetterSettingsStaff, parseAcademicSignatureUpload, (req: Request, res: Response) => {
   try {
     if (!req.file) {
       res.status(400).json({ success: false, message: "กรุณาเลือกไฟล์ลายเซ็น" });
@@ -2575,7 +2580,7 @@ router.post("/super-admin/academic-config/signature", parseAcademicSignatureUplo
   }
 });
 
-router.delete("/super-admin/academic-config/signature", (_req: Request, res: Response) => {
+router.delete("/super-admin/academic-config/signature", requireLetterSettingsStaff, (_req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     state.academicConfig.signatureDataUrl = "";
@@ -3561,7 +3566,7 @@ router.post("/super-admin/companies/:id/confirm", async (req: Request, res: Resp
 });
 
 // 9.8 ออกหนังสือขอความอนุเคราะห์ฝึกงาน (+ แนบแบบฟอร์มใบตอบรับ) รองรับทั้งเดี่ยวและกลุ่มบริษัทเดียวกัน
-router.post("/super-admin/documents/issue-request-letter", async (req: Request, res: Response) => {
+router.post("/super-admin/documents/issue-request-letter", requireDocumentStaff, async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     const { studentIds, docNo, letterDate, interviewDate, companyName } = req.body;
@@ -3684,10 +3689,14 @@ router.post("/super-admin/documents/issue-request-letter", async (req: Request, 
 });
 
 // 9.9 บันทึกผลใบตอบรับจากสถานประกอบการ (รับเข้าฝึกงาน vs ปฏิเสธ -> เก็บเข้า Archive และปลดล็อกให้ยื่นบริษัทใหม่)
-router.post("/super-admin/documents/record-company-response", async (req: Request, res: Response) => {
+router.post("/super-admin/documents/record-company-response", requireDocumentStaff, async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     const { studentId, responseStatus, note, fileName } = req.body;
+    // ไม่ส่ง/ส่ง studentId ผิดรูปแบบ -> 400 (เดิม Number(undefined) = NaN ทำให้ Prisma error เป็น 500)
+    if (!Number.isInteger(Number(studentId)) || Number(studentId) <= 0) {
+      return res.status(400).json({ success: false, message: "กรุณาระบุนิสิต" });
+    }
 
     const student = await prisma.student.findUnique({
       where: { id: Number(studentId) },
@@ -3858,7 +3867,7 @@ router.post("/super-admin/documents/record-company-response", async (req: Reques
 });
 
 // 9.9.1 สแกนแบบตอบรับซ้ำด้วย OCR (กรณี OCR ล่ม/เริ่มทำงานช้าตอนนิสิตอัปโหลด)
-router.post("/super-admin/documents/rescan-company-response", async (req: Request, res: Response) => {
+router.post("/super-admin/documents/rescan-company-response", requireDocumentStaff, async (req: Request, res: Response) => {
   try {
     const wfKey = String(Number(req.body?.studentId));
     const wf = loadSuperAdminState().docWorkflowMap[wfKey];
@@ -3886,7 +3895,7 @@ router.post("/super-admin/documents/rescan-company-response", async (req: Reques
 });
 
 // 9.10 พี่จอมอนุมัติและออก "หนังสือส่งตัวนิสิตเข้าฝึกงาน" (Dispatch Letter)
-router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request, res: Response) => {
+router.post("/super-admin/documents/issue-dispatch-letter", requireDocumentStaff, async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     const { studentIds, docNo, letterDate, companyName } = req.body;
@@ -4013,7 +4022,7 @@ router.post("/super-admin/documents/issue-dispatch-letter", async (req: Request,
 });
 
 // 9.11 ปลดล็อกการออกหนังสือซ้ำกรณีฉุกเฉิน (Executive / Super Admin Override)
-router.post("/super-admin/documents/toggle-lock", async (req: Request, res: Response) => {
+router.post("/super-admin/documents/toggle-lock", requireDocumentStaff, async (req: Request, res: Response) => {
   try {
     const state = loadSuperAdminState();
     const { studentId } = req.body;
@@ -4045,16 +4054,7 @@ router.post("/super-admin/documents/toggle-lock", async (req: Request, res: Resp
 // =====================================================================
 
 // แก้แบบฟอร์มได้เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) — อาจารย์ประจำวิชาดูได้อย่างเดียว (ยืนยัน 24 พ.ย. 2569)
-function requireSuperAdminStaff(req: Request, res: Response, next: Function) {
-  const isStaff = Boolean(req.staff?.isStaff || req.session.user?.role === "STAFF");
-  if (!isStaff) {
-    return res.status(403).json({
-      success: false,
-      message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่แก้แบบฟอร์มการเลือกสถานประกอบการได้",
-    });
-  }
-  next();
-}
+const requireSuperAdminStaff = requireStaffOnly("เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่แก้แบบฟอร์มการเลือกสถานประกอบการได้");
 
 // ดูแบบฟอร์มได้: เจ้าหน้าที่ + อาจารย์ประจำวิชา
 function requireChecklistViewer(req: Request, res: Response, next: Function) {
@@ -4110,7 +4110,7 @@ router.get("/checklist-versions", requireChecklistViewer, async (req: Request, r
       success: true,
       versions,
       coverage: checklistCoverage(versions),
-      canEdit: Boolean(req.staff?.isStaff || req.session.user?.role === "STAFF"),
+      canEdit: isStaffRequest(req),
     });
   } catch (err) {
     console.error("GET /api/admin/checklist-versions error:", err);

@@ -8,6 +8,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import prisma from "../db";
+import { requireStaffOnly as makeStaffOnly } from "../auth/requireStaffOnly";
 import { getStudentRoundState, loadSuperAdminState } from "../utils/superAdminStore";
 import {
   excludeUsedWindows,
@@ -50,13 +51,7 @@ import {
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
-function requireStaffOnly(req: Request, res: Response, next: NextFunction) {
-  const ok = Boolean((req as any).staff?.isStaff || req.session.user?.role === "STAFF");
-  if (!ok) {
-    return res.status(403).json({ success: false, message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่จัดการประกาศสหกิจศึกษาได้" });
-  }
-  next();
-}
+const requireStaffOnly = makeStaffOnly("เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่จัดการประกาศสหกิจศึกษาได้");
 
 const postingInclude = {
   positions: {

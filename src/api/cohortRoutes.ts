@@ -6,6 +6,7 @@
 // =====================================================================
 import express, { NextFunction, Request, Response } from "express";
 import prisma from "../db";
+import { requireStaffOnly as makeStaffOnly } from "../auth/requireStaffOnly";
 import { ICT_MAJORS, findMajor } from "../utils/majors";
 import { loadSuperAdminState } from "../utils/superAdminStore";
 import {
@@ -32,13 +33,7 @@ const router = express.Router();
 
 // การจัดการรุ่น / รอบออกฝึก เป็นหน้าที่ของเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) role เดียว
 // (อาจารย์ประจำวิชาดู/กรองรายชื่อตามรุ่นและรอบได้ แต่แก้รอบไม่ได้ — ดู docs/requirements/02_ROLE_MATRIX.md)
-function requireStaffOnly(req: Request, res: Response, next: NextFunction) {
-  const ok = Boolean((req as any).staff?.isStaff || req.session.user?.role === "STAFF");
-  if (!ok) {
-    return res.status(403).json({ success: false, message: "เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่จัดการรุ่นและรอบออกฝึกได้" });
-  }
-  next();
-}
+const requireStaffOnly = makeStaffOnly("เฉพาะเจ้าหน้าที่ฝ่ายฝึกงาน (Staff) เท่านั้นที่จัดการรุ่นและรอบออกฝึกได้");
 
 // ตั้งตกค้างรายคน: เจ้าหน้าที่ หรืออาจารย์ประจำวิชา
 // (อาจารย์ประจำวิชาอาจมี role หลักเป็น ADVISOR แล้วมีสิทธิ์ Course Admin เพิ่ม จึงต้องดู flag isCourseAdmin ด้วย ไม่ใช่แค่ role ADMIN)
