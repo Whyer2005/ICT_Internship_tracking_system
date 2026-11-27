@@ -773,6 +773,160 @@ const PAGE_STYLES: string[] = [`
   .air-btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border: 0; border-radius: 10px; background: #4338CA; color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
   .air-btn-primary[disabled] { opacity: .6; cursor: wait; }
   @media (max-width: 640px) { .air-modal-body dl { grid-template-columns: minmax(0,1fr); } }
+
+  /* ===== รอบฝึกงาน & ปลดล็อก (workspace-unlock / admin_dashboard.js) =====
+     หลักการ: สีใช้บอก "สถานะรอบ" เท่านั้น · ปุ่มหลัก 1 ปุ่มต่อจุด · คำสั่งที่ใช้น้อย/กระทบกว้างอยู่ในเมนู ⋮ */
+  .cw-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid transparent; border-radius: 9px;
+    font: inherit; font-size: 14px; font-weight: 700; line-height: 1.2; white-space: nowrap; cursor: pointer; background: none;
+  }
+  .cw-btn .material-icons { font-size: 18px; }
+  .cw-btn[disabled] { opacity: .6; cursor: wait; }
+  .cw-btn-primary { background: #4338CA; color: #FFFFFF; }
+  .cw-btn-primary:hover { background: #3730A3; }
+  .cw-btn-success { background: #059669; color: #FFFFFF; }
+  .cw-btn-success:hover { background: #047857; }
+  .cw-btn-outline { background: #FFFFFF; border-color: #CBD5E1; color: #334155; }
+  .cw-btn-outline:hover { background: #F8FAFC; border-color: #94A3B8; }
+  .cw-btn-ghost { color: #4338CA; }
+  .cw-btn-ghost:hover { background: #E0E7FF; }
+  .cw-btn-dashed { background: #FFFFFF; border: 1px dashed #A5B4FC; color: #4338CA; }
+  .cw-btn-dashed:hover { background: #EEF2FF; }
+  .cw-btn-icon { padding: 6px; background: #FFFFFF; border-color: #E2E8F0; color: #475569; }
+  .cw-btn-icon:hover, .cw-btn-icon[aria-expanded="true"] { background: #F1F5F9; }
+  /* ปุ่มบนหัวการ์ดสีน้ำเงิน */
+  .cw-hbtn-primary { background: #FFFFFF; color: #1E3A8A; }
+  .cw-hbtn-primary:hover { background: #EEF2FF; }
+  .cw-hbtn-primary .material-icons { color: #059669; }
+  .cw-hbtn-icon { padding: 7px; background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.3); color: #FFFFFF; }
+  .cw-hbtn-icon:hover, .cw-hbtn-icon[aria-expanded="true"] { background: rgba(255,255,255,0.26); }
+
+  /* เมนู ⋮ (ลอยเหนือหน้า ไม่โดนการ์ดตัดขอบ) */
+  .cw-menu {
+    position: fixed; z-index: 1100; min-width: 210px; padding: 4px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px;
+    box-shadow: 0 12px 28px -6px rgba(15,23,42,0.18), 0 2px 6px rgba(15,23,42,0.06);
+  }
+  .cw-menu-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border: 0; border-radius: 7px; background: none;
+    font: inherit; font-size: 14px; font-weight: 600; color: #1E293B; text-align: left; cursor: pointer;
+  }
+  .cw-menu-item .material-icons { font-size: 19px; color: #64748B; }
+  .cw-menu-item:hover, .cw-menu-item:focus-visible { background: #F1F5F9; outline: none; }
+  .cw-menu-item.is-danger, .cw-menu-item.is-danger .material-icons { color: #B91C1C; }
+  .cw-menu-item.is-danger:hover, .cw-menu-item.is-danger:focus-visible { background: #FEF2F2; }
+  .cw-menu-sep { height: 1px; margin: 4px 6px; background: #E2E8F0; }
+
+  /* หน้าต่างตั้งรอบหลายสาขา */
+  .cw-modal-sub { margin: 4px 0 14px; font-size: 13px; color: #64748B; }
+  .cw-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+  .cw-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
+  .cw-field-label { display: block; line-height: 1.4; }
+  .cw-req { color: #DC2626; }
+  .cw-field .input-field { width: 100%; height: 46px; min-height: 46px; margin: 0; box-sizing: border-box; }
+  /* ลูกศรของ select: CSS กลาง (modern-ict) บังคับ padding ขวาเหลือ 14px -> ลูกศรทับตัวหนังสือ จึงเว้นที่ให้ลูกศร */
+  .cw-field select.input-field,
+  #admin-dashboard #workspace-unlock select.input-field { padding-right: 34px !important; background-position: right 12px center; }
+  .cw-modal-notes { margin: 14px 0 0; padding: 10px 14px 10px 30px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; font-size: 13px; color: #475569; line-height: 1.7; }
+  @media (max-width: 520px) { .cw-form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+  #admin-dashboard #workspace-unlock .cw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  #admin-dashboard #workspace-unlock .cw-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  #admin-dashboard #workspace-unlock .cw-tab {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid #CBD5E1; border-radius: 10px;
+    background: #FFFFFF; color: #334155; font-weight: 700; cursor: pointer;
+  }
+  #admin-dashboard #workspace-unlock .cw-tab:hover { border-color: #818CF8; }
+  #admin-dashboard #workspace-unlock .cw-tab.is-active { border-color: #4338CA; background: #4338CA; color: #FFFFFF; }
+  #admin-dashboard #workspace-unlock .cw-tab-meta { font-weight: 600; opacity: .8; }
+  #admin-dashboard #workspace-unlock .cw-tab-open { padding: 1px 8px; border-radius: 999px; background: #DCFCE7; color: #166534; font-size: 12.5px; font-weight: 800; }
+  #admin-dashboard #workspace-unlock .cw-tab.is-active .cw-tab-open { background: rgba(255,255,255,0.22); color: #FFFFFF; }
+  #admin-dashboard #workspace-unlock .cw-history-select { width: auto; margin: 0 0 0 auto; font-size: 14px !important; }
+
+  #admin-dashboard #workspace-unlock .cw-rules { margin-bottom: 12px; border: 1px solid #E2E8F0; border-radius: 10px; background: #F8FAFC; }
+  #admin-dashboard #workspace-unlock .cw-rules summary {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; list-style: none; cursor: pointer;
+    font-size: 14px; font-weight: 700; color: #334155;
+  }
+  #admin-dashboard #workspace-unlock .cw-rules summary::-webkit-details-marker { display: none; }
+  #admin-dashboard #workspace-unlock .cw-rules summary .material-icons { font-size: 18px; color: #4338CA; }
+  #admin-dashboard #workspace-unlock .cw-rules-hint { font-size: 13px; font-weight: 500; color: #94A3B8; }
+  #admin-dashboard #workspace-unlock .cw-rules[open] .cw-rules-hint { display: none; }
+  #admin-dashboard #workspace-unlock .cw-rules summary .cw-rules-caret { margin-left: auto; color: #64748B; transition: transform .15s; }
+  #admin-dashboard #workspace-unlock .cw-rules[open] .cw-rules-caret { transform: rotate(180deg); }
+  #admin-dashboard #workspace-unlock .cw-rules ul { margin: 0; padding: 0 16px 10px 40px; font-size: 14px; color: #475569; line-height: 1.75; }
+
+  #admin-dashboard #workspace-unlock .cw-list { border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; background: #FFFFFF; }
+  #admin-dashboard #workspace-unlock .cw-grid {
+    display: grid; grid-template-columns: 18px minmax(220px, 1.4fr) 70px minmax(200px, 1.3fr) minmax(440px, 1.2fr); /* รอบออกฝึก: พอดีป้าย 3 อัน ที่เหลือกระจายให้ชื่อสาขา/ช่วงเตรียม→ออกฝึก */
+    align-items: center; column-gap: 16px;
+  }
+  #admin-dashboard #workspace-unlock .cw-list-head {
+    min-height: 46px; padding: 8px 16px; box-sizing: border-box; background: #F8FAFC; border-bottom: 1px solid #E2E8F0;
+    font-size: 13px; font-weight: 700; color: #64748B;
+  }
+  #admin-dashboard #workspace-unlock .cw-list-head.is-readonly .cw-check-cell { visibility: hidden; }
+  #admin-dashboard #workspace-unlock .cw-sel { display: none; grid-column: 2 / -1; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; color: #312E81; }
+  #admin-dashboard #workspace-unlock .cw-sel-codes { margin-left: 4px; color: #4338CA; font-weight: 600; }
+  #admin-dashboard #workspace-unlock .cw-sel-actions { display: inline-flex; gap: 6px; }
+  #admin-dashboard #workspace-unlock .cw-list-head.has-selection { background: #EEF2FF; border-bottom-color: #C7D2FE; }
+  #admin-dashboard #workspace-unlock .cw-list-head.has-selection .cw-head-col { display: none; }
+  #admin-dashboard #workspace-unlock .cw-list-head.has-selection .cw-sel { display: flex; }
+  #admin-dashboard #workspace-unlock .cw-check-cell { display: flex; align-items: center; justify-content: center; align-self: stretch; cursor: pointer; }
+  #admin-dashboard #workspace-unlock .cw-check { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: #4338CA; }
+  #admin-dashboard #workspace-unlock .cw-empty { padding: 20px; text-align: center; color: #94A3B8; font-size: 14px; }
+
+  #admin-dashboard #workspace-unlock .cw-major + .cw-major { border-top: 1px solid #E2E8F0; }
+  #admin-dashboard #workspace-unlock .cw-row { padding: 12px 16px; cursor: pointer; }
+  #admin-dashboard #workspace-unlock .cw-row:hover { background: #F8FAFC; }
+  #admin-dashboard #workspace-unlock .cw-major.is-open > .cw-row { background: #F5F7FF; }
+  #admin-dashboard #workspace-unlock .cw-major.is-open { box-shadow: inset 3px 0 0 #4338CA; }
+  #admin-dashboard #workspace-unlock .cw-name {
+    display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none;
+    color: #0F172A; font-weight: 700; text-align: left; cursor: pointer;
+  }
+  #admin-dashboard #workspace-unlock .cw-caret { font-size: 20px; color: #94A3B8; transition: transform .15s; }
+  #admin-dashboard #workspace-unlock .cw-major.is-open .cw-caret { transform: rotate(90deg); color: #4338CA; }
+  #admin-dashboard #workspace-unlock .cw-code {
+    flex: none; min-width: 46px; padding: 2px 8px; box-sizing: border-box; border-radius: 6px; background: #EEF2FF;
+    color: #3730A3; font-size: 13px; font-weight: 800; text-align: center;
+  }
+  #admin-dashboard #workspace-unlock .cw-major-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #admin-dashboard #workspace-unlock .cw-count { font-size: 14px; color: #475569; white-space: nowrap; }
+  #admin-dashboard #workspace-unlock .cw-count b { font-size: 15px; color: #0F172A; }
+  #admin-dashboard #workspace-unlock .cw-count.is-zero, #admin-dashboard #workspace-unlock .cw-count.is-zero b { color: #94A3B8; }
+  #admin-dashboard #workspace-unlock .cw-sched { font-size: 13px; color: #334155; line-height: 1.55; }
+  #admin-dashboard #workspace-unlock .cw-sched span { display: inline-block; min-width: 44px; color: #94A3B8; }
+  /* ป้ายรอบ: กว้างพอดีข้อความ ชิดซ้าย -> หัวคอลัมน์ "รอบออกฝึก" อยู่ตรงกับป้ายแรกของทุกแถว */
+  #admin-dashboard #workspace-unlock .cw-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+  #admin-dashboard #workspace-unlock .cw-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid; border-radius: 999px;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  #admin-dashboard #workspace-unlock .cw-chip i { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+  #admin-dashboard #workspace-unlock .cw-chip b { font-weight: 800; }
+  #admin-dashboard #workspace-unlock .cw-chip--none { color: #92400E; background: #FFFBEB; border-color: #FCD34D; border-style: dashed; }
+
+  /* ตารางรอบที่กางออกของแต่ละสาขา */
+  #admin-dashboard #workspace-unlock .cw-panel { border-top: 1px solid #E2E8F0; }
+  #admin-dashboard #workspace-unlock .cw-panel .data-table { margin: 0; }
+  #admin-dashboard #workspace-unlock .cw-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+  #admin-dashboard #workspace-unlock tr.is-dirty > td { background: #FFFBEB; }
+  #admin-dashboard #workspace-unlock .cw-dirty-note { display: none; font-size: 12.5px; font-weight: 600; color: #B45309; }
+  #admin-dashboard #workspace-unlock tr.is-dirty .cw-dirty-note { display: inline; }
+  #admin-dashboard #workspace-unlock .cw-save { display: none; }
+  #admin-dashboard #workspace-unlock tr.is-dirty .cw-save { display: inline-flex; }
+  #admin-dashboard #workspace-unlock .cw-archived-banner {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 16px;
+    background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 10px; font-size: 14px; color: #334155;
+  }
+  #admin-dashboard #workspace-unlock .cw-archived-banner > .material-icons { font-size: 20px; color: #64748B; }
+
+  @media (max-width: 1180px) {
+    #admin-dashboard #workspace-unlock .cw-grid { grid-template-columns: 18px minmax(0, 1fr) auto; row-gap: 6px; }
+    #admin-dashboard #workspace-unlock .cw-list-head .cw-head-col:not(:nth-child(2)) { display: none; }
+    #admin-dashboard #workspace-unlock .cw-row .cw-sched,
+    #admin-dashboard #workspace-unlock .cw-row .cw-chips { grid-column: 2 / -1; }
+  }
 `];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
@@ -830,7 +984,7 @@ ${thaiProvincesDataScript()}
           <button type="button" id="ws-tab-unlock" aria-current="false" onclick="switchAdminWorkspace('unlock')">
             <span class="material-icons" aria-hidden="true">lock_open</span>
             <span>รอบฝึกงาน &amp; ปลดล็อก</span>
-            <span id="badge-unlocked-majors" class="admin-nav-badge">4/8 เปิด</span>
+            <span id="badge-unlocked-majors" class="admin-nav-badge" title="จำนวนสาขาที่มีรอบเปิดยื่นอยู่ตอนนี้ (นับรวมทุกรุ่น)">4/8 เปิด</span>
           </button>
           <button type="button" id="ws-tab-coop" aria-current="false" onclick="switchAdminWorkspace('coop')">
             <span class="material-icons" aria-hidden="true">cloud_upload</span>
@@ -1163,66 +1317,57 @@ ${thaiProvincesDataScript()}
           <div id="cohort-header-actions" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
         </div>
         <div class="card-body">
-          <!-- แท็บรุ่น -->
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-            <div id="cohort-tabs" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
-            <button type="button" onclick="window.createCohort()" style="background:#EEF2FF; border:1px dashed #818CF8; color:#4338CA; border-radius:10px; padding:7px 12px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
-              <span class="material-icons" style="font-size:16px;">add</span> เพิ่มรุ่น
+          <!-- แท็บรุ่น (ป้ายเขียว = จำนวนสาขาที่มีรอบเปิดยื่นอยู่ในรุ่นนั้น) -->
+          <div class="cw-toolbar">
+            <div id="cohort-tabs" class="cw-tabs"></div>
+            <button type="button" class="cw-btn cw-btn-dashed" onclick="window.createCohort()">
+              <span class="material-icons" aria-hidden="true">add</span> เพิ่มรุ่น
             </button>
-            <select id="cohort-archived-select" onchange="window.selectCohort(this.value)" class="input-field" style="width:auto; margin:0 0 0 auto; font-size:12px; padding:6px 10px;">
+            <select id="cohort-archived-select" onchange="window.selectCohort(this.value)" class="input-field cw-history-select" aria-label="ประวัติรุ่นที่ปิดแล้ว">
               <option value="">ประวัติรุ่นที่ปิดแล้ว...</option>
             </select>
           </div>
 
-          <div style="margin-bottom:12px; padding:10px 14px; background:#EEF2FF; border:1px solid #C7D2FE; border-radius:12px; font-size:12px; color:#1E1B4B; display:flex; gap:8px; align-items:flex-start;">
-            <span class="material-icons" style="color:#4338CA; font-size:18px;">info</span>
-            <div>
-              ระหว่างที่ล็อก นิสิตยังสะสมชั่วโมงอบรมและอัปโหลด CV ได้ แต่ยื่น Checklist ไม่ได้
-              • <strong>พ้นวันปิดยื่น ระบบล็อกให้อัตโนมัติ</strong> (กด "เปิดต่อพิเศษ" เพื่อขยายเวลาได้)
-              • พ้นวันสิ้นสุดการฝึก หรือกด "จบรอบ" = รอบนั้นจบแล้ว
-              • วันเริ่ม–สิ้นสุดการฝึกจะไปแสดงในหนังสือขอความอนุเคราะห์/หนังสือส่งตัว ("ในระหว่างวันที่ … ถึงวันที่ …")
-            </div>
-          </div>
+          <!-- กติกา: พับไว้ กดเพื่อกางดู -->
+          <details class="cw-rules">
+            <summary>
+              <span class="material-icons" aria-hidden="true">info</span>
+              กติกาการล็อก / ปลดล็อก
+              <span class="cw-rules-hint">กดเพื่อดู</span>
+              <span class="material-icons cw-rules-caret" aria-hidden="true">expand_more</span>
+            </summary>
+            <ul>
+              <li>ระหว่างที่ล็อก นิสิตยังสะสมชั่วโมงอบรมและอัปโหลด CV ได้ แต่ยื่น Checklist ไม่ได้</li>
+              <li><strong>พ้นวันปิดยื่น ระบบล็อกให้อัตโนมัติ</strong> — ถ้าต้องการขยายเวลา กดปุ่ม "เปิดต่อพิเศษ" ของรอบนั้น</li>
+              <li>พ้นวันสิ้นสุดการฝึก หรือกด "จบรอบ" (เมนู ⋮ ของรอบ) = รอบนั้นจบแล้ว</li>
+              <li>วันเริ่ม–สิ้นสุดการฝึกจะไปแสดงในหนังสือขอความอนุเคราะห์ / หนังสือส่งตัว ("ในระหว่างวันที่ … ถึงวันที่ …")</li>
+            </ul>
+          </details>
 
-          <!-- เพิ่ม/อัปเดตรอบให้สาขาที่เลือก -->
-          <div id="cohort-batch-bar" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px 14px; margin-bottom:12px;">
-            <div style="font-size:12.5px; font-weight:800; color:#1E1B4B; margin-bottom:8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-              <span class="material-icons" style="font-size:18px; color:#4F46E5;">playlist_add</span>
-              เพิ่ม/อัปเดตรอบออกฝึกให้สาขาที่ติ๊กเลือก (<span id="cohort-selected-count">0</span> สาขา)
-              <label style="margin-left:8px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:#4338CA; background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:3px 9px; cursor:pointer;">
-                <input type="checkbox" id="cohort-select-all" onchange="window.toggleAllBatchMajors(this.checked)" style="width:15px; height:15px; margin:0; cursor:pointer; accent-color:#4338CA;" /> เลือกทั้งหมด
-              </label>
-            </div>
-            <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
-              <label style="font-size:11.5px; font-weight:700; color:#475569;">รอบเทอม
-                <input type="text" id="cb-term" class="input-field" placeholder="เช่น 1/2570" style="display:block; width:95px; margin:3px 0 0; padding:6px 8px !important; font-size:12px; font-weight:700;" />
-              </label>
-              <label style="font-size:11.5px; font-weight:700; color:#475569;">ประเภท
-                <select id="cb-type" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:6px 8px; font-size:12px;">
-                  <option value="REGULAR">ภาคปกติ</option>
-                  <option value="SUMMER">Summer</option>
-                </select>
-              </label>
-              <label style="font-size:11.5px; font-weight:700; color:#475569;">เปิดยื่น
-                <input type="date" id="cb-open" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
-              </label>
-              <label style="font-size:11.5px; font-weight:700; color:#475569;">ปิดยื่น
-                <input type="date" id="cb-close" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
-              </label>
-              <label style="font-size:11.5px; font-weight:700; color:#475569;" title="ใช้ระบุช่วงฝึกในหนังสือขอความอนุเคราะห์/หนังสือส่งตัว และแสดงในโปรไฟล์นิสิต">เริ่มฝึก
-                <input type="date" id="cb-start" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
-              </label>
-              <label style="font-size:11.5px; font-weight:700; color:#475569;">สิ้นสุดการฝึก
-                <input type="date" id="cb-end" class="input-field" style="display:block; width:auto; margin:3px 0 0; padding:5px 8px !important; font-size:12px;" />
-              </label>
-              <button type="button" onclick="window.saveBatchWindows()" style="background:#059669; color:white; border:none; padding:9px 16px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px; margin-left:auto;">
-                <span class="material-icons" style="font-size:17px;">save</span> บันทึกให้สาขาที่เลือก
-              </button>
-            </div>
-          </div>
+          <!-- แถบแจ้ง "รุ่นที่ปิดแล้ว · อ่านอย่างเดียว" (แสดงเฉพาะตอนเปิดดูประวัติรุ่น) -->
+          <div id="cohort-archived-note"></div>
 
-          <div id="cohort-majors" style="display:flex; flex-direction:column; gap:8px;">
-            <div style="padding:18px; text-align:center; color:#94A3B8;">กำลังโหลดข้อมูลรุ่น...</div>
+          <!-- รายการสาขา: แถวหัวตาราง กลายเป็นแถบคำสั่งเมื่อติ๊กเลือกสาขา -->
+          <div class="cw-list">
+            <div id="cohort-list-head" class="cw-list-head cw-grid">
+              <span class="cw-check-cell"><input type="checkbox" id="cohort-select-all" class="cw-check" onchange="window.toggleAllBatchMajors(this.checked)" title="เลือกทุกสาขา" aria-label="เลือกทุกสาขา" /></span>
+              <span class="cw-head-col">สาขา</span>
+              <span class="cw-head-col">นิสิต</span>
+              <span class="cw-head-col">เตรียมความพร้อม → ออกฝึก</span>
+              <span class="cw-head-col">รอบออกฝึก</span>
+              <div id="cohort-batch-bar" class="cw-sel">
+                <span>เลือกแล้ว <strong id="cohort-selected-count">0</strong> สาขา <span id="cohort-selected-codes" class="cw-sel-codes"></span></span>
+                <span class="cw-sel-actions">
+                  <button type="button" class="cw-btn cw-btn-ghost" onclick="window.toggleAllBatchMajors(false)">ล้างการเลือก</button>
+                  <button type="button" class="cw-btn cw-btn-primary" onclick="window.openCohortBatchModal()">
+                    <span class="material-icons" aria-hidden="true">edit_calendar</span> ตั้งรอบให้สาขาที่เลือก
+                  </button>
+                </span>
+              </div>
+            </div>
+            <div id="cohort-majors">
+              <div class="cw-empty">กำลังโหลดข้อมูลรุ่น...</div>
+            </div>
           </div>
         </div>
       </section>
@@ -2607,6 +2752,61 @@ ${majorOptionsHtml("              ")}
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCohortBulkModal()">ยกเลิก</button>
           <button type="button" id="cohort-bulk-confirm" onclick="window.submitCohortBulk()" style="color:white; border:none; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px;">ยืนยัน</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าต่าง ตั้งรอบออกฝึกให้หลายสาขา (เปิดจากแถบ "เลือกแล้ว N สาขา" ในแท็บ "รอบฝึกงาน & ปลดล็อก") — logic: admin_dashboard.js -->
+    <div id="cohort-batch-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+      <div role="dialog" aria-modal="true" aria-labelledby="cohort-batch-title" style="background:white; border-radius:20px; padding:22px 26px; width:560px; max-width:92%; max-height:86vh; overflow-y:auto; box-shadow:0 20px 50px rgba(15,23,42,0.25);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons" style="font-size:24px; color:#4338CA;">edit_calendar</span>
+            <h3 id="cohort-batch-title" style="font-size:17px; font-weight:700; margin:0; color:#1E1B4B;">ตั้งรอบออกฝึกให้สาขาที่เลือก</h3>
+          </div>
+          <button type="button" onclick="window.closeCohortBatchModal()" aria-label="ปิดหน้าต่าง" style="background:none; border:none; color:#64748B; cursor:pointer; display:flex; align-items:center;">
+            <span class="material-icons" style="font-size:20px;">close</span>
+          </button>
+        </div>
+        <p id="cohort-batch-subtitle" class="cw-modal-sub"></p>
+        <div class="cw-form-grid">
+          <label class="cw-field">
+            <span class="cw-field-label">รอบเทอม <span class="cw-req" aria-hidden="true">*</span></span>
+            <input type="text" id="cb-term" class="input-field" placeholder="เช่น 1/2570" required oninput="window.syncBatchTermType()" />
+          </label>
+          <label class="cw-field">
+            <span class="cw-field-label">ประเภท</span>
+            <select id="cb-type" class="input-field">
+              <option value="REGULAR">ภาคปกติ</option>
+              <option value="SUMMER">Summer</option>
+            </select>
+          </label>
+          <label class="cw-field">
+            <span class="cw-field-label">เปิดยื่น</span>
+            <input type="date" id="cb-open" class="input-field" />
+          </label>
+          <label class="cw-field">
+            <span class="cw-field-label">ปิดยื่น</span>
+            <input type="date" id="cb-close" class="input-field" />
+          </label>
+          <label class="cw-field" title="ใช้ระบุช่วงฝึกในหนังสือขอความอนุเคราะห์/หนังสือส่งตัว และแสดงในโปรไฟล์นิสิต">
+            <span class="cw-field-label">เริ่มฝึก</span>
+            <input type="date" id="cb-start" class="input-field" />
+          </label>
+          <label class="cw-field">
+            <span class="cw-field-label">สิ้นสุดการฝึก</span>
+            <input type="date" id="cb-end" class="input-field" />
+          </label>
+        </div>
+        <ul class="cw-modal-notes">
+          <li>สาขาที่มีรอบเทอมนี้อยู่แล้ว = อัปเดตเฉพาะช่องที่กรอก (ช่องวันที่ที่เว้นว่างคงค่าเดิม)</li>
+          <li>สาขาที่ยังไม่มีรอบเทอมนี้ = สร้างรอบใหม่ และล็อกไว้ก่อน (กดปลดล็อกทีหลัง)</li>
+        </ul>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.closeCohortBatchModal()">ยกเลิก</button>
+          <button type="button" id="cohort-batch-confirm" class="cw-btn cw-btn-primary" onclick="window.saveBatchWindows()">
+            <span class="material-icons" aria-hidden="true">save</span> <span id="cohort-batch-confirm-label">บันทึก</span>
+          </button>
         </div>
       </div>
     </div>

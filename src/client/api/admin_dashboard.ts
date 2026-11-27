@@ -2549,15 +2549,119 @@ let selectedCohortId: number | null = null;
 let cohortsCurrentAcademicYear = 0; // ปีการศึกษาปัจจุบันตามเวลาไทย (จากเซิร์ฟเวอร์) ใช้เป็นค่าเริ่มต้นตอนปิดรุ่น
 const expandedCohortMajors = new Set<string>();
 const selectedBatchMajors = new Set<string>();
+const dirtyWindowIds = new Set<number>(); // รอบที่แก้ในตารางแล้วยังไม่กดบันทึก
 
-const WINDOW_STATUS_STYLE: Record<string, { bg: string; color: string; border: string; icon: string }> = {
-  LOCKED: { bg: '#FEE2E2', color: '#991B1B', border: '#FCA5A5', icon: 'lock' },
-  NOT_YET_OPEN: { bg: '#FEF3C7', color: '#92400E', border: '#FCD34D', icon: 'schedule' },
-  OPEN: { bg: '#DCFCE7', color: '#166534', border: '#86EFAC', icon: 'lock_open' },
-  EXTENDED: { bg: '#E0F2FE', color: '#075985', border: '#7DD3FC', icon: 'more_time' },
-  EXPIRED: { bg: '#F1F5F9', color: '#475569', border: '#CBD5E1', icon: 'event_busy' },
-  COMPLETED: { bg: '#EDE9FE', color: '#5B21B6', border: '#C4B5FD', icon: 'task_alt' },
+// สีบอกสถานะรอบ (ใช้ทั้งป้ายรอบในแถวสาขา และป้ายสถานะในตารางที่กางออก)
+// ล็อก = เทา เพราะเป็นสถานะปกติของรอบที่ยังไม่ถึงคิว (ถ้าเป็นสีแดง ทั้งหน้าจะแดงไปหมด) · เขียว = เปิดยื่น ให้เด่นที่สุด
+const WINDOW_STATUS_STYLE: Record<string, { bg: string; color: string; border: string; icon: string; short: string }> = {
+  LOCKED: { bg: '#F1F5F9', color: '#475569', border: '#CBD5E1', icon: 'lock', short: 'ล็อก' },
+  NOT_YET_OPEN: { bg: '#FEF3C7', color: '#92400E', border: '#FCD34D', icon: 'schedule', short: 'รอเปิด' },
+  OPEN: { bg: '#DCFCE7', color: '#166534', border: '#86EFAC', icon: 'lock_open', short: 'เปิดยื่น' },
+  EXTENDED: { bg: '#E0F2FE', color: '#075985', border: '#7DD3FC', icon: 'more_time', short: 'เปิดต่อพิเศษ' },
+  EXPIRED: { bg: '#FFFFFF', color: '#64748B', border: '#CBD5E1', icon: 'event_busy', short: 'หมดเวลา' },
+  COMPLETED: { bg: '#EDE9FE', color: '#5B21B6', border: '#C4B5FD', icon: 'task_alt', short: 'จบรอบ' },
 };
+
+/** ป้ายรอบในแถวสาขา เช่น "● 1/2569 จบรอบ" (กว้างพอดีข้อความ) */
+function windowStatusChip(w: any) {
+  const st = WINDOW_STATUS_STYLE[w.status] || WINDOW_STATUS_STYLE.LOCKED;
+  const summer = w.termType === 'SUMMER' ? ' Summer' : '';
+  return `<span class="cw-chip" style="background:${st.bg}; color:${st.color}; border-color:${st.border};" title="${escapeHtmlText(`${w.term}${summer}: ${w.statusLabel}`)}">
+    <i aria-hidden="true"></i><b>${escapeHtmlText(w.term)}${summer}</b>${st.short}
+  </span>`;
+}
+
+// ===== เมนู ⋮ แบบลอย (position:fixed) — ไม่โดนการ์ด/ตารางตัดขอบ · ปิดเมื่อคลิกข้างนอก / Esc / เลื่อนหน้า =====
+type CwMenuItem = { icon: string; label: string; danger?: boolean; separatorBefore?: boolean; run: () => void };
+let cwMenuCleanup: (() => void) | null = null;
+
+function closeCwMenu() {
+  const cleanup = cwMenuCleanup;
+  cwMenuCleanup = null;
+  if (cleanup) cleanup();
+}
+
+function openCwMenu(anchor: HTMLElement, items: CwMenuItem[]) {
+  const reopenSame = anchor.getAttribute('aria-expanded') === 'true';
+  closeCwMenu();
+  if (reopenSame || items.length === 0) return; // กดปุ่มเดิมซ้ำ = ปิด
+
+  const menu = document.createElement('div');
+  menu.className = 'cw-menu';
+  menu.setAttribute('role', 'menu');
+  items.forEach(item => {
+    if (item.separatorBefore) {
+      const sep = document.createElement('div');
+      sep.className = 'cw-menu-sep';
+      sep.setAttribute('role', 'separator');
+      menu.appendChild(sep);
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `cw-menu-item${item.danger ? ' is-danger' : ''}`;
+    btn.setAttribute('role', 'menuitem');
+    const icon = document.createElement('span');
+    icon.className = 'material-icons';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = item.icon;
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    btn.append(icon, label);
+    btn.addEventListener('click', () => {
+      closeCwMenu();
+      item.run();
+    });
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+
+  // วางใต้ปุ่ม ชิดขวา · ถ้าล้นจอด้านล่างให้เปิดขึ้นด้านบน
+  // หน้าเว็บตั้ง html { zoom: 0.8 } (modern-ict.css) -> ค่า left/top ที่ใส่จะถูกย่อตาม zoom
+  // จึงวัดอัตราส่วนจริงก่อน: วางที่ left:100px แล้วดูว่าไปโผล่ที่กี่ px บนจอ
+  menu.style.left = '100px';
+  menu.style.top = '0px';
+  const probe = menu.getBoundingClientRect();
+  const scale = probe.left > 0 ? probe.left / 100 : 1;
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.right - probe.width, window.innerWidth - probe.width - 8));
+  let top = r.bottom + 6;
+  if (top + probe.height > window.innerHeight - 8) top = Math.max(8, r.top - probe.height - 6);
+  menu.style.left = `${left / scale}px`;
+  menu.style.top = `${top / scale}px`;
+  anchor.setAttribute('aria-expanded', 'true');
+
+  const buttons = () => Array.from(menu.querySelectorAll<HTMLButtonElement>('.cw-menu-item'));
+  const onPointer = (e: Event) => {
+    const t = e.target as Node;
+    if (!menu.contains(t) && !anchor.contains(t)) closeCwMenu();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      closeCwMenu();
+      anchor.focus();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const list = buttons();
+      const i = list.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.key === 'ArrowDown' ? (i + 1) % list.length : (i - 1 + list.length) % list.length;
+      list[next]?.focus();
+    }
+  };
+  const onViewport = () => closeCwMenu();
+  document.addEventListener('mousedown', onPointer, true);
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('scroll', onViewport, true);
+  window.addEventListener('resize', onViewport);
+  cwMenuCleanup = () => {
+    menu.remove();
+    anchor.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', onPointer, true);
+    document.removeEventListener('keydown', onKey);
+    window.removeEventListener('scroll', onViewport, true);
+    window.removeEventListener('resize', onViewport);
+  };
+  buttons()[0]?.focus();
+}
 
 function windowStatusBadge(w: any) {
   const st = WINDOW_STATUS_STYLE[w.status] || WINDOW_STATUS_STYLE.LOCKED;
@@ -2626,8 +2730,9 @@ function renderCohortWorkspace() {
   const archivedEl = document.getElementById('cohort-archived-select') as HTMLSelectElement | null;
   const actionsEl = document.getElementById('cohort-header-actions');
   const majorsEl = document.getElementById('cohort-majors');
-  const batchEl = document.getElementById('cohort-batch-bar');
   if (!tabsEl || !majorsEl) return;
+  closeCwMenu(); // ปุ่มที่เมนูเกาะอยู่กำลังจะถูกวาดใหม่
+  dirtyWindowIds.clear(); // วาดใหม่ทั้งหมดจากข้อมูลล่าสุด -> ไม่มีแถวที่ค้างแก้
 
   const active = cohortsData.filter(c => c.status === 'ACTIVE');
   // ประวัติ: เรียงปีการศึกษาที่จบกระบวนการล่าสุดก่อน แล้วตามรหัสรุ่น
@@ -2639,11 +2744,12 @@ function renderCohortWorkspace() {
 
   tabsEl.innerHTML = active.map(c => {
     const on = c.id === selectedCohortId;
-    return `<button type="button" onclick="window.selectCohort(${c.id})"
-      style="border:1px solid ${on ? '#4338CA' : '#CBD5E1'}; background:${on ? '#4338CA' : '#FFFFFF'}; color:${on ? '#FFFFFF' : '#334155'}; border-radius:10px; padding:7px 14px; font-size:12.5px; font-weight:700; cursor:pointer;">
-      รหัส ${escapeHtmlText(c.code)}${c.classYear ? ` <span style="opacity:.8; font-weight:600;">· ปี ${c.classYear}</span>` : ''}
+    const open = cohortOpenMajorCount(c);
+    return `<button type="button" class="cw-tab${on ? ' is-active' : ''}" onclick="window.selectCohort(${c.id})" aria-pressed="${on}">
+      รหัส ${escapeHtmlText(c.code)}${c.classYear ? ` <span class="cw-tab-meta">· ปี ${c.classYear}</span>` : ''}
+      ${open > 0 ? `<span class="cw-tab-open" title="สาขาที่มีรอบเปิดยื่นอยู่ในรุ่นนี้">เปิด ${open} สาขา</span>` : ''}
     </button>`;
-  }).join('') || '<span style="font-size:12.5px; color:#94A3B8;">ยังไม่มีรุ่นที่ใช้งาน</span>';
+  }).join('') || '<span class="cw-empty" style="padding:6px 0;">ยังไม่มีรุ่นที่ใช้งาน</span>';
 
   if (archivedEl) {
     archivedEl.innerHTML = `<option value="">${archived.length ? `ประวัติรุ่นที่ปิดแล้ว (${archived.length})...` : 'ยังไม่มีรุ่นที่ปิด'}</option>` +
@@ -2653,101 +2759,126 @@ function renderCohortWorkspace() {
 
   if (actionsEl) {
     actionsEl.innerHTML = !cohort ? '' : isArchived
-      ? `<button type="button" onclick="window.restoreCohort(${cohort.id})" style="background:#FFFFFF; color:#4338CA; border:none; padding:7px 14px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer;">↩ เปิดใช้งานรุ่นนี้อีกครั้ง</button>`
+      ? `<button type="button" class="cw-btn cw-hbtn-primary" onclick="window.restoreCohort(${cohort.id})">
+          <span class="material-icons" aria-hidden="true">unarchive</span> เปิดใช้งานรุ่นนี้อีกครั้ง
+        </button>`
       : `
-        <button type="button" onclick="window.bulkCohortWindows('UNLOCK_ALL')" style="background:#10B981; color:white; border:none; padding:7px 12px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer;">🔓 ปลดล็อกทุกรอบ</button>
-        <button type="button" onclick="window.bulkCohortWindows('LOCK_ALL')" style="background:#EF4444; color:white; border:none; padding:7px 12px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer;">🔒 ล็อกทุกรอบ</button>
-        <button type="button" onclick="window.archiveCohort(${cohort.id})" style="background:#FFFFFF; color:#1E1B4B; border:none; padding:7px 12px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer;">📦 ปิดรุ่น / เก็บเข้าประวัติ</button>`;
+        <button type="button" class="cw-btn cw-hbtn-primary" onclick="window.bulkCohortWindows('UNLOCK_ALL')">
+          <span class="material-icons" aria-hidden="true">lock_open</span> ปลดล็อกทุกรอบ
+        </button>
+        <button type="button" class="cw-btn cw-hbtn-icon" onclick="window.openCohortHeaderMenu(this)" aria-haspopup="menu" aria-expanded="false" aria-label="คำสั่งอื่นของรุ่นนี้" title="คำสั่งอื่นของรุ่นนี้">
+          <span class="material-icons" aria-hidden="true">more_vert</span>
+        </button>`;
   }
 
-  if (batchEl) batchEl.style.display = cohort && !isArchived ? '' : 'none';
+  // แถวหัวรายการ: รุ่นที่ปิดแล้วไม่มีช่องติ๊ก (อ่านอย่างเดียว)
+  const listHead = document.getElementById('cohort-list-head');
+  if (listHead) {
+    listHead.style.display = cohort ? '' : 'none';
+    listHead.classList.toggle('is-readonly', Boolean(isArchived));
+  }
+  if (isArchived) selectedBatchMajors.clear();
+  const archivedNoteEl = document.getElementById('cohort-archived-note');
 
   if (!cohort) {
-    majorsEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94A3B8; background:#F8FAFC; border-radius:12px;">ยังไม่มีรุ่นในระบบ — กด "เพิ่มรุ่น" เพื่อเริ่มต้น</div>';
+    if (archivedNoteEl) archivedNoteEl.innerHTML = '';
+    majorsEl.innerHTML = '<div class="cw-empty">ยังไม่มีรุ่นในระบบ — กด "เพิ่มรุ่น" เพื่อเริ่มต้น</div>';
+    updateCohortSelectedCount();
     return;
   }
 
-  const archivedBanner = isArchived
-    ? `<div style="padding:10px 14px; background:#F1F5F9; border:1px solid #CBD5E1; border-radius:10px; font-size:12.5px; color:#334155; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+  if (archivedNoteEl) archivedNoteEl.innerHTML = isArchived
+    ? `<div class="cw-archived-banner">
+        <span class="material-icons" aria-hidden="true">inventory_2</span>
         <span style="flex:1; min-width:220px;">
-          📦 <strong>${escapeHtmlText(cohortHistoryLabel(cohort))}</strong>
+          <strong>${escapeHtmlText(cohortHistoryLabel(cohort))}</strong>
           — ปิดเมื่อ ${cohort.archivedAt ? new Date(cohort.archivedAt).toLocaleDateString('th-TH') : '-'}${cohort.archivedBy ? ` โดย ${escapeHtmlText(cohort.archivedBy)}` : ''} · แสดงแบบอ่านอย่างเดียว
         </span>
-        <button type="button" onclick="window.openCohortArchiveModal(${cohort.id}, 'EDIT_YEAR')" style="background:#FFFFFF; border:1px solid #CBD5E1; color:#4338CA; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
-          <span class="material-icons" style="font-size:15px;">edit_calendar</span> แก้ปีการศึกษา
+        <button type="button" class="cw-btn cw-btn-outline" onclick="window.openCohortArchiveModal(${cohort.id}, 'EDIT_YEAR')">
+          <span class="material-icons" aria-hidden="true">edit_calendar</span> แก้ปีการศึกษา
         </button>
       </div>`
     : '';
 
-  majorsEl.innerHTML = archivedBanner + cohort.majors.map(m => renderCohortMajorRow(cohort, m, isArchived)).join('');
+  majorsEl.innerHTML = cohort.majors.map(m => renderCohortMajorRow(cohort, m, isArchived)).join('');
   updateCohortSelectedCount();
+}
+
+/** จำนวนสาขาในรุ่นที่มีรอบเปิดยื่นอยู่ (เปิดยื่น / เปิดต่อพิเศษ) */
+function cohortOpenMajorCount(cohort: any) {
+  return (cohort?.majors || []).filter((m: any) =>
+    (m.windows || []).some((w: any) => w.status === 'OPEN' || w.status === 'EXTENDED')
+  ).length;
 }
 
 function renderCohortMajorRow(cohort: any, m: any, readOnly: boolean) {
   const key = `${cohort.id}:${m.code}`;
   const isOpen = expandedCohortMajors.has(key);
-  const openCount = m.windows.filter(w => w.status === 'OPEN' || w.status === 'EXTENDED').length;
-  const summary = m.windows.length === 0
-    ? '<span style="font-size:11.5px; color:#B45309; font-weight:700;">ยังไม่มีรอบออกฝึก</span>'
-    : m.windows.map(w => `<span style="font-size:11.5px; color:#334155; background:#F1F5F9; border-radius:6px; padding:2px 7px;">${escapeHtmlText(w.term)}${w.termType === 'SUMMER' ? ' Summer' : ''}</span>`).join(' ');
+  const windows = [...(m.windows || [])].sort((a, b) => cohortTermKey(a.term) - cohortTermKey(b.term));
+  const chips = windows.length === 0
+    ? '<span class="cw-chip cw-chip--none">ยังไม่มีรอบออกฝึก</span>'
+    : windows.map(windowStatusChip).join('');
+  const panelId = `cohort-panel-${cohort.id}-${m.code}`;
 
   return `
-    <div style="border:1px solid ${isOpen ? '#C7D2FE' : '#E2E8F0'}; border-radius:12px; background:#FFFFFF; overflow:hidden;">
-      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; background:${isOpen ? '#F5F7FF' : '#FFFFFF'};">
-        ${readOnly ? '' : `<input type="checkbox" ${selectedBatchMajors.has(m.code) ? 'checked' : ''} onchange="window.toggleBatchMajor('${m.code}', this.checked)" title="เลือกสาขานี้สำหรับเพิ่มรอบด้านบน" style="width:16px; height:16px; cursor:pointer; accent-color:#4338CA;" />`}
-        <div onclick="window.toggleCohortMajor('${key}')" style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px; cursor:pointer;">
-          <span class="material-icons" style="font-size:20px; color:#64748B; transform:rotate(${isOpen ? 90 : 0}deg); transition:transform .15s;">chevron_right</span>
-          <div style="min-width:0;">
-            <div style="font-weight:800; color:#1E1B4B; font-size:13.5px;">${escapeHtmlText(m.fullName || m.name)} (${m.code})
-              <span style="font-weight:600; font-size:11.5px; color:#64748B;">· นิสิต ${m.studentCount} คน</span>
-            </div>
-            <div style="font-size:11.5px; color:#64748B; margin-top:2px;">เตรียมความพร้อม: ${escapeHtmlText(m.prepSchedule)} • ออกฝึก: ${escapeHtmlText(m.internSchedule)}</div>
-          </div>
+    <div id="cohort-major-${cohort.id}-${m.code}" class="cw-major${isOpen ? ' is-open' : ''}">
+      <div class="cw-row cw-grid" onclick="window.toggleCohortMajor('${key}')">
+        <label class="cw-check-cell" onclick="event.stopPropagation()">${readOnly ? '' : `<input type="checkbox" class="cw-check" data-major="${m.code}" ${selectedBatchMajors.has(m.code) ? 'checked' : ''} onchange="window.toggleBatchMajor('${m.code}', this.checked)" aria-label="เลือกสาขา ${m.code}" />`}</label>
+        <button type="button" class="cw-name" aria-expanded="${isOpen}" aria-controls="${panelId}" title="${escapeHtmlText(m.fullName || m.name)}">
+          <span class="material-icons cw-caret" aria-hidden="true">chevron_right</span>
+          <span class="cw-code">${m.code}</span>
+          <span class="cw-major-name">${escapeHtmlText(m.name || m.fullName)}</span>
+        </button>
+        <span class="cw-count${m.studentCount ? '' : ' is-zero'}"><b>${m.studentCount}</b> คน</span>
+        <div class="cw-sched">
+          <div><span>เตรียม</span>${escapeHtmlText(m.prepSchedule)}</div>
+          <div><span>ออกฝึก</span>${escapeHtmlText(m.internSchedule)}</div>
         </div>
-        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-          ${summary}
-          ${openCount > 0
-            ? `<span style="background:#DCFCE7; color:#166534; border-radius:999px; padding:2px 9px; font-size:11.5px; font-weight:700;">🟢 เปิดยื่น ${openCount} รอบ</span>`
-            : (m.windows.length ? `<span style="background:#F1F5F9; color:#475569; border-radius:999px; padding:2px 9px; font-size:11.5px; font-weight:700;">🔒 ไม่มีรอบที่เปิด</span>` : '')}
-        </div>
+        <span class="cw-chips">${chips}</span>
       </div>
-      ${isOpen ? renderCohortMajorWindows(cohort, m, readOnly) : ''}
+      ${isOpen ? `<div id="${panelId}" class="cw-panel">${renderCohortMajorWindows(cohort, m, readOnly)}</div>` : ''}
     </div>
   `;
 }
 
+/** ปุ่มหลักของรอบ (มีได้ปุ่มเดียว) ตามสถานะ — ที่เหลืออยู่ในเมนู ⋮ */
+function windowPrimaryAction(w: any) {
+  if (w.status === 'COMPLETED') return '';
+  if (w.status === 'EXPIRED') {
+    return `<button type="button" class="cw-btn cw-btn-outline" onclick="window.patchWindow(${w.id}, { extendedOpen: true })" title="พ้นวันปิดยื่นแล้ว — เปิดให้ยื่นต่อเป็นกรณีพิเศษ">
+      <span class="material-icons" aria-hidden="true">more_time</span> เปิดต่อพิเศษ</button>`;
+  }
+  return w.isUnlocked
+    ? `<button type="button" class="cw-btn cw-btn-outline" onclick="window.patchWindow(${w.id}, { isUnlocked: false })">
+        <span class="material-icons" aria-hidden="true">lock</span> ล็อก</button>`
+    : `<button type="button" class="cw-btn cw-btn-success" onclick="window.patchWindow(${w.id}, { isUnlocked: true })">
+        <span class="material-icons" aria-hidden="true">lock_open</span> ปลดล็อก</button>`;
+}
+
 function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
   const dis = readOnly ? 'disabled' : '';
-  const rows = m.windows.map(w => {
+  const windows = [...(m.windows || [])].sort((a, b) => cohortTermKey(a.term) - cohortTermKey(b.term));
+  const rows = windows.map(w => {
     const p = `win-${w.id}`;
+    // แก้ช่องไหนก็ตาม -> แถวเป็นสีเหลือง + ปุ่ม "บันทึก" โผล่
+    const onEdit = readOnly ? '' : `oninput="window.markWindowDirty(${w.id})"`;
     const actions = readOnly ? '' : `
-      <div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end;">
-        ${w.status === 'COMPLETED' ? '' : `
-          <button type="button" onclick="window.patchWindow(${w.id}, { isUnlocked: ${!w.isUnlocked} })"
-            style="border:none; color:white; background:${w.isUnlocked ? '#EF4444' : '#10B981'}; padding:5px 10px; border-radius:7px; font-size:11.5px; font-weight:700; cursor:pointer;">
-            ${w.isUnlocked ? '🔒 ล็อก' : '🔓 ปลดล็อก'}
-          </button>`}
-        ${w.status === 'EXPIRED' || w.status === 'EXTENDED' ? `
-          <button type="button" onclick="window.patchWindow(${w.id}, { extendedOpen: ${!w.extendedOpen} })"
-            style="border:1px solid #7DD3FC; background:#F0F9FF; color:#075985; padding:5px 10px; border-radius:7px; font-size:11.5px; font-weight:700; cursor:pointer;">
-            ${w.extendedOpen ? 'ยกเลิกเปิดต่อพิเศษ' : '⏱ เปิดต่อพิเศษ'}
-          </button>` : ''}
-        <button type="button" onclick="window.saveWindowRow(${w.id})"
-          style="border:1px solid #CBD5E1; background:white; color:#334155; padding:5px 10px; border-radius:7px; font-size:11.5px; font-weight:600; cursor:pointer;">💾 บันทึก</button>
-        <button type="button" onclick="window.toggleWindowCompleted(${w.id}, ${!w.isCompleted})"
-          style="border:1px solid #C4B5FD; background:#F5F3FF; color:#5B21B6; padding:5px 10px; border-radius:7px; font-size:11.5px; font-weight:600; cursor:pointer;">
-          ${w.isCompleted ? '↩ ยกเลิกจบรอบ' : '✔ จบรอบ'}
+      <div class="cw-actions">
+        <span class="cw-dirty-note">ยังไม่บันทึก</span>
+        <button type="button" class="cw-btn cw-btn-primary cw-save" onclick="window.saveWindowRow(${w.id})">
+          <span class="material-icons" aria-hidden="true">save</span> บันทึก</button>
+        ${windowPrimaryAction(w)}
+        <button type="button" class="cw-btn cw-btn-icon" onclick="window.openWindowRowMenu(this, ${w.id})" aria-haspopup="menu" aria-expanded="false" aria-label="คำสั่งอื่นของรอบ ${escapeHtmlText(w.term)}" title="คำสั่งอื่น">
+          <span class="material-icons" aria-hidden="true">more_vert</span>
         </button>
-        <button type="button" onclick="window.deleteWindow(${w.id})" title="ลบรอบนี้"
-          style="border:1px solid #FECACA; background:#FEF2F2; color:#DC2626; padding:5px 8px; border-radius:7px; font-size:11.5px; cursor:pointer;">🗑</button>
       </div>`;
 
     return `
-      <tr>
+      <tr id="${p}-row">
         <td>
-          <input type="text" id="${p}-term" value="${escapeHtmlText(w.term)}" ${dis} class="input-field" style="width:85px; padding:5px 8px !important; font-size:12px; font-weight:700;" />
+          <input type="text" id="${p}-term" value="${escapeHtmlText(w.term)}" ${dis} ${onEdit} class="input-field" style="width:85px; padding:5px 8px !important; font-size:12px; font-weight:700;" />
           <div style="margin-top:4px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-            <select id="${p}-type" ${dis} class="input-field" style="width:auto; padding:3px 6px; font-size:11px;">
+            <select id="${p}-type" ${dis} ${onEdit} class="input-field" style="width:auto; padding:3px 6px; font-size:11px;">
               <option value="REGULAR" ${w.termType === 'REGULAR' ? 'selected' : ''}>ภาคปกติ</option>
               <option value="SUMMER" ${w.termType === 'SUMMER' ? 'selected' : ''}>Summer</option>
             </select>
@@ -2755,17 +2886,17 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
         </td>
         <td>
           <div style="display:flex; align-items:center; gap:4px; font-size:11.5px; flex-wrap:wrap;">
-            <input type="date" id="${p}-open" value="${w.openDate}" ${dis} class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+            <input type="date" id="${p}-open" value="${w.openDate}" ${dis} ${onEdit} class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
             <span>ถึง</span>
-            <input type="date" id="${p}-close" value="${w.closeDate}" ${dis} class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+            <input type="date" id="${p}-close" value="${w.closeDate}" ${dis} ${onEdit} class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
           </div>
-          <input type="text" id="${p}-note" value="${escapeHtmlText(w.note)}" ${dis} placeholder="หมายเหตุแจ้งนิสิต..." class="input-field" style="margin-top:4px; width:100%; box-sizing:border-box; padding:4px 8px !important; font-size:11.5px;" />
+          <input type="text" id="${p}-note" value="${escapeHtmlText(w.note)}" ${dis} ${onEdit} placeholder="หมายเหตุแจ้งนิสิต..." class="input-field" style="margin-top:4px; width:100%; box-sizing:border-box; padding:4px 8px !important; font-size:11.5px;" />
         </td>
         <td>
           <div style="display:flex; align-items:center; gap:4px; font-size:11.5px; flex-wrap:wrap;">
-            <input type="date" id="${p}-start" value="${w.internStartDate || ''}" ${dis} title="วันเริ่มฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+            <input type="date" id="${p}-start" value="${w.internStartDate || ''}" ${dis} ${onEdit} title="วันเริ่มฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
             <span>ถึง</span>
-            <input type="date" id="${p}-end" value="${w.internEndDate}" ${dis} title="วันสิ้นสุดการฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
+            <input type="date" id="${p}-end" value="${w.internEndDate}" ${dis} ${onEdit} title="วันสิ้นสุดการฝึก" class="input-field" style="width:auto; padding:4px 6px !important; font-size:11.5px;" />
           </div>
           <div style="font-size:10.5px; color:#94A3B8; margin-top:3px;">เลือกรอบนี้แล้ว ${w.studentCount} คน</div>
         </td>
@@ -2775,18 +2906,17 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
   }).join('');
 
   const addRow = readOnly ? '' : `
-    <tr style="background:#FAFBFF;">
+    <tr>
       <td colspan="5">
-        <button type="button" onclick="window.addWindowForMajor(${cohort.id}, '${m.code}')"
-          style="background:none; border:1px dashed #A5B4FC; color:#4338CA; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer;">
-          + เพิ่มรอบออกฝึกให้สาขานี้
+        <button type="button" class="cw-btn cw-btn-dashed" onclick="window.addWindowForMajor(${cohort.id}, '${m.code}')">
+          <span class="material-icons" aria-hidden="true">add</span> เพิ่มรอบออกฝึกให้สาขานี้
         </button>
       </td>
     </tr>`;
 
   return `
-    <div class="table-responsive" style="border-top:1px solid #E2E8F0;">
-      <table class="data-table" style="margin:0;">
+    <div class="table-responsive">
+      <table class="data-table">
         <thead>
           <tr>
             <th style="width:15%;">รอบเทอม / ประเภท</th>
@@ -2804,10 +2934,26 @@ function renderCohortMajorWindows(cohort: any, m: any, readOnly: boolean) {
     </div>`;
 }
 
+// กาง/พับสาขา: วาดใหม่เฉพาะสาขานั้น — สาขาอื่นที่กำลังแก้อยู่ไม่หาย
 window.toggleCohortMajor = function(key: string) {
-  if (expandedCohortMajors.has(key)) expandedCohortMajors.delete(key);
-  else expandedCohortMajors.add(key);
-  renderCohortWorkspace();
+  const [cohortId, code] = key.split(':');
+  const cohort = cohortsData.find(c => String(c.id) === cohortId);
+  const major = cohort?.majors?.find((m: any) => m.code === code);
+  if (expandedCohortMajors.has(key)) {
+    const unsaved = (major?.windows || []).filter((w: any) => dirtyWindowIds.has(w.id));
+    if (unsaved.length && !confirm(`รอบ ${unsaved.map((w: any) => w.term).join(', ')} ของสาขา ${code} ยังไม่ได้บันทึก\nถ้าพับสาขานี้ สิ่งที่แก้จะหายไป — ต้องการพับหรือไม่?`)) return;
+    unsaved.forEach((w: any) => dirtyWindowIds.delete(w.id));
+    expandedCohortMajors.delete(key);
+  } else {
+    expandedCohortMajors.add(key);
+  }
+  const el = document.getElementById(`cohort-major-${cohortId}-${code}`);
+  if (!cohort || !major || !el) {
+    renderCohortWorkspace();
+    return;
+  }
+  closeCwMenu();
+  el.outerHTML = renderCohortMajorRow(cohort, major, cohort.status === 'ARCHIVED');
 };
 
 window.toggleBatchMajor = function(code: string, checked: boolean) {
@@ -2816,27 +2962,107 @@ window.toggleBatchMajor = function(code: string, checked: boolean) {
   updateCohortSelectedCount();
 };
 
-// ติ๊ก/ล้าง ทุกสาขาของรุ่นที่เลือก (ฟอร์ม "เพิ่ม/อัปเดตรอบออกฝึก" ด้านบน)
+// ติ๊ก/ล้าง ทุกสาขาของรุ่นที่เลือก (ช่องติ๊กบนแถวหัวรายการ / ปุ่ม "ล้างการเลือก")
 window.toggleAllBatchMajors = function(checked: boolean) {
   const cohort = getSelectedCohort();
   if (!cohort || cohort.status === 'ARCHIVED') return;
   selectedBatchMajors.clear();
   if (checked) (cohort.majors || []).forEach(m => selectedBatchMajors.add(m.code));
-  renderCohortWorkspace();
+  document.querySelectorAll<HTMLInputElement>('#cohort-majors .cw-check[data-major]').forEach(cb => {
+    cb.checked = selectedBatchMajors.has(cb.dataset.major || '');
+  });
+  updateCohortSelectedCount();
 };
 
+/** รหัสสาขาที่ติ๊กไว้ เรียงตามลำดับบนหน้าจอ */
+function selectedBatchCodes(cohort: any): string[] {
+  return (cohort?.majors || []).map((m: any) => m.code).filter((code: string) => selectedBatchMajors.has(code));
+}
+
+// ติ๊กอย่างน้อย 1 สาขา -> แถวหัวรายการกลายเป็นแถบ "เลือกแล้ว N สาขา [ล้าง] [ตั้งรอบให้สาขาที่เลือก]"
 function updateCohortSelectedCount() {
-  const el = document.getElementById('cohort-selected-count');
-  if (el) el.textContent = String(selectedBatchMajors.size);
+  const codes = selectedBatchCodes(getSelectedCohort());
+  const n = codes.length;
+  const countEl = document.getElementById('cohort-selected-count');
+  if (countEl) countEl.textContent = String(n);
+  const codesEl = document.getElementById('cohort-selected-codes');
+  if (codesEl) codesEl.textContent = n ? `(${codes.join(', ')})` : '';
+  document.getElementById('cohort-list-head')?.classList.toggle('has-selection', n > 0);
   // ช่อง "เลือกทั้งหมด": ครบทุกสาขา = ติ๊ก · บางสาขา = ขีด (indeterminate) · ไม่มี = ว่าง
   const all = document.getElementById('cohort-select-all') as HTMLInputElement | null;
   if (all) {
     const total = (getSelectedCohort()?.majors || []).length;
-    const n = selectedBatchMajors.size;
     all.checked = total > 0 && n === total;
     all.indeterminate = n > 0 && n < total;
   }
 }
+
+// ===== หน้าต่าง "ตั้งรอบให้สาขาที่เลือก" =====
+window.openCohortBatchModal = function() {
+  const cohort = getSelectedCohort();
+  const codes = selectedBatchCodes(cohort);
+  const modal = document.getElementById('cohort-batch-modal');
+  if (!cohort || !modal || codes.length === 0) return;
+  const sub = document.getElementById('cohort-batch-subtitle');
+  if (sub) sub.textContent = `รุ่น ${cohort.code}${cohort.classYear ? ` (ปี ${cohort.classYear})` : ''} · ${codes.length} สาขา: ${codes.join(', ')}`;
+  const label = document.getElementById('cohort-batch-confirm-label');
+  if (label) label.textContent = `บันทึกให้ ${codes.length} สาขา`;
+  modal.style.display = 'flex';
+  (document.getElementById('cb-term') as HTMLInputElement | null)?.focus();
+};
+
+window.closeCohortBatchModal = function() {
+  const modal = document.getElementById('cohort-batch-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+// พิมพ์รอบเทอม 3/xxxx = Summer อัตโนมัติ (เหมือนปุ่ม "เพิ่มรอบออกฝึกให้สาขานี้")
+window.syncBatchTermType = function() {
+  const term = (document.getElementById('cb-term') as HTMLInputElement | null)?.value.trim() || '';
+  const type = document.getElementById('cb-type') as HTMLSelectElement | null;
+  if (!type) return;
+  if (/^3\s*\//.test(term)) type.value = 'SUMMER';
+  else if (/^[12]\s*\//.test(term)) type.value = 'REGULAR';
+};
+
+// ===== แก้ข้อมูลในตารางรอบ: แถวสีเหลือง + ปุ่ม "บันทึก" โผล่เฉพาะแถวที่แก้ =====
+window.markWindowDirty = function(id: number) {
+  dirtyWindowIds.add(id);
+  document.getElementById(`win-${id}-row`)?.classList.add('is-dirty');
+};
+
+function findCohortWindow(id: number) {
+  for (const c of cohortsData) {
+    for (const m of c.majors || []) {
+      const w = (m.windows || []).find((x: any) => x.id === id);
+      if (w) return w;
+    }
+  }
+  return null;
+}
+
+// เมนู ⋮ บนหัวการ์ด: คำสั่งที่ใช้น้อยและกระทบทั้งรุ่น
+window.openCohortHeaderMenu = function(btn: HTMLElement) {
+  const cohort = getSelectedCohort();
+  if (!cohort || cohort.status === 'ARCHIVED') return;
+  openCwMenu(btn, [
+    { icon: 'lock', label: 'ล็อกทุกรอบ…', run: () => window.bulkCohortWindows('LOCK_ALL') },
+    { icon: 'inventory_2', label: 'ปิดรุ่น / เก็บเข้าประวัติ…', danger: true, separatorBefore: true, run: () => window.archiveCohort(cohort.id) },
+  ]);
+};
+
+// เมนู ⋮ ของแต่ละรอบ: ทุกอย่างที่ไม่ใช่ปุ่มหลัก
+window.openWindowRowMenu = function(btn: HTMLElement, id: number) {
+  const w = findCohortWindow(id);
+  if (!w) return;
+  const items: CwMenuItem[] = [];
+  if (w.status === 'EXPIRED') items.push({ icon: 'lock', label: 'ล็อก', run: () => window.patchWindow(id, { isUnlocked: false }) });
+  if (w.status === 'EXTENDED') items.push({ icon: 'timer_off', label: 'ยกเลิกเปิดต่อพิเศษ', run: () => window.patchWindow(id, { extendedOpen: false }) });
+  if (w.isCompleted) items.push({ icon: 'undo', label: 'ยกเลิกจบรอบ', run: () => window.toggleWindowCompleted(id, false) });
+  else if (w.status !== 'COMPLETED') items.push({ icon: 'task_alt', label: 'จบรอบ…', run: () => window.toggleWindowCompleted(id, true) });
+  items.push({ icon: 'delete', label: 'ลบรอบนี้…', danger: true, separatorBefore: items.length > 0, run: () => window.deleteWindow(id) });
+  openCwMenu(btn, items);
+};
 
 function readWindowRow(id: number) {
   const v = (s: string) => (document.getElementById(`win-${id}-${s}`) as HTMLInputElement | null);
@@ -2926,11 +3152,16 @@ window.saveBatchWindows = async function() {
   const body: any = { cohortId: cohort.id, majorCodes: majors, term, termType: val('cb-type') || 'REGULAR' };
   const dates: Array<[string, string]> = [['openDate', 'cb-open'], ['closeDate', 'cb-close'], ['internStartDate', 'cb-start'], ['internEndDate', 'cb-end']];
   dates.forEach(([key, id]) => { if (val(id)) body[key] = val(id); });
+  const btn = document.getElementById('cohort-batch-confirm') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
   const data = await cohortApi('/api/admin/super-admin/windows', 'POST', body);
+  if (btn) btn.disabled = false;
   if (data.success) {
+    window.closeCohortBatchModal();
     alert('✅ ' + data.message);
     majors.forEach(code => expandedCohortMajors.add(`${cohort.id}:${code}`));
     await window.loadCohorts();
+    if (window.loadSuperAdminOverview) window.loadSuperAdminOverview();
   }
 };
 
@@ -3036,7 +3267,7 @@ function renderCohortBulkModal() {
       return [`${list.length} สาขา`, `ปลดล็อกแล้ว ${unlocked}`, `ล็อกอยู่ ${locked}`, done ? `จบรอบ ${done}` : ''].filter(Boolean).join(' · ');
     };
     termsEl.innerHTML = terms.length === 0
-      ? '<div style="padding:12px; text-align:center; color:#94A3B8; background:#F8FAFC; border-radius:10px; font-size:12.5px;">รุ่นนี้ยังไม่มีรอบออกฝึก — เพิ่มรอบจากฟอร์มด้านบนก่อน</div>'
+      ? '<div style="padding:12px; text-align:center; color:#94A3B8; background:#F8FAFC; border-radius:10px; font-size:12.5px;">รุ่นนี้ยังไม่มีรอบออกฝึก — ติ๊กเลือกสาขา แล้วกด "ตั้งรอบให้สาขาที่เลือก" ก่อน</div>'
       : terms.map(t => {
           const list = entries.filter((e: any) => e.w.term === t);
           const summer = list.some((e: any) => e.w.termType === 'SUMMER') ? ' (Summer)' : '';
@@ -3069,7 +3300,7 @@ function renderCohortBulkModal() {
     btn.disabled = disabled;
     btn.style.background = disabled ? '#CBD5E1' : color;
     btn.style.cursor = disabled ? 'not-allowed' : 'pointer';
-    btn.innerHTML = `${unlock ? '🔓' : '🔒'} ${verb} ${cohortBulkTerm ? escapeHtmlText(cohortBulkTerm) : 'ทุกเทอม'}`;
+    btn.innerHTML = `<span class="material-icons" aria-hidden="true" style="font-size:18px; vertical-align:-4px;">${unlock ? 'lock_open' : 'lock'}</span> ${verb} ${cohortBulkTerm ? escapeHtmlText(cohortBulkTerm) : 'ทุกเทอม'}`;
   }
 }
 
