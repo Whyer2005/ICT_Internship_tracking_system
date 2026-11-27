@@ -90,20 +90,6 @@ ${ictMajorsDataScript()}
       </div>
     </section>
 
-    <!-- 1. สถานะภาพรวมทั้งหมดของนิสิตในที่ปรึกษา (2 กราฟวงกลม) -->
-    <section class="card">
-      <div class="card-header">
-        <span class="material-icons header-icon">donut_large</span>
-        <h2 class="card-title">สถานะภาพรวมทั้งหมดของนิสิตในความดูแล</h2>
-      </div>
-      <div class="card-body">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-          <div id="chart-checklist" class="flex flex-col items-center justify-center bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4"></div>
-          <div id="chart-readiness" class="flex flex-col items-center justify-center bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4"></div>
-        </div>
-      </div>
-    </section>
-
     <!-- 2. รายชื่อนิสิต -->
     <section class="card">
       <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">

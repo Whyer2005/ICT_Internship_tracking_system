@@ -284,8 +284,10 @@ function renderDashboardStepper(currentIdx, subTasks, data) {
         <span class="dsp-mini ${t.done ? 'dsp-mini--ok' : ''}">${t.done ? '<span class="material-icons" aria-hidden="true">check</span>' : ''}${esc(t.name)}</span>`).join('')}</div>`;
     }
     if (i === 1) {
+      // อักษรย่อชื่อผู้ตรวจ (คำแรก + คำที่สอง) ใช้เป็นวงกลม avatar เล็ก
+      const initials = reviewerName.trim().split(/\s+/).slice(0, 2).map((w) => w.charAt(0)).join('').toUpperCase();
       return reviewerName
-        ? `<div class="dsp-reviewer"><span class="dsp-reviewer-text">${reviewerLabel}: ${esc(reviewerName)}</span></div>`
+        ? `<div class="dsp-reviewer"><span class="dsp-avatar" aria-hidden="true">${esc(initials)}</span><span class="dsp-reviewer-text">${reviewerLabel}: ${esc(reviewerName)}</span></div>`
         : '<div class="dsp-reviewer"><span class="dsp-reviewer-text">อาจารย์ตรวจข้อมูลบริษัท</span></div>';
     }
     return `<div class="dsp-step-sub">${state === 'done' ? 'พร้อมออกฝึกงาน' : 'รออาจารย์อนุมัติที่ฝึกงาน'}</div>`;
@@ -301,9 +303,12 @@ function renderDashboardStepper(currentIdx, subTasks, data) {
       : state === 'active' ? 'กำลังดำเนินการ' : 'ยังไม่ถึง';
     // ป้าย "ขั้นตอนปัจจุบัน" เฉพาะตอนยังไม่ครบ (ครบแล้วหัวการ์ดบอกอยู่แล้ว)
     const isFocus = !allDone && i === focusIdx;
+    // การ์ดเด่น (พื้นม่วง): ขั้นปัจจุบัน หรือขั้นสุดท้ายเมื่อครบทุกขั้นแล้ว
+    const isHighlight = i === focusIdx;
     const card = `
-      <div class="dsp-step dsp-step--${state}${isFocus ? ' dsp-step--focus' : ''}" id="${stageCards[i].cardId}">
+      <div class="dsp-step dsp-step--${state}${isFocus ? ' dsp-step--focus' : ''}${isHighlight ? ' dsp-step--hl' : ''}" id="${stageCards[i].cardId}">
         ${isFocus ? '<span class="dsp-step-tab">ขั้นตอนปัจจุบัน</span>' : ''}
+        <span class="dsp-step-bignum" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>
         <span class="dsp-step-num">${state === 'done' ? '<span class="material-icons" aria-hidden="true">check</span>' : i + 1}</span>
         <div class="dsp-step-text">
           <span class="dsp-step-no">ขั้นที่ ${i + 1} · <span class="dsp-step-when">${when}</span></span>
