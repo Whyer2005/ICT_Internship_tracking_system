@@ -1,10 +1,12 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaNeon } from "@prisma/adapter-neon";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-// adapter-neon ใช้ HTTP/WebSocket driver ของ Neon แทน pg.Pool ที่ค้าง connection ไว้
-// เหมาะกับ serverless (Vercel) เพราะไม่เสี่ยงใช้ connection limit ของ Neon หมด
-const adapter = new PrismaNeon({
+// ฐานข้อมูล: Supabase PostgreSQL (ย้ายจาก Neon 27 พ.ย. 2569 — Neon โควตา Network Transfer เต็ม)
+// DATABASE_URL = Transaction pooler (พอร์ต 6543, ?pgbouncer=true) — เหมาะกับ serverless (Vercel)
+//   เพราะ pooler ของ Supabase เป็นตัวรวม connection ให้ ไม่กิน connection limit ของ DB
+// ส่วนคำสั่ง Prisma CLI (db push / migrate diff) ใช้ DIRECT_URL (พอร์ต 5432) — ดู prisma.config.ts
+const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL as string,
 });
 
@@ -13,7 +15,3 @@ const prisma = new PrismaClient({
 });
 
 export default prisma;
-
-// Support CommonJS require for backward compatibility with existing JS files
-module.exports = prisma;
-module.exports.default = prisma;

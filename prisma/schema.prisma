@@ -30,6 +30,8 @@ model User {
 
   student Student?
   staff   Staff?
+
+  notifications Notification[]
 }
 
 // =====================================================================
@@ -55,6 +57,7 @@ model Student {
   faculty         String          @default("คณะเทคโนโลยีสารสนเทศและการสื่อสาร") // คณะ
   curriculum      String?         // หลักสูตร / สาขาวิชา
   academicYear    String?         // ปีการศึกษา เช่น "2567" หรือ "2568"
+  semester        String?         @default("2") // ภาคเรียนที่ออกฝึกงาน เช่น "1", "2", "SUMMER"
   studentStatus   String?         @default("กำลังศึกษา") // สถานะนิสิต เช่น กำลังศึกษา, พักการเรียน
   internshipType  String?         @default("NEW")       // ประเภทการฝึก เช่น NEW (ฝึกรอบแรก), RETEST (ฝึกรอบใหม่/ตกค้าง)
   year            Int             // ชั้นปีที่
@@ -63,6 +66,7 @@ model Student {
   phone           String?
   lineId          String?
   facebook        String?
+  otherInfo       String?         // ข้อมูลเพิ่มเติม (ความสามารถพิเศษ โรคประจำตัว ข้อจำกัด ฯลฯ) — หน้า status-all การ์ด "อื่นๆ"
   profileImageUrl String?
 
   advisorId       Int?
@@ -77,12 +81,123 @@ model Student {
   droppedAt       DateTime?
 
   cv              StudentCV?
+  cvComments      CvComment[]
   trainingRecords TrainingRecord[]
   companies       Company[]
   placement       InternshipPlacement?
+  coopApplications CoopApplication[] // ใบสมัครสหกิจศึกษา
+
+  // รอบออกฝึกที่นิสิตเลือก (เช่น 2/2568, 3/2569 Summer, 1/2570)
+  internshipWindowId Int?
+  internshipWindow   InternshipWindow? @relation(fields: [internshipWindowId], references: [id], onDelete: SetNull)
 
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+}
+
+// =====================================================================
+// 2.1 รุ่น (Cohort) และรอบออกฝึก (Internship Window) รายสาขา
+//     รุ่น = รหัสนิสิต 2 ตัวแรก (เช่น "67") / แต่ละสาขาในรุ่นมีได้หลายรอบออกฝึก (ปกติ + Summer)
+// =====================================================================
+
+enum CohortStatus {
+  ACTIVE   // กำลังใช้งาน
+  ARCHIVED // ปิดรุ่น / เก็บเข้าประวัติ (อ่านอย่างเดียว)
+}
+
+enum InternshipTermType {
+  REGULAR // ภาคเรียนปกติ
+  SUMMER  // ภาคฤดูร้อน
+}
+
+model InternshipCohort {
+  id         Int                @id @default(autoincrement())
+  code       String             @unique // รหัสรุ่น เช่น "67"
+  status     CohortStatus       @default(ACTIVE)
+  note       String?
+  archivedAt DateTime?
+  archivedBy String?
+  archivedAcademicYear String? // ปีการศึกษาที่จบกระบวนการ (พ.ศ. เช่น "2569") เลือกตอนปิดรุ่น ใช้ออกรายงานระดับมหาวิทยาลัย
+  archiveRetestStudentIds Int[] @default([]) // นิสิตที่ระบบเปลี่ยนจาก NEW เป็นตกค้าง (RETEST) ตอนปิดรุ่น — เปิดรุ่นกลับจะคืนเป็น NEW ให้
+
+  windows    InternshipWindow[]
+
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+}
+
+model InternshipWindow {
+  id            Int                @id @default(autoincrement())
+  cohortId      Int
+  cohort        InternshipCohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  majorCode     String             // รหัสสาขา เช่น "SE" (ดู src/utils/majors.ts)
+  term          String             // รอบเทอมที่ออกฝึก เช่น "2/2568", "3/2569"
+  termType      InternshipTermType @default(REGULAR)
+  isOptional    Boolean            @default(false) // รอบไม่บังคับ (เช่น Summer)
+
+  openDate      DateTime?          @db.Date // ช่วงเปิดยื่นบริษัท
+  closeDate     DateTime?          @db.Date
+  internStartDate DateTime?        @db.Date // วันเริ่มฝึก (ตามแผนของรอบ ใช้ระบุช่วงฝึกในหนังสือ + โปรไฟล์นิสิต)
+  internEndDate DateTime?          @db.Date // วันสิ้นสุดการฝึก (ใช้ปลดล็อก CV/ชั่วโมงอบรมอัตโนมัติ)
+
+  isUnlocked    Boolean            @default(false) // พี่จอมกดปลดล็อก
+  extendedOpen  Boolean            @default(false) // เปิดต่อพิเศษหลังพ้นวันปิด (Override Auto-lock)
+  isCompleted   Boolean            @default(false) // พี่จอมกด "จบรอบ" เอง
+  completedAt   DateTime?
+  note          String?
+  sortOrder     Int                @default(0)
+
+  students      Student[]
+  coopApplications CoopApplication[]
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([cohortId, majorCode, term])
+  @@index([majorCode])
+}
+
+// ---------------------------------------------------------------------
+// สหกิจศึกษา: ประกาศรับนิสิตที่พี่จอม (Staff) เพิ่มเอง / นำเข้าจาก Excel
+// 1 ประกาศ = 1 บริษัท มีได้หลายตำแหน่ง · รอบเทอม/ช่วงฝึก/วันปิดยื่น ใช้ตามรอบออกฝึกของสาขานิสิต (InternshipWindow)
+// ข้อมูลผู้ติดต่อ HR เห็นเฉพาะเจ้าหน้าที่ — API ฝั่งนิสิตไม่ส่งออกไป
+// ---------------------------------------------------------------------
+model CoopPosting {
+  id              Int       @id @default(autoincrement())
+  companyName     String // ชื่อบริษัท (ไทย)
+  companyNameEn   String?
+  masterCompanyId String? // อ้างอิงฐานข้อมูลบริษัทกลาง (ถ้าเลือกจากรายการ)
+  description     String? // รายละเอียดบริษัท
+  qualifications  String? // คุณสมบัติเพิ่มเติม
+  benefits        String? // สวัสดิการ / เบี้ยเลี้ยง / ที่พัก
+  address         String? // ที่อยู่ (ไม่เก็บพิกัด)
+  province        String? // ชื่อจังหวัดมาตรฐาน (src/utils/thaiProvinces.ts) หรือ "ต่างประเทศ"
+  website         String?
+  isClosed        Boolean   @default(false) // เจ้าหน้าที่กดปิดรับก่อนกำหนด
+  hrContactName   String? // เห็นเฉพาะเจ้าหน้าที่
+  hrPhone         String?
+  hrEmail         String?
+  createdBy       String?
+
+  positions    CoopPosition[]
+  applications CoopApplication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CoopPosition {
+  id           Int               @id @default(autoincrement())
+  postingId    Int
+  posting      CoopPosting       @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  title        String // ชื่อตำแหน่ง
+  seats        Int? // จำนวนที่รับนิสิตคณะนี้ (ไม่แสดงจำนวนที่สมัครไปแล้ว)
+  description  String? // ลักษณะงาน
+  sortOrder    Int               @default(0)
+  applications CoopApplication[]
+
+  @@index([postingId])
 }
 
 // อาจารย์ที่ปรึกษา / อาจารย์รายวิชา / อาจารย์นิเทศก์ / เจ้าหน้าที่ (Staff)
@@ -95,7 +210,7 @@ model Staff {
 
   // Multi-role flags สำหรับอาจารย์ / บุคลากร
   isCourseAdmin      Boolean   @default(false) // อาจารย์ประจำวิชา / ประธานหลักสูตร
-  isAdvisor          Boolean   @default(true)  // อาจารย์ที่ปรึกษา
+  isAdvisor          Boolean   @default(false) // อาจารย์ที่ปรึกษา
   isSupervisor       Boolean   @default(false) // อาจารย์นิเทศก์
   isStaff            Boolean   @default(false) // เจ้าหน้าที่คณะ (เช่น พี่จอม) - ถ้าเป็น true จะเป็นเจ้าหน้าที่ฝ่ายฝึกงาน
 
@@ -126,13 +241,32 @@ model StudentCV {
   fileUrl    String
   fileName   String?
 
-  status     ApprovalStatus @default(PENDING)
-  note       String?        // หมายเหตุ กรณีไม่ผ่าน
+  status     ApprovalStatus @default(PENDING) // ⚠️ เลิกใช้ (24 พ.ย. 2569: อาจารย์ไม่อนุมัติ CV แล้ว — คอมเมนต์อย่างเดียว ดู CvComment)
+  note       String?        // ⚠️ เลิกใช้ — หมายเหตุเดิมย้ายไปเป็นคอมเมนต์แรกใน CvComment แล้ว
 
   reviewedById Int?
   reviewedAt   DateTime?
 
   uploadedAt DateTime       @default(now())
+
+  lastCommentAt  DateTime? // เวลาคอมเมนต์ล่าสุดของอาจารย์ (ใช้บอกสถานะ "รอคอมเมนต์" / "คอมเมนต์แล้ว")
+  commentsSeenAt DateTime? // นิสิตเปิดอ่านคอมเมนต์ล่าสุดเมื่อไร (ป้าย "มีคอมเมนต์ใหม่")
+}
+
+/// คอมเมนต์ CV จากอาจารย์ที่ปรึกษา (เฉพาะนิสิตของตน) / อาจารย์ประจำวิชา — ไม่มีการอนุมัติ นิสิตอ่านอย่างเดียว
+model CvComment {
+  id           Int       @id @default(autoincrement())
+  studentId    Int
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  authorUserId Int? // User.id ของผู้เขียน
+  authorName   String
+  authorRole   String // ADVISOR | COURSE_ADMIN
+  message      String
+  cvFileName   String? // ไฟล์ CV ตอนที่คอมเมนต์
+  cvUploadedAt DateTime? // เวลาอัปโหลดของไฟล์ CV ตอนที่คอมเมนต์ (ไว้บอกว่าเขียนถึงไฟล์เก่า)
+  createdAt    DateTime  @default(now())
+
+  @@index([studentId])
 }
 
 // =====================================================================
@@ -153,8 +287,10 @@ model TrainingRecord {
   skillType         SkillType
   hours             Int            // จำนวนชั่วโมง
   certificateFileUrl String?
+  certificateLink   String?        // ลิงก์อ้างอิงของ Certificate (หน้าผู้จัด/ประชาสัมพันธ์/ตรวจสอบใบรับรอง) — กันการปลอมแปลงไฟล์
+  organizer         String?        // หน่วยงานผู้จัด (T-03: บังคับเมื่อนิสิตอัปโหลดเอง · รายการเก่า/นำเข้า/Check-in ว่างได้)
   academicYear      String?        // ปีการศึกษา เช่น "2567"
-  source            String?        @default("STUDENT_UPLOAD") // แหล่งที่มา: "STUDENT_UPLOAD" หรือ "STAFF_IMPORT"
+  source            String?        @default("STUDENT_UPLOAD") // แหล่งที่มา: "STUDENT_UPLOAD" (นิสิตยื่นเอง), "STAFF_IMPORT" (พี่จอมนำเข้า), "ADMIN_IMPORT" (อาจารย์ประจำวิชาเพิ่มให้/นำเข้า)
 
   status            ApprovalStatus @default(PENDING) // อนุมัติใน Cert. (ผ่าน/ไม่ผ่าน)
   note              String?
@@ -169,47 +305,74 @@ model TrainingRecord {
 // 6. COMPANY CHECKLIST (นิสิตกรอก checklist 5 ส่วน ต่อ 1 บริษัทที่สนใจยื่น)
 // =====================================================================
 
-// 5 ส่วนคงที่: ความน่าเชื่อถือของบริษัท / สถานที่ตั้งฯ / Tech Stack /
-// Mentorship / Scope of Work — เก็บเป็น "template" กลาง ใช้ร่วมกันทุกบริษัท
-model ChecklistSection {
-  id    Int             @id @default(autoincrement())
-  title String          // เช่น "ส่วนที่ 1 ความน่าเชื่อถือของบริษัท"
-  order Int             @unique // ใช้เป็น key ให้ seed script upsert แทนการลบทิ้งทั้งหมด
+enum ChecklistVersionStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
 
-  items ChecklistItem[]
+model ChecklistVersion {
+  id          Int                    @id @default(autoincrement())
+  versionName String                 // เช่น "v1.0 (ปีการศึกษา 2567)", "v2.0 (ปีการศึกษา 2568)"
+  description String?
+  status      ChecklistVersionStatus @default(DRAFT)
+  majorCodes  String[]               @default([]) // สาขาที่ใช้แบบฟอร์มนี้ (รหัสใน src/utils/majors.ts) — ว่าง = แบบฟอร์มกลาง (สาขาที่ไม่มีแบบฟอร์มเฉพาะ)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  sections    ChecklistSection[]
+  companies   Company[]
+}
+
+model ChecklistSection {
+  id          Int               @id @default(autoincrement())
+  versionId   Int?              // ผูกกับ version (optional เพื่อ backward compatibility)
+  version     ChecklistVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  title       String            // เช่น "ส่วนที่ 1 ความน่าเชื่อถือของบริษัท"
+  order       Int               // ลำดับหมวด
+
+  items       ChecklistItem[]
+
+  @@unique([versionId, order])
 }
 
 model ChecklistItem {
-  id          Int              @id @default(autoincrement())
+  id          Int                      @id @default(autoincrement())
   sectionId   Int
-  section     ChecklistSection @relation(fields: [sectionId], references: [id])
-  order       Int              // ลำดับข้อภายในหมวด (1, 2, 3, ...)
-  description String           // เช่น "1. Google Maps: ปักหมุดแล้วจอสถานที่จริงไหม?"
+  section     ChecklistSection         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  order       Int                      // ลำดับข้อภายในหมวด (1, 2, 3, ...)
+  description String                   // เช่น "1. Google Maps: ปักหมุดแล้วจอสถานที่จริงไหม?"
+  placeholder String?                  // คำแนะนำ/ตัวอย่างคำตอบ เช่น "เช่น ระบุทุนจดทะเบียน หรือสถานะ Active"
+  isRequired  Boolean                  @default(false) // ข้อบังคับหรือไม่
+  isActive    Boolean                  @default(true)  // เปิด/ปิดใช้งาน
 
   answers     CompanyChecklistAnswer[]
 
-  @@unique([sectionId, order]) // ใช้เป็น key ให้ seed script upsert แทนการลบทิ้งทั้งหมด
+  @@unique([sectionId, order])
 }
 
 // บริษัทที่นิสิตสนใจยื่น (1 นิสิต เพิ่มได้หลายบริษัท) พร้อมสถานะที่อาจารย์ตัดสิน
 model Company {
-  id              Int            @id @default(autoincrement())
-  studentId       Int
-  student         Student        @relation(fields: [studentId], references: [id])
+  id                 Int               @id @default(autoincrement())
+  studentId          Int
+  student            Student           @relation(fields: [studentId], references: [id])
 
-  name            String         // เช่น "บริษัท Magus software"
+  name               String            // เช่น "บริษัท Magus software"
 
-  checklistStatus ApprovalStatus @default(PENDING) // ผ่าน/ไม่ผ่าน/รออนุมัติ (อาจารย์ตรวจ)
-  checklistNote   String?        // หมายเหตุ เช่น "ขาดข้อมูล"
+  checklistVersionId Int?
+  checklistVersion   ChecklistVersion? @relation(fields: [checklistVersionId], references: [id])
 
-  reviewedById    Int?
-  reviewedAt      DateTime?
+  checklistStatus    ApprovalStatus    @default(PENDING) // ผ่าน/ไม่ผ่าน/รออนุมัติ (อาจารย์ตรวจ)
+  checklistNote      String?           // หมายเหตุ เช่น "ขาดข้อมูล"
 
-  answers         CompanyChecklistAnswer[]
-  submission      CompanySubmission?
+  reviewedById       Int?
+  reviewedAt         DateTime?
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  answers            CompanyChecklistAnswer[]
+  submission         CompanySubmission?
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 }
 
 // คำตอบ checklist แต่ละข้อ ต่อ 1 บริษัท (checkbox + รายละเอียดเพิ่ม)
@@ -268,6 +431,8 @@ model InternshipPlacement {
   companyPhone2         String?  // เบอร์โทรติดต่อสถานประกอบการ/แหล่งฝึก (ช่องที่ 2)
   companyEmail          String?
   province               String?
+  latitude              Float?   // พิกัดที่นิสิตปักหมุดจากแผนที่ (ค้นหาสถานที่ใน Checklist)
+  longitude             Float?
 
   status                ApprovalStatus @default(PENDING) // อนุมัติ/ไม่อนุมัติ ที่ฝึกงาน (อาจารย์รายวิชาตั้ง)
   note                  String?        // หมายเหตุจากอาจารย์ กรณีไม่อนุมัติ
@@ -288,4 +453,104 @@ model session {
   expire DateTime @db.Timestamp(6)
 
   @@index([expire], map: "IDX_session_expire")
+}
+
+// ---------------------------------------------------------------------
+// สหกิจศึกษา: ใบสมัครของนิสิต (สมัครได้ทีละ 1 ตำแหน่ง · เลือกได้ทางเดียว ฝึกงาน หรือ สหกิจ)
+// สถานะเปลี่ยนโดยเจ้าหน้าที่ · REJECTED = เก็บเข้าประวัติ แล้วสมัครที่อื่น/ไปฝึกงานได้
+// ---------------------------------------------------------------------
+enum CoopApplicationStatus {
+  SUBMITTED // ส่งใบสมัครแล้ว (รอเจ้าหน้าที่พิจารณา)
+  SENT_TO_COMPANY // คณะส่งเอกสารให้บริษัทแล้ว
+  ACCEPTED // ผ่านการคัดเลือก
+  REJECTED // ไม่ผ่าน (เก็บเข้าประวัติ)
+  CANCELLED // ยกเลิก — นิสิตยกเลิกเอง (ก่อนส่งเอกสารให้บริษัท) หรือเจ้าหน้าที่ยกเลิกให้ (เก็บเข้าประวัติ)
+}
+
+/// ขั้นเอกสารหลังผ่านการคัดเลือก (เจ้าหน้าที่เลื่อนขั้นเอง แนบ PDF ได้ไม่บังคับ)
+enum CoopDocStep {
+  NONE // ยังไม่เริ่ม
+  REQUEST_LETTER // ออกหนังสือขอความอนุเคราะห์แล้ว
+  ACCEPTANCE_FORM // ได้รับแบบตอบรับจากบริษัทแล้ว
+  DISPATCH_LETTER // ออกหนังสือส่งตัวแล้ว
+}
+
+model CoopApplication {
+  id              Int                   @id @default(autoincrement())
+  studentId       Int
+  student         Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  postingId       Int
+  posting         CoopPosting           @relation(fields: [postingId], references: [id], onDelete: Restrict)
+  positionId      Int
+  position        CoopPosition          @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  windowId        Int? // รอบออกฝึกที่ผูกตอนสมัคร (เหมือนการเลือกสถานประกอบการ)
+  window          InternshipWindow?     @relation(fields: [windowId], references: [id], onDelete: SetNull)
+  companyName     String // ชื่อบริษัท ณ วันที่สมัคร (กันประกาศถูกแก้ภายหลัง)
+  positionTitle   String // ชื่อตำแหน่ง ณ วันที่สมัคร
+  resumeUrl       String
+  resumeName      String?
+  transcriptUrl   String
+  transcriptName  String?
+  portfolioUrl    String? // ไฟล์ Portfolio (ไม่บังคับ)
+  portfolioName   String?
+  portfolioLink   String? // หรือ ลิงก์ Portfolio
+  status          CoopApplicationStatus @default(SUBMITTED)
+  statusNote      String? // เหตุผล (เช่น กรณีไม่ผ่าน)
+  statusUpdatedAt DateTime?
+  statusUpdatedBy String?
+
+  // ขั้นเอกสารหลังผ่านการคัดเลือก (ใช้เมื่อ status = ACCEPTED)
+  docStep            CoopDocStep @default(NONE)
+  docStepUpdatedBy   String?
+  requestLetterAt    DateTime?
+  requestLetterUrl   String? // PDF แนบ (ไม่บังคับ)
+  requestLetterName  String?
+  acceptanceFormAt   DateTime?
+  acceptanceFormUrl  String?
+  acceptanceFormName String?
+  dispatchLetterAt   DateTime?
+  dispatchLetterUrl  String?
+  dispatchLetterName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([postingId])
+  @@index([status])
+}
+
+// =====================================================================
+// 10. การแจ้งเตือน (Notification Center) — ทุกโรล
+//     audience = โรลที่ผู้รับต้องสลับไปใช้ถึงจะเห็น (STUDENT / ADVISOR / COURSE_ADMIN / STAFF)
+//     เพราะอาจารย์ 1 คนมีได้หลายโรล แจ้งเตือนจึงแยกตามโรลที่กำลังใช้งาน (activeRole)
+//     ดู src/utils/notifications.ts (สร้าง/อ่าน) และ src/utils/notificationRules.ts (กติกา)
+// =====================================================================
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+model Notification {
+  id              Int                  @id @default(autoincrement())
+  recipientUserId Int
+  recipient       User                 @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  audience        String               // STUDENT | ADVISOR | COURSE_ADMIN | STAFF
+  type            String               // รหัสเหตุการณ์ เช่น PLACEMENT_APPROVED, ISSUE_REPORT_NEW
+  category        String               // หมวดสำหรับกรอง เช่น approval, document, cv, issue, deadline
+  priority        NotificationPriority @default(NORMAL)
+  title           String
+  message         String
+  link            String?              // path ภายในระบบ เช่น /status-all
+  entityType      String?
+  entityId        String?
+  dedupeKey       String?              // กันแจ้งซ้ำ (เช่น เตือนใกล้ปิดรอบ) — null = ไม่กัน
+  major           String?              // สาขาของนิสิตที่เรื่องนี้เกี่ยวข้อง (ชื่อมาตรฐานจาก majors.ts) — ใช้กรอง "ทุกสาขา" ของ admin
+  readAt          DateTime?
+  createdAt       DateTime             @default(now())
+
+  @@unique([recipientUserId, audience, dedupeKey])
+  @@index([recipientUserId, audience, readAt, createdAt])
 }

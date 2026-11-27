@@ -9,6 +9,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // CLI (db push / migrate diff) ต่อตรงผ่าน DIRECT_URL (Supabase พอร์ต 5432) — pooler แบบ transaction (6543) ใช้กับ CLI ไม่ได้
+    // ไม่มี DIRECT_URL → ใช้ DATABASE_URL แทน (เช่น เครื่องเพื่อนที่ยังไม่ได้ตั้ง)
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });

@@ -1,6 +1,12 @@
 import express, { Request, Response } from "express";
 import prisma from "../db";
+import { coopSummaryForProfile } from "./coopRoutes";
+import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
+import { CV_STATE_LABEL, cvState, hasCv, uploadedAfterLastComment } from "../utils/cvReview";
 import requireAdvisor from "../auth/requireAdvisor";
+import { loadSuperAdminState, saveSuperAdminState, getStudentRoundState } from "../utils/superAdminStore";
+import { notifyStaffUsers, notifyStudents } from "../utils/notifications";
+import { checklistResultPayload, docWorkflowPayload, placementResultPayload, withNote } from "../utils/notificationRules";
 
 const router = express.Router();
 
@@ -42,8 +48,9 @@ function getStudentReadinessStatus(s: any) {
 
   if (hasPlacement || hasPassedInterview) {
     return { key: "registered", label: "ยื่นสมัครสำเร็จ" };
-  } else if (s.cv && s.cv.status === "APPROVED") {
-    return { key: "cvApproved", label: "ตรวจCVผ่าน" };
+  } else if (hasCv(s.cv)) {
+    // CV: อาจารย์คอมเมนต์อย่างเดียว ไม่อนุมัติ -> อัปโหลดแล้วนับว่าพร้อมส่วน CV
+    return { key: "cvUploaded", label: "มี CV แล้ว" };
   } else if (isTrainingComplete) {
     return { key: "trainingComplete", label: "ตรวจชม.อบรมครบ" };
   } else if (s.trainingRecords && s.trainingRecords.length > 0) {
@@ -53,16 +60,78 @@ function getStudentReadinessStatus(s: any) {
   }
 }
 
+// [REQ-06] ตรวจสอบว่าสถานประกอบการที่ยื่นฝึกงานจริง ตรงกับ 1 ในบริษัทที่ผ่านการอนุมัติใน Checklist หรือไม่
+function checkPlacementMatchesChecklist(placement: any, companies: any[]): boolean {
+  if (!placement || !placement.companyNameTh || !placement.companyNameTh.trim()) return true;
+  const approvedList = (companies || []).filter((c: any) => c.checklistStatus === "APPROVED");
+  if (approvedList.length === 0) return true;
+
+  if (placement.companyId && approvedList.some((c: any) => c.id === placement.companyId)) {
+    return true;
+  }
+
+  const targetName = (placement.companyNameTh || "").trim().toLowerCase();
+  return approvedList.some((c: any) => {
+    const cName = (c.name || "").trim().toLowerCase();
+    return cName && (cName === targetName || cName.includes(targetName) || targetName.includes(cName));
+  });
+}
+
 // ==========================================
-// 1. Dashboard Summary ของอาจารย์ที่ปรึกษา
+
+// Helper: คำนวณระดับความวิกฤตของนิสิต (Risk Priority: 1 วิกฤตสุด -> 5 เบาสุด)
+function getStudentRiskPriority(s: any): number {
+  // Rank 1: วิกฤตสูงสุด - ยังไม่มีข้อมูลใดๆ หรือยังไม่เริ่มทำอะไรเลย
+  const isNoData = s.readinessStatusKey === "noData" ||
+    (!s.hasCv &&
+      (s.trainingApprovedSoft || 0) === 0 &&
+      (s.trainingApprovedHard || 0) === 0 &&
+      s.checklistStatusCode !== "APPROVED" &&
+      !s.placementStatus);
+  if (isNoData) return 1;
+
+  // Rank 2: มีปัญหา / ติดขัด / ถูกปฏิเสธ / บริษัทไม่ตรง Checklist [REQ-06]
+  const hasIssue = s.placementStatus === "REJECTED" ||
+    s.isMatchedWithChecklist === false ||
+    s.checklistStatusCode === "REJECTED";
+  if (hasIssue) return 2;
+
+  // Rank 3: ตกเกณฑ์ / ชั่วโมงไม่ครบ / ยังไม่ทำ CV
+  const isLacking = !s.isTrainingComplete ||
+    (s.trainingApprovedSoft || 0) < 12 ||
+    (s.trainingApprovedHard || 0) < 18 ||
+    s.readinessStatusKey === "hoursIncomplete" ||
+    !s.hasCv;
+  if (isLacking) return 3;
+
+  // Rank 4: อยู่ระหว่างรอดำเนินการ / รอตรวจ
+  const isPending = s.placementStatus === "PENDING" ||
+    s.hasPendingPlacement ||
+    s.hasPendingChecklist ||
+    s.cvStatus === "WAITING" || // อัปโหลด CV แล้ว รอคอมเมนต์
+    s.checklistStatusCode === "PENDING";
+  if (isPending) return 4;
+
+  // Rank 5: เบาสุด / ปลอดภัย
+  return 5;
+}
+
+// 1. Dashboard Summary ของอาจารย์ที่ปรึกษา / อาจารย์นิเทศก์
 // ==========================================
 router.get("/dashboard-summary", async (req: Request, res: Response) => {
   try {
     const advisorStaffId = req.staff!.id;
+    const isSupervisorMode =
+      req.query.roleMode === "SUPERVISOR" ||
+      (req.session.user?.activeRole === "SUPERVISOR" && !req.query.roleMode);
+
+    const whereClause = isSupervisorMode
+      ? { supervisorId: advisorStaffId, isDropped: false }
+      : { advisorId: advisorStaffId, isDropped: false };
 
     // นิสิตที่อาจารย์คนนี้ดูแล (เฉพาะที่ยังไม่ดรอป)
     const students = await prisma.student.findMany({
-      where: { advisorId: advisorStaffId, isDropped: false },
+      where: whereClause,
       include: {
         user: true,
         cv: true,
@@ -81,14 +150,18 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
       failed: 0,   // ไม่ผ่าน / ทำ checklist เพิ่ม
     };
 
-    // กราฟ 2: สถานะความพร้อม (ยื่นสมัครสำเร็จ, ตรวจCVผ่าน, ยังไม่มีข้อมูล, ชั่วโมงอบรมยังไม่ครบ, ตรวจชม.อบรมครบ)
+    // กราฟ 2: สถานะความพร้อม (ยื่นสมัครสำเร็จ, มี CV แล้ว, ยังไม่มีข้อมูล, ชั่วโมงอบรมยังไม่ครบ, ตรวจชม.อบรมครบ)
     const readinessStats: Record<string, number> = {
       registered: 0,
-      cvApproved: 0,
+      cvUploaded: 0,
       noData: 0,
       hoursIncomplete: 0,
       trainingComplete: 0,
     };
+
+    let pendingChecklistCount = 0;
+    let pendingPlacementCount = 0;
+    let mismatchedPlacementCount = 0;
 
     students.forEach((s) => {
       const cStatus = getStudentChecklistStatus(s);
@@ -96,6 +169,16 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
 
       const rStatus = getStudentReadinessStatus(s);
       readinessStats[rStatus.key]++;
+
+      if ((s.companies || []).some((c) => c.checklistStatus === "PENDING")) {
+        pendingChecklistCount++;
+      }
+      if (s.placement && s.placement.status === "PENDING") {
+        pendingPlacementCount++;
+      }
+      if (s.placement && !checkPlacementMatchesChecklist(s.placement, s.companies || [])) {
+        mismatchedPlacementCount++;
+      }
     });
 
     res.json({
@@ -104,6 +187,9 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
       totalStudents,
       checklistStats,
       readinessStats,
+      pendingChecklistCount,
+      pendingPlacementCount,
+      mismatchedPlacementCount,
     });
   } catch (err) {
     console.error("GET /api/advisor/dashboard-summary error:", err);
@@ -112,7 +198,7 @@ router.get("/dashboard-summary", async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 2. รายชื่อนิสิตที่อาจารย์คนนี้เป็นที่ปรึกษา
+// 2. รายชื่อนิสิตที่อาจารย์คนนี้เป็นที่ปรึกษา / อาจารย์นิเทศก์
 // ==========================================
 router.get("/students", async (req: Request, res: Response) => {
   try {
@@ -122,21 +208,40 @@ router.get("/students", async (req: Request, res: Response) => {
     const limitNum = parseInt(limit || "12", 10);
     const skip = (pageNum - 1) * limitNum;
 
+    const isSupervisorMode =
+      req.query.roleMode === "SUPERVISOR" ||
+      (req.session.user?.activeRole === "SUPERVISOR" && !req.query.roleMode);
+
+    const whereClause = isSupervisorMode
+      ? { supervisorId: advisorStaffId, isDropped: false }
+      : { advisorId: advisorStaffId, isDropped: false };
+
     const allStudents = await prisma.student.findMany({
-      where: { advisorId: advisorStaffId, isDropped: false },
+      where: whereClause,
       include: {
         user: true,
         cv: true,
         trainingRecords: true,
         companies: { include: { submission: true } },
         placement: true,
+        coopApplications: true,
       },
       orderBy: { studentCode: "desc" },
     });
 
+    const state = loadSuperAdminState();
+
     let mapped = allStudents.map((s) => {
+      // สหกิจศึกษา: อาจารย์ไม่ต้องอนุมัติ แต่เห็นบริษัทที่นิสิตเลือกและสถานะ (อ่านอย่างเดียว)
+      const coopActive = coopSummaryForProfile(s.coopApplications).active;
       const cStatus = getStudentChecklistStatus(s);
       const rStatus = getStudentReadinessStatus(s);
+
+      const wf = state.docWorkflowMap[String(s.id)];
+      const hasPendingAcceptance = Boolean(wf && wf.companyResponseStatus === "WAITING_ADVISOR_APPROVAL");
+      const acceptanceStatus = wf?.companyResponseStatus || "NONE";
+      const acceptanceFileName = wf?.companyResponseFileName || "";
+      const acceptanceFileUrl = wf?.companyResponseFileUrl || "";
 
       const approvedTrainings = (s.trainingRecords || []).filter((t) => t.status === "APPROVED");
       const softHours = approvedTrainings
@@ -146,17 +251,26 @@ router.get("/students", async (req: Request, res: Response) => {
         .filter((t) => t.skillType === "HARD")
         .reduce((sum, t) => sum + t.hours, 0);
       const isTrainingComplete = softHours >= 12 && hardHours >= 18;
-      const cvStatus = s.cv ? s.cv.status : "NONE";
+      // CV: NONE | WAITING (รอคอมเมนต์) | COMMENTED — ไม่มีการอนุมัติ
+      const cvStatus = cvState(s.cv);
       const placementStatus = s.placement ? s.placement.status : "NONE";
+      const isMatchedWithChecklist = s.placement
+        ? checkPlacementMatchesChecklist(s.placement, s.companies || [])
+        : null;
+      const hasPendingChecklist = (s.companies || []).some((c) => c.checklistStatus === "PENDING");
+      const hasPendingPlacement = Boolean(s.placement && s.placement.status === "PENDING");
 
       return {
         id: s.id,
         studentCode: s.studentCode,
         nameTh: s.nameTh,
         nameEn: s.nameEn,
-        nickname: s.major ? `ปี ${s.year}` : "-",
+        major: s.major,
+        nickname: s.nickname || (s.major ? `ปี ${s.year}` : "-"),
         email: s.user.email,
         phone: s.phone,
+        semester: s.semester || "2",
+        academicYear: s.academicYear,
         advisorName: req.staff!.name,
         checklistStatusKey: cStatus.key,
         checklistStatusLabel: cStatus.label,
@@ -168,18 +282,66 @@ router.get("/students", async (req: Request, res: Response) => {
         trainingApprovedSoft: softHours,
         trainingApprovedHard: hardHours,
         cvStatus,
+        cvStatusLabel: CV_STATE_LABEL[cvStatus],
+        hasCv: cvStatus !== "NONE",
+        cvUploadedAfterComment: uploadedAfterLastComment(s.cv),
         placementStatus,
+        isMatchedWithChecklist,
+        hasPendingChecklist,
+        hasPendingPlacement,
+        hasPendingAcceptance,
+        acceptanceStatus,
+        acceptanceFileName,
+        acceptanceFileUrl,
+        roundInfo: getStudentRoundState(s.id, `${s.semester || "2"}/${s.academicYear || "2568"}`),
+        coop: coopActive
+          ? {
+              companyName: coopActive.companyName,
+              positionTitle: coopActive.positionTitle,
+              status: coopActive.status,
+              statusLabel: coopActive.statusLabel,
+              docStep: coopActive.docStep,
+              docStepLabel: coopActive.docStepLabel,
+            }
+          : null,
       };
     });
 
-    mapped.sort((a, b) => {
-      try {
-        const codeA = BigInt(a.studentCode);
-        const codeB = BigInt(b.studentCode);
-        return codeA === codeB ? 0 : codeA > codeB ? -1 : 1;
-      } catch {
-        return a.studentCode.localeCompare(b.studentCode);
+    const sortBy = (req.query.sortBy as string) || "critical";
+    mapped.sort((a: any, b: any) => {
+      if (sortBy === "critical") {
+        const pA = getStudentRiskPriority(a);
+        const pB = getStudentRiskPriority(b);
+        if (pA !== pB) {
+          return pA - pB;
+        }
+        try {
+          const codeA = BigInt(a.studentCode);
+          const codeB = BigInt(b.studentCode);
+          return codeA === codeB ? 0 : codeA > codeB ? -1 : 1;
+        } catch {
+          return (a.studentCode || "").localeCompare(b.studentCode || "");
+        }
+      } else if (sortBy === "studentCode_desc") {
+        try {
+          const codeA = BigInt(a.studentCode);
+          const codeB = BigInt(b.studentCode);
+          return codeA === codeB ? 0 : codeA > codeB ? -1 : 1;
+        } catch {
+          return (b.studentCode || "").localeCompare(a.studentCode || "");
+        }
+      } else if (sortBy === "studentCode_asc") {
+        try {
+          const codeA = BigInt(a.studentCode);
+          const codeB = BigInt(b.studentCode);
+          return codeA === codeB ? 0 : codeA < codeB ? -1 : 1;
+        } catch {
+          return (a.studentCode || "").localeCompare(b.studentCode || "");
+        }
+      } else if (sortBy === "name_asc") {
+        return (a.nameTh || "").localeCompare(b.nameTh || "", "th");
       }
+      return 0;
     });
 
     // กรองตาม Search query
@@ -207,18 +369,34 @@ router.get("/students", async (req: Request, res: Response) => {
         case "training_passed":
           mapped = mapped.filter((s) => s.isTrainingComplete);
           break;
+        case "training_incomplete":
         case "training_failed":
           mapped = mapped.filter((s) => !s.isTrainingComplete);
           break;
+        // CV: ไม่มีการอนุมัติ (cv_approved / cv_pending คงไว้รองรับลิงก์เดิม)
+        case "cv_uploaded":
+        case "cv_approved":
         case "cv_passed":
-          mapped = mapped.filter((s) => s.cvStatus === "APPROVED");
+          mapped = mapped.filter((s) => s.hasCv);
           break;
+        case "cv_waiting":
+        case "cv_pending":
+          mapped = mapped.filter((s) => s.cvStatus === "WAITING");
+          break;
+        case "cv_commented":
+          mapped = mapped.filter((s) => s.cvStatus === "COMMENTED");
+          break;
+        case "cv_none":
+        case "cv_rejected":
         case "cv_failed":
-          mapped = mapped.filter((s) => s.cvStatus !== "APPROVED");
+          mapped = mapped.filter((s) => !s.hasCv);
           break;
+        case "checklist_approved":
         case "checklist_passed":
           mapped = mapped.filter((s) => s.checklistStatusCode === "APPROVED");
           break;
+        case "checklist_pending":
+        case "checklist_rejected":
         case "checklist_failed":
           mapped = mapped.filter((s) => s.checklistStatusCode !== "APPROVED");
           break;
@@ -255,7 +433,7 @@ router.get("/students", async (req: Request, res: Response) => {
     } = {
       totalStudents: mapped.length,
       checklistStats: { reviewed: 0, pending: 0, failed: 0 },
-      readinessStats: { registered: 0, cvApproved: 0, noData: 0, hoursIncomplete: 0, trainingComplete: 0 },
+      readinessStats: { registered: 0, cvUploaded: 0, noData: 0, hoursIncomplete: 0, trainingComplete: 0 },
     };
 
     mapped.forEach((s) => {
@@ -331,6 +509,12 @@ router.put("/batch-checklist-status", async (req: Request, res: Response) => {
       },
     });
 
+    if (status !== "PENDING" && updateResult.count > 0) {
+      // แจ้งเฉพาะนิสิตที่มีบริษัทถูกอัปเดตจริง
+      const withCompanies = await prisma.company.findMany({ where: { studentId: { in: validIds } }, select: { studentId: true }, distinct: ["studentId"] });
+      await notifyStudents(withCompanies.map((c) => c.studentId), checklistResultPayload(status, note));
+    }
+
     res.json({
       success: true,
       message: `อัปเดตสถานะ Checklist ให้กับนิสิต ${validIds.length} คน (${updateResult.count} บริษัท) เรียบร้อยแล้ว`,
@@ -386,6 +570,12 @@ router.put("/batch-status", async (req: Request, res: Response) => {
         },
       });
 
+      if (status !== "PENDING" && updateResult.count > 0) {
+      // แจ้งเฉพาะนิสิตที่มีบริษัทถูกอัปเดตจริง
+      const withCompanies = await prisma.company.findMany({ where: { studentId: { in: validIds } }, select: { studentId: true }, distinct: ["studentId"] });
+      await notifyStudents(withCompanies.map((c) => c.studentId), checklistResultPayload(status, note));
+    }
+
       return res.json({
         success: true,
         message: `อัปเดตสถานะ Checklist ให้กับนิสิต ${validIds.length} คน (${updateResult.count} บริษัท) เรียบร้อยแล้ว`,
@@ -412,6 +602,8 @@ router.put("/batch-status", async (req: Request, res: Response) => {
         )
       );
 
+      if (status !== "PENDING") await notifyStudents(validIds, placementResultPayload(status, note));
+
       return res.json({
         success: true,
         message: `อัปเดตสถานะที่ฝึกงานให้กับนิสิต ${validIds.length} คน เรียบร้อยแล้ว`,
@@ -435,6 +627,7 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       where: { id: studentId },
       include: {
         user: true,
+        placement: true,
         companies: {
           include: {
             answers: {
@@ -454,10 +647,18 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
     }
 
-    // ตรวจสอบสิทธิ์ (ถ้าไม่ใช่ ADMIN / STAFF ต้องเป็นอาจารย์ที่ปรึกษาของนิสิต)
+    const isCourseAdminOrStaff = Boolean(
+      req.staff?.isCourseAdmin ||
+        req.staff?.isStaff ||
+        req.session.user!.role === "ADMIN" ||
+        req.session.user!.role === "STAFF"
+    );
+
+    // ตรวจสอบสิทธิ์ (ถ้าไม่ใช่ ADMIN / STAFF ต้องเป็นอาจารย์ที่ปรึกษาหรือนิเทศก์ของนิสิต)
     if (
-      req.session.user!.role === "ADVISOR" &&
-      student.advisorId !== advisorStaffId
+      !isCourseAdminOrStaff &&
+      student.advisorId !== advisorStaffId &&
+      student.supervisorId !== advisorStaffId
     ) {
       return res.status(403).json({
         success: false,
@@ -465,20 +666,69 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       });
     }
 
-    // ดึง Checklist Template ทั้งหมด
-    const sections = await prisma.checklistSection.findMany({
-      include: {
-        items: {
-          orderBy: { order: "asc" },
+    // ดึง Checklist Template ตามเวอร์ชันที่นิสิตยื่น (หรือ Active Version)
+    const primaryCompany = student.companies?.[0];
+    const targetVersionId = primaryCompany?.checklistVersionId;
+
+    let targetVersion = targetVersionId
+      ? await prisma.checklistVersion.findUnique({
+          where: { id: targetVersionId },
+          include: {
+            sections: {
+              orderBy: { order: "asc" },
+              include: { items: { orderBy: { order: "asc" } } },
+            },
+          },
+        })
+      : null;
+
+    if (!targetVersion) {
+      // ยังไม่ได้ยื่น -> แบบฟอร์มตามสาขาของนิสิต (ไม่มีแบบฟอร์มเฉพาะสาขา -> แบบฟอร์มกลาง)
+      const formId = await getChecklistFormIdForMajor(student.major);
+      targetVersion = await prisma.checklistVersion.findFirst({
+        where: formId ? { id: formId } : { status: "ACTIVE" },
+        include: {
+          sections: {
+            orderBy: { order: "asc" },
+            include: { items: { orderBy: { order: "asc" } } },
+          },
         },
-      },
-      orderBy: { order: "asc" },
-    });
+      });
+    }
+
+    if (!targetVersion) {
+      targetVersion = await prisma.checklistVersion.findFirst({
+        orderBy: { id: "asc" },
+        include: {
+          sections: {
+            orderBy: { order: "asc" },
+            include: { items: { orderBy: { order: "asc" } } },
+          },
+        },
+      });
+    }
+
+    const sections = targetVersion?.sections || [];
+
+    const activeRole = req.session.user?.activeRole || req.session.user?.role;
+    const isActingAsAdvisor = (activeRole === "ADVISOR");
 
     const canReview = Boolean(
+      isActingAsAdvisor &&
       student.advisorId &&
       advisorStaffId &&
       student.advisorId === advisorStaffId
+    );
+
+    const isMatchedWithChecklist = student.placement
+      ? checkPlacementMatchesChecklist(student.placement, student.companies || [])
+      : false;
+
+    const state = loadSuperAdminState();
+    const wfKey = String(student.id);
+    const acceptanceWorkflow = state.docWorkflowMap[wfKey] || null;
+    const studentArchives = state.archivedApplications.filter(
+      (a) => a.studentId === student.id || a.studentCode === student.studentCode
     );
 
     res.json({
@@ -489,6 +739,7 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
         studentCode: student.studentCode,
         nameTh: student.nameTh,
         nameEn: student.nameEn,
+        nickname: student.nickname,
         year: student.year,
         major: student.major,
         gpa: student.gpa,
@@ -498,6 +749,18 @@ router.get("/students/:studentId/checklist", async (req: Request, res: Response)
       },
       sections,
       companies: student.companies,
+      acceptanceWorkflow,
+      archivedApplications: studentArchives,
+      // บริษัทที่อาจารย์ที่ปรึกษาอนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อ (หลังอนุมัติ Checklist)
+      editUnlockedCompanyIds: (student.companies || [])
+        .filter((c) => state.companyInfoEditUnlocks?.[String(c.id)])
+        .map((c) => c.id),
+      placement: student.placement
+        ? {
+            ...student.placement,
+            isMatchedWithChecklist,
+          }
+        : null,
     });
   } catch (err) {
     console.error("GET /api/advisor/students/:id/checklist error:", err);
@@ -528,7 +791,15 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
     }
 
     // สิทธิ์การตรวจประเมิน Checklist:
-    // ต้องเป็นอาจารย์ที่ปรึกษาของนิสิตคนนี้เท่านั้น (advisorId ของนิสิตตรงกับ staff id ของผู้ตรวจ)
+    // ต้องเป็นอาจารย์ที่ปรึกษาของนิสิตคนนี้เท่านั้น (advisorId ของนิสิตตรงกับ staff id ของผู้ตรวจ และอยู่ในบทบาทที่ปรึกษา)
+    const activeRole = req.session.user?.activeRole || req.session.user?.role;
+    if (activeRole !== "ADVISOR") {
+      return res.status(403).json({
+        success: false,
+        message: "เฉพาะอาจารย์ที่ปรึกษาในบทบาทที่ปรึกษาเท่านั้นที่สามารถตรวจประเมิน Checklist ได้",
+      });
+    }
+
     if (
       !company.student.advisorId ||
       !advisorStaffId ||
@@ -550,6 +821,19 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
       },
     });
 
+    // เปลี่ยนผลตรวจแล้ว → ยกเลิกการอนุญาตแก้ไขข้อมูลบริษัทที่ค้างอยู่ (ถ้ามี)
+    if (status !== "APPROVED") {
+      const reviewState = loadSuperAdminState();
+      if (reviewState.companyInfoEditUnlocks?.[String(companyId)]) {
+        delete reviewState.companyInfoEditUnlocks[String(companyId)];
+        saveSuperAdminState(reviewState);
+      }
+    }
+
+    if (status !== "PENDING") {
+      await notifyStudents([company.studentId], checklistResultPayload(status, note, company.name, company.id));
+    }
+
     res.json({
       success: true,
       message: "บันทึกผลการตรวจ Checklist เรียบร้อยแล้ว",
@@ -558,6 +842,82 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
   } catch (err) {
     console.error("PUT /api/advisor/companies/:id/checklist-review error:", err);
     res.status(500).json({ success: false, message: "บันทึกผลตรวจไม่สำเร็จ" });
+  }
+});
+
+// ==========================================
+// 5.1 อนุญาต / ยกเลิกการอนุญาต ให้นิสิตแก้ไขข้อมูลบริษัทและผู้ติดต่อ หลัง Checklist อนุมัติแล้ว
+//     (แก้ได้เฉพาะข้อมูลบริษัท/ผู้ติดต่อ ไม่รวมชื่อบริษัทและคำตอบ Checklist — ใช้ได้ 1 ครั้งต่อการอนุญาต)
+// ==========================================
+router.put("/companies/:companyId/allow-info-edit", async (req: Request, res: Response) => {
+  try {
+    const advisorStaffId = req.staff!.id;
+    const companyId = parseInt(req.params.companyId as string, 10);
+    const allow = Boolean(req.body?.allow);
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { student: true },
+    });
+    if (!company) {
+      return res.status(404).json({ success: false, message: "ไม่พบบริษัท" });
+    }
+
+    const activeRole = req.session.user?.activeRole || req.session.user?.role;
+    if (
+      activeRole !== "ADVISOR" ||
+      !company.student.advisorId ||
+      company.student.advisorId !== advisorStaffId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "เฉพาะอาจารย์ที่ปรึกษาที่ดูแลนิสิตคนนี้เท่านั้นที่อนุญาตให้แก้ไขข้อมูลได้",
+      });
+    }
+    if (company.checklistStatus !== "APPROVED") {
+      return res.status(400).json({
+        success: false,
+        message: "อนุญาตให้แก้ไขได้เฉพาะ Checklist ที่อนุมัติแล้ว (กรณีอื่นนิสิตแก้ไขได้อยู่แล้ว)",
+      });
+    }
+
+    const state = loadSuperAdminState();
+    state.companyInfoEditUnlocks = state.companyInfoEditUnlocks || {};
+    const key = String(company.id);
+    if (allow) {
+      state.companyInfoEditUnlocks[key] = {
+        companyId: company.id,
+        studentId: company.studentId,
+        unlockedBy: req.staff?.name || req.session.user?.username || "",
+        unlockedAt: new Date().toISOString(),
+      };
+    } else {
+      delete state.companyInfoEditUnlocks[key];
+    }
+    saveSuperAdminState(state);
+
+    if (allow) {
+      await notifyStudents([company.studentId], {
+        type: "COMPANY_INFO_EDIT_UNLOCKED",
+        category: "account",
+        title: `อาจารย์ที่ปรึกษาเปิดให้แก้ไขข้อมูลบริษัท ${company.name}`,
+        message: "แก้ไขข้อมูลบริษัท/ผู้ติดต่อได้ 1 ครั้ง (ไม่รวมชื่อบริษัทและคำตอบ Checklist)",
+        link: "/status-all",
+        entityType: "Company",
+        entityId: company.id,
+      });
+    }
+
+    res.json({
+      success: true,
+      allowed: allow,
+      message: allow
+        ? "อนุญาตให้นิสิตแก้ไขข้อมูลบริษัท/ผู้ติดต่อแล้ว (สถานะ Checklist ยังคงอนุมัติ)"
+        : "ยกเลิกการอนุญาตแก้ไขแล้ว",
+    });
+  } catch (err) {
+    console.error("PUT /api/advisor/companies/:id/allow-info-edit error:", err);
+    res.status(500).json({ success: false, message: "บันทึกไม่สำเร็จ" });
   }
 });
 
@@ -600,13 +960,8 @@ router.get("/export", async (req: Request, res: Response) => {
         ? `ผ่านครบ ${totalHours} ชม. (Soft ${softHours}/12, Hard ${hardHours}/18)`
         : `ยังไม่ครบ (Soft ${softHours}/12, Hard ${hardHours}/18)`;
 
-      // 6. สถานะ CV
-      let cvStatus = "ยังไม่ส่ง CV";
-      if (s.cv) {
-        if (s.cv.status === "APPROVED") cvStatus = "ผ่าน";
-        else if (s.cv.status === "REJECTED") cvStatus = "ไม่ผ่าน";
-        else cvStatus = "รอตรวจ";
-      }
+      // 6. สถานะ CV (คอมเมนต์อย่างเดียว ไม่มีผ่าน/ไม่ผ่าน)
+      const cvStatus = CV_STATE_LABEL[cvState(s.cv)];
 
       // 7. สถานะ Checklist
       const companies = s.companies || [];
@@ -727,10 +1082,12 @@ router.get("/export", async (req: Request, res: Response) => {
             exportData = exportData.filter((s) => !s.isTrainingComplete);
             break;
           case "cv_passed":
-            exportData = exportData.filter((s) => s.cvStatus === "ผ่าน");
+          case "cv_uploaded":
+            exportData = exportData.filter((s) => s.cvStatus !== CV_STATE_LABEL.NONE);
             break;
           case "cv_failed":
-            exportData = exportData.filter((s) => s.cvStatus !== "ผ่าน");
+          case "cv_none":
+            exportData = exportData.filter((s) => s.cvStatus === CV_STATE_LABEL.NONE);
             break;
           case "checklist_passed":
             exportData = exportData.filter((s) => s.checklistStatusCode === "APPROVED");
@@ -783,8 +1140,29 @@ router.get("/export", async (req: Request, res: Response) => {
 // ==========================================
 router.put("/students/:studentId/placement-status", async (req: Request, res: Response) => {
   try {
+    const advisorStaffId = req.staff!.id;
     const studentId = parseInt(req.params.studentId as string, 10);
     const { status, note } = req.body;
+
+    if (!["APPROVED", "REJECTED", "PENDING"].includes(status)) {
+      return res.status(400).json({ success: false, message: "สถานะไม่ถูกต้อง" });
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: { companies: true },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
+    }
+
+    if (student.advisorId !== advisorStaffId && req.session.user!.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "ไม่มีสิทธิ์อนุมัติที่ฝึกงาน (สิทธิ์นี้เป็นของอาจารย์ที่ปรึกษาที่ดูแลนิสิตคนนี้เท่านั้น)",
+      });
+    }
 
     const updated = await prisma.internshipPlacement.upsert({
       where: { studentId },
@@ -803,13 +1181,188 @@ router.put("/students/:studentId/placement-status", async (req: Request, res: Re
       },
     });
 
-    res.json({ success: true, placement: updated });
+    const isMatchedWithChecklist = checkPlacementMatchesChecklist(
+      updated,
+      student.companies || []
+    );
+
+    if (status !== "PENDING") {
+      await notifyStudents([studentId], placementResultPayload(status, note, updated.id));
+    }
+
+    res.json({
+      success: true,
+      placement: {
+        ...updated,
+        isMatchedWithChecklist,
+      },
+    });
   } catch (err) {
     console.error("PUT /api/advisor/students/:id/placement-status error:", err);
     res.status(500).json({ success: false, message: "อัพเดตสถานะอนุมัติฝึกงานไม่สำเร็จ" });
   }
 });
 
+// ==========================================
+// 8. อาจารย์ที่ปรึกษาตรวจและอนุมัติแบบตอบรับจากสถานประกอบการ
+// (เมื่อผ่าน จะส่งต่อไปให้ Super Admin กดอนุมัติรับเข้าฝึกงาน / ถ้าไม่ผ่าน จะปลดล็อกให้นิสิตยื่นใหม่)
+// ==========================================
+router.post("/documents/review-acceptance", async (req: Request, res: Response) => {
+  try {
+    const advisorStaffId = req.staff!.id;
+    const { studentId, status, note } = req.body;
+    const student = await prisma.student.findUnique({
+      where: { id: Number(studentId) },
+      include: { companies: true, placement: true, advisor: true },
+    });
+    if (!student) {
+      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลนิสิต" });
+    }
+
+    const activeRole = req.session.user?.activeRole || req.session.user?.role;
+    if (activeRole !== "ADVISOR") {
+      return res.status(403).json({
+        success: false,
+        message: "เฉพาะอาจารย์ที่ปรึกษาในบทบาทที่ปรึกษาเท่านั้นที่สามารถตรวจประเมินแบบตอบรับได้",
+      });
+    }
+
+    if (student.advisorId !== advisorStaffId && student.supervisorId !== advisorStaffId) {
+      return res.status(403).json({
+        success: false,
+        message: "คุณไม่มีสิทธิ์ตรวจแบบตอบรับของนิสิตท่านนี้ (สิทธิ์นี้เป็นของอาจารย์ที่ปรึกษาของนิสิต)",
+      });
+    }
+
+    const state = loadSuperAdminState();
+    const wfKey = String(student.id);
+    const wf = state.docWorkflowMap[wfKey];
+    if (!wf || !wf.companyResponseFileUrl) {
+      return res.status(400).json({ success: false, message: "ไม่พบไฟล์แบบตอบรับของนิสิต" });
+    }
+
+    if (status === "APPROVED") {
+      state.docWorkflowMap[wfKey] = {
+        ...wf,
+        companyResponseStatus: "ADVISOR_APPROVED",
+        advisorAcceptanceStatus: "APPROVED",
+        advisorAcceptanceNote: note || "อาจารย์ที่ปรึกษาตรวจสอบและอนุมัติแบบตอบรับแล้ว",
+        advisorAcceptanceReviewedAt: new Date().toISOString(),
+        advisorAcceptanceReviewedBy: req.staff?.name || req.session.user?.username || "",
+      };
+      saveSuperAdminState(state);
+      await notifyStudents([student.id], docWorkflowPayload(student.id, "ACCEPTANCE_ADVISOR_APPROVED", "อาจารย์ที่ปรึกษาอนุมัติแบบตอบรับแล้ว",
+        withNote(`${wf.companyName || "สถานประกอบการ"} · รอเจ้าหน้าที่คณะยืนยันและออกหนังสือส่งตัว`, note)));
+      await notifyStaffUsers({
+        type: "ACCEPTANCE_READY_FOR_DISPATCH",
+        category: "document",
+        priority: "HIGH",
+        title: `${student.nameTh} พร้อมออกหนังสือส่งตัว`,
+        message: `อาจารย์ที่ปรึกษาอนุมัติแบบตอบรับจาก ${wf.companyName || "สถานประกอบการ"} แล้ว (รหัส ${student.studentCode})`,
+        link: "/admin-dashboard?ws=documents",
+        entityType: "DocWorkflow",
+        entityId: student.id,
+      }, student.id);
+      return res.json({
+        success: true,
+        message: `อนุมัติแบบตอบรับของ ${student.nameTh} เรียบร้อยแล้ว ระบบได้ส่งเรื่องต่อไปยังเจ้าหน้าที่คณะ (Super Admin) เพื่อยืนยันและออกหนังสือส่งตัว`,
+      });
+    } else {
+      // อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ -> ย้ายเข้า Archive ฉบับเต็มและปลดล็อก
+      const activeComp = student.companies.find((c) => c.checklistStatus === "APPROVED") || student.companies[0];
+      const companyName = student.placement?.companyNameTh || activeComp?.name || wf.companyName || "สถานประกอบการ";
+      const position = student.placement?.position || "นิสิตฝึกงาน / สหกิจศึกษา";
+
+      const existingAnswers = activeComp
+        ? await prisma.companyChecklistAnswer.findMany({
+            where: { companyId: activeComp.id },
+            include: { checklistItem: true },
+          })
+        : [];
+
+      state.archivedApplications.unshift({
+        id: `ARCH-${Date.now().toString().slice(-6)}`,
+        studentId: student.id,
+        studentCode: student.studentCode,
+        studentName: student.nameTh,
+        major: student.major || "วิศวกรรมซอฟต์แวร์",
+        companyName,
+        position,
+        companyAddress: student.placement?.companyAddress || "-",
+        province: student.placement?.province || "-",
+        contactPersonName: student.placement?.contactPersonName || "-",
+        phone: student.placement?.companyPhone1 || "-",
+        email: student.placement?.companyEmail || "-",
+        reason: "ADVISOR_REJECTED",
+        note: note || "อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ / สถานประกอบการปฏิเสธ (ปลดล็อกให้ยื่นบริษัทใหม่)",
+        fileName: wf.companyResponseFileName || "",
+        fileUrl: wf.companyResponseFileUrl || "",
+        ocr: wf.companyResponseOcr || undefined,
+        answers: existingAnswers.map((a) => ({
+          itemId: a.checklistItemId,
+          description: a.checklistItem?.description || "",
+          checked: a.checked,
+          detail: a.detail || "",
+        })),
+        archivedAt: new Date().toISOString(),
+      });
+
+      if (activeComp) {
+        await prisma.companyChecklistAnswer.deleteMany({ where: { companyId: activeComp.id } });
+        await prisma.companySubmission.deleteMany({ where: { companyId: activeComp.id } });
+        await prisma.company.delete({ where: { id: activeComp.id } });
+      }
+
+      if (student.placement) {
+        await prisma.internshipPlacement.update({
+          where: { id: student.placement.id },
+          data: {
+            companyNameTh: null,
+            position: null,
+            companyAddress: null,
+            province: null,
+            contactPersonName: null,
+            contactPersonPosition: null,
+            companyPhone1: null,
+            companyPhone2: null,
+            companyEmail: null,
+            status: "REJECTED",
+            note: note || "อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ",
+          },
+        });
+      }
+
+      state.docWorkflowMap[wfKey] = {
+        studentId: student.id,
+        studentCode: student.studentCode,
+        companyName: "รอเลือกบริษัทใหม่ (ปลดล็อกแล้ว)",
+        requestLetterIssued: false,
+        requestLetterDocNo: "",
+        requestLetterDate: "",
+        companyResponseStatus: "REJECTED",
+        companyResponseNote: note || "อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ — เก็บประวัติเข้า Archive แล้ว",
+        companyResponseFileName: "",
+        companyResponseFileUrl: "",
+        companyResponseUploadedAt: "",
+        companyResponseSubmittedByStudent: false,
+        companyResponseOcr: undefined,
+        advisorAcceptanceStatus: "REJECTED",
+        dispatchLetterIssued: false,
+        isLocked: false,
+      };
+
+      saveSuperAdminState(state);
+      await notifyStudents([student.id], docWorkflowPayload(student.id, "ACCEPTANCE_ADVISOR_REJECTED", "อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ",
+        withNote(`${companyName} · ระบบเก็บเข้าประวัติแล้ว กรุณายื่นบริษัทใหม่`, note), "HIGH"));
+      return res.json({
+        success: true,
+        message: `บันทึกไม่อนุมัติแบบตอบรับของ ${student.nameTh} เรียบร้อยแล้ว ระบบได้เก็บประวัติเข้า Archive และปลดล็อกให้นิสิตยื่นบริษัทใหม่`,
+      });
+    }
+  } catch (err) {
+    console.error("POST /api/advisor/documents/review-acceptance error:", err);
+    res.status(500).json({ success: false, message: "บันทึกผลการตรวจแบบตอบรับไม่สำเร็จ" });
+  }
+});
+
 export default router;
-module.exports = router;
-module.exports.default = router;
