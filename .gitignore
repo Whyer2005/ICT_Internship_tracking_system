@@ -29,3 +29,6 @@ __pycache__/
 
 # Local Claude context
 CLAUDE.md
+
+# ข้อมูลที่ export จาก Neon (มีข้อมูลส่วนตัวนิสิต) — ห้ามขึ้น git
+old_db/
