@@ -179,7 +179,16 @@ function renderCompanyInfoBlock(comp) {
     ? mapHelper.mapUrl(p.companyAddress, p.latitude, p.longitude, mapHelper.coords(p.latitude, p.longitude) ? '' : (p.companyNameTh || comp.name))
     : '';
   const hasPin = Boolean(mapHelper && mapHelper.coords(p.latitude, p.longitude));
-  const mapBtn = mapUrl
+  // มีหมุด → เปิดหน้าต่างแผนที่ในหน้า (ดูอย่างเดียว แก้ไม่ได้) / ไม่มีหมุด → ค้นหาใน Google Maps แท็บใหม่
+  const mapBtn = hasPin && mapHelper.openViewerFromBtn
+    ? `<button type="button" onclick="window.IctCompanyMap.openViewerFromBtn(this)" title="ดูตำแหน่งที่นิสิตปักหมุดไว้"
+          data-lat="${escapeHtmlText(p.latitude)}" data-lng="${escapeHtmlText(p.longitude)}"
+          data-name="${escapeHtmlText(p.companyNameTh || comp.name || '')}"
+          data-address="${escapeHtmlText(p.companyAddress || '')}" data-province="${escapeHtmlText(p.province || '')}"
+          style="display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:8px 14px; background:#1D4ED8; color:#FFFFFF; border:0; border-radius:8px; font-family:inherit; font-size:13px; font-weight:700; white-space:nowrap; cursor:pointer;">
+          <span class="material-icons" style="font-size:18px;" aria-hidden="true">location_on</span>ดูแผนที่
+        </button>`
+    : mapUrl
     ? `<a href="${escapeHtmlText(mapUrl)}" target="_blank" rel="noopener noreferrer" title="เปิดแผนที่ในแท็บใหม่"
           style="display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:8px 14px; background:#1D4ED8; color:#FFFFFF; border-radius:8px; font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap;">
           <span class="material-icons" style="font-size:18px;" aria-hidden="true">location_on</span>ดูแผนที่
@@ -587,22 +596,13 @@ window.advisorReviewAcceptance = async function(status) {
   if (status === 'REJECTED' && !confirm('ยืนยันไม่อนุมัติแบบตอบรับนี้ใช่หรือไม่? ระบบจะบันทึกประวัติเข้า Archive และปลดล็อกให้นิสิตยื่นบริษัทใหม่')) {
     return;
   }
-  try {
-    const res = await fetch('/api/advisor/documents/review-acceptance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, status, note }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ ' + data.message);
-      window.location.reload();
-    } else {
-      alert('เกิดข้อผิดพลาด: ' + (data.message || 'บันทึกไม่สำเร็จ'));
-    }
-  } catch (err) {
-    console.error(err);
-    alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+  // ใช้ helper กลาง (components/acceptance_review.js) ตัวเดียวกับ Lightbox ในหน้า Advisor Dashboard
+  const result = await window.IctAcceptanceReview.submit(studentId, status, note);
+  if (result.ok) {
+    alert('✅ ' + result.message);
+    window.location.reload();
+  } else {
+    alert('เกิดข้อผิดพลาด: ' + result.message);
   }
 };
 

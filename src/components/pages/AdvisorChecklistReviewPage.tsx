@@ -85,6 +85,7 @@ const PAGE_STYLES: string[] = [
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
   "../components/company_map.js",
+  "../components/acceptance_review.js",
   "../api/advisor_checklist_review.js"
 ];
 const PAGE_BODY_HTML = `

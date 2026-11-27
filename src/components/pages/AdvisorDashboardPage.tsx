@@ -8,6 +8,7 @@ const PAGE_TITLE = "Dashboard อาจารย์ที่ปรึกษา /
 const PAGE_STYLES: string[] = [];
 const PAGE_SCRIPTS: string[] = [
   "../components/header.js",
+  "../components/acceptance_review.js",
   "../api/advisor_dashboard.js"
 ];
 const PAGE_BODY_HTML = `
@@ -91,43 +92,56 @@ ${ictMajorsDataScript()}
     </section>
 
     <!-- 2. รายชื่อนิสิต -->
-    <section class="card">
-      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <div style="display:flex; align-items:center; gap:8px;">
+    <section class="card adv-students" id="adv-students">
+      <div class="card-header adv-head">
+        <div class="adv-head-left">
           <span class="material-icons header-icon">people</span>
           <h2 class="card-title" id="advisor-table-title">รายชื่อนิสิตในที่ปรึกษา</h2>
-          <span id="active-filter-badge" style="display:none; background:#FEF3C7; color:#B45309; font-size:12px; padding:2px 10px; border-radius:999px; font-weight:600;"></span>
+          <span class="adv-count" id="adv-student-count" style="display:none;"></span>
+          <span id="active-filter-badge" class="adv-filter-badge" style="display:none;"></span>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn btn-sm" onclick="openBatchStatusModal()" style="background:rgba(255,255,255,0.18); color:white; border:1px solid rgba(255,255,255,0.3); font-size:12px; padding:6px 14px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
-            <span class="material-icons" style="font-size:15px;">edit_note</span> ตั้งสถานะนิสิต
+        <div class="adv-head-actions">
+          <button type="button" class="adv-hbtn" onclick="openBatchStatusModal()">
+            <span class="material-icons">edit_note</span> ตั้งสถานะนิสิต
           </button>
-          <button class="btn btn-sm" onclick="exportStudents()" style="background:rgba(255,255,255,0.18); color:white; border:1px solid rgba(255,255,255,0.3); font-size:12px; padding:6px 14px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
-            <span class="material-icons" style="font-size:15px;">download</span> Export Excel/CSV
+          <button type="button" class="adv-hbtn adv-hbtn--solid" onclick="exportStudents()">
+            <span class="material-icons">download</span> Export Excel/CSV
           </button>
         </div>
       </div>
       <div class="card-body">
 
-        <!-- Filter & Search Bar -->
-        <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px;">
-          <div style="position:relative; flex:1; min-width:200px; max-width:280px;">
-            <span class="material-icons" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#94A3B8; font-size:18px;">search</span>
-            <input type="text" class="input-field" id="student-search" placeholder="ค้นหารหัสนิสิต หรือ ชื่อ..." style="padding-left:34px !important; width:100%; font-size:13px;" />
+        <!-- Filter & Search Bar: แถวบน = ค้นหา + เรียง, แถวล่าง = ตัวกรอง -->
+        <div class="filter-bar adv-filter">
+          <div class="adv-filter-top">
+            <div class="adv-search">
+              <span class="material-icons">search</span>
+              <input type="text" class="input-field" id="student-search" placeholder="ค้นหารหัสนิสิต หรือ ชื่อ..." />
+            </div>
+            <div class="adv-sort">
+              <span class="material-icons" aria-hidden="true">sort</span>
+              <select id="sort-by" class="input-field" aria-label="เรียงลำดับ">
+                <option value="critical" selected>เรียง: ต้องติดตาม ➔ พร้อมฝึกงาน</option>
+                <option value="studentCode_desc">เรียง: รหัสนิสิต (มาก ➔ น้อย)</option>
+                <option value="studentCode_asc">เรียง: รหัสนิสิต (น้อย ➔ มาก)</option>
+                <option value="name_asc">เรียง: ชื่อ-นามสกุล (ก-ฮ)</option>
+              </select>
+            </div>
           </div>
-
-          <select id="year-filter" class="input-field" style="width:auto; min-width:120px; font-size:13px; padding:7px 12px; cursor:pointer;">
+          <div class="adv-filter-row">
+            <span class="adv-filter-label"><span class="material-icons" aria-hidden="true">tune</span> ตัวกรอง</span>
+          <select id="year-filter" class="input-field" aria-label="ชั้นปี">
             <option value="">ทุกชั้นปี</option>
           </select>
 
-          <select id="semester-filter" class="input-field" style="width:auto; min-width:125px; font-size:13px; padding:7px 12px; cursor:pointer;">
+          <select id="semester-filter" class="input-field" aria-label="ภาคเรียน">
             <option value="">ทุกภาคเรียน</option>
             <option value="1">ภาคเรียนที่ 1</option>
             <option value="2" selected>ภาคเรียนที่ 2</option>
             <option value="SUMMER">ภาคฤดูร้อน</option>
           </select>
 
-          <select id="status-filter" class="input-field" style="width:auto; min-width:175px; font-size:13px; padding:7px 12px; cursor:pointer;">
+          <select id="status-filter" class="input-field" aria-label="สถานะ">
             <option value="">ทุกสถานะ</option>
             <optgroup label="📄 1. เรซูเม่ (CV) — คอมเมนต์อย่างเดียว">
               <option value="cv_waiting">⏳ อัปโหลดแล้ว รอคอมเมนต์</option>
@@ -148,7 +162,7 @@ ${ictMajorsDataScript()}
             </optgroup>
           </select>
 
-          <select id="skill-filter" class="input-field" style="width:auto; min-width:160px; font-size:13px; padding:7px 12px; cursor:pointer;">
+          <select id="skill-filter" class="input-field" aria-label="สถานะชั่วโมงอบรม">
             <option value="">ทุกสถานะชั่วโมงอบรม</option>
             <option value="pass_all">🟢 ผ่านเกณฑ์ครบ (Soft+Hard)</option>
             <option value="lack_soft">⚠️ ขาด Soft Skill (&lt; 12 ชม.)</option>
@@ -156,43 +170,37 @@ ${ictMajorsDataScript()}
             <option value="lack_both">⚠️ ขาดทั้ง Soft &amp; Hard</option>
           </select>
 
-          <select id="sort-by" class="input-field" style="width:auto; min-width:165px; font-size:13px; padding:7px 12px; cursor:pointer; font-weight:500;">
-            <option value="critical" selected>📌 เรียง: ต้องติดตาม ➔ พร้อมฝึกงาน</option>
-            <option value="studentCode_desc">🔢 เรียง: รหัสนิสิต (มาก ➔ น้อย)</option>
-            <option value="studentCode_asc">🔤 เรียง: รหัสนิสิต (น้อย ➔ มาก)</option>
-            <option value="name_asc">👤 เรียง: ชื่อ-นามสกุล (ก-ฮ)</option>
-          </select>
-
-          <button id="btn-clear-filter" onclick="clearAllFilters()" style="display:none; background:#EF4444; color:white; border:none; font-size:12px; padding:7px 12px; border-radius:10px; cursor:pointer; align-items:center; gap:4px; font-weight:600;">
-            <span class="material-icons" style="font-size:14px;">close</span> ล้างตัวกรอง
+          <button type="button" id="btn-clear-filter" class="adv-clear" onclick="clearAllFilters()" style="display:none;">
+            <span class="material-icons">close</span> ล้างตัวกรอง
           </button>
+          </div>
         </div>
 
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th style="width: 14%;">รหัสนิสิต</th>
-              <th style="width: 20%;">ชื่อ-นามสกุล</th>
-              <th style="width: 17%;">สาขาวิชา</th>
-              <th style="width: 17%;">อาจารย์ที่ปรึกษา</th>
-              <th style="width: 22%;">สถานะ Checklist &amp; สถานที่ฝึกงาน</th>
-              <th style="width: 10%; min-width: 100px;" class="text-center">
-                <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="เลือกนิสิตทั้งหมดในหน้านี้">
-                  <span style="font-size:12px;">เลือกทั้งหมด</span>
-                  <input type="checkbox" id="select-all-students" style="width:16px;height:16px;cursor:pointer;" />
-                </label>
-              </th>
-            </tr>
-          </thead>
-          <tbody id="students-tbody">
-            <tr><td colspan="5" class="text-center py-8 text-gray-400">กำลังโหลดข้อมูล...</td></tr>
-          </tbody>
-        </table>
+        <div class="adv-table-wrap">
+          <table class="data-table adv-table">
+            <thead>
+              <tr>
+                <th class="adv-col-check">
+                  <input type="checkbox" id="select-all-students" title="เลือกนิสิตทั้งหมดในหน้านี้" aria-label="เลือกนิสิตทั้งหมดในหน้านี้" />
+                </th>
+                <th>รหัสนิสิต</th>
+                <th>ชื่อ-นามสกุล</th>
+                <th>สาขาวิชา</th>
+                <th>สถานะ Checklist</th>
+                <th>สถานที่ฝึกงาน</th>
+                <th class="adv-col-act"><span class="sr-only">จัดการ</span></th>
+              </tr>
+            </thead>
+            <tbody id="students-tbody">
+              <tr><td colspan="7" class="text-center py-8 text-gray-400">กำลังโหลดข้อมูล...</td></tr>
+            </tbody>
+          </table>
+        </div>
 
         <!-- Pagination -->
-        <div class="flex justify-between items-center mt-4 text-xs text-gray-500">
-          <span id="pagination-info">Showing 1-12 from 0 data</span>
-          <div class="flex gap-1" id="pagination-controls"></div>
+        <div class="adv-pager">
+          <span id="pagination-info">กำลังโหลด...</span>
+          <div class="adv-pager-btns" id="pagination-controls"></div>
         </div>
 
       </div>

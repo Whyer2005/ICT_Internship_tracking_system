@@ -332,13 +332,51 @@ async function loadStudents() {
 // ==========================================
 // 3. แสดงตารางรายชื่อนิสิต
 // ==========================================
+// ข้อมูลตารางชุดล่าสุด (ใช้วาดแถวใหม่หลังตรวจแบบตอบรับใน Lightbox โดยไม่ต้องโหลดทั้งหน้า)
+let lastStudentTableArgs = null;
+
+// เปิด Lightbox ตรวจแบบตอบรับ (components/acceptance_review.js) ถ้าโหลดคอมโพเนนต์ไม่ได้ → ไปหน้า Checklist Review ตามลิงก์เดิม
+window.openAcceptanceLightbox = function(event, studentId) {
+  const reviewer = window.IctAcceptanceReview;
+  if (!reviewer || typeof reviewer.open !== 'function') return true;
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  closeActionMenus();
+  reviewer.open({
+    studentId,
+    onDone: (status) => {
+      applyAcceptanceResultToRow(studentId, status);
+      loadDashboardSummary();
+    },
+  });
+  return false;
+};
+
+// อัปเดตแถวของนิสิตตามผลที่บันทึก (ตรงกับที่ server เปลี่ยนใน /documents/review-acceptance)
+function applyAcceptanceResultToRow(studentId, status) {
+  if (!lastStudentTableArgs) return;
+  const s = lastStudentTableArgs[0].find((x) => x.id === studentId);
+  if (!s) return;
+  s.hasPendingAcceptance = false;
+  if (status === 'APPROVED') {
+    s.acceptanceStatus = 'ADVISOR_APPROVED';
+  } else {
+    // ไม่อนุมัติ → server ย้ายเข้า Archive, ล้างข้อมูลบริษัท และตั้งที่ฝึกงานเป็น REJECTED
+    s.acceptanceStatus = 'REJECTED';
+    if (s.placementStatus !== 'NONE') s.placementStatus = 'REJECTED';
+  }
+  renderStudentTable(...lastStudentTableArgs);
+}
+
 function renderStudentTable(students, total, page, totalPages) {
+  lastStudentTableArgs = [students, total, page, totalPages];
   const tbody = document.getElementById('students-tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
+  // เมนู ⋮ ที่เคยย้ายไปไว้ใต้ body (positionActionMenu) ลบทิ้งก่อน กัน id ซ้ำกับแถวชุดใหม่
+  document.querySelectorAll('.action-dropdown[data-portal]').forEach((d) => d.remove());
 
   if (students.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">ไม่พบข้อมูลนิสิต</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">ไม่พบข้อมูลนิสิต</td></tr>';
     renderPagination(1, 1, 0);
     return;
   }
@@ -391,53 +429,45 @@ function renderStudentTable(students, total, page, totalPages) {
     }
 
     const tr = document.createElement('tr');
+    if (isChecked) tr.classList.add('adv-row--selected');
     tr.innerHTML = `
+      <td class="adv-col-check">
+        <input type="checkbox" class="student-checkbox" data-id="${s.id}" ${isChecked ? 'checked' : ''} aria-label="เลือก ${s.nameTh || s.studentCode}" />
+      </td>
       <td>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <span>${s.studentCode}</span>
-          <span class="inline-block px-1.5 py-0.2 text-[10.5px] font-semibold rounded bg-indigo-50 text-indigo-700 border border-indigo-200" title="รอบฝึกงาน: ${s.semester === 'SUMMER' ? 'Summer' : 'เทอม ' + (s.semester || '2')}">${(s.studentCode ? s.studentCode.substring(0, 2) : '67') + '/' + (s.semester || '2')}</span>
-          ${s.roundInfo && s.roundInfo.currentRound >= 2 ? `
-            <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-100 text-purple-800 border border-purple-200" title="รอบที่ 2 (${s.roundInfo.currentTerm || ''})">
-              รอบ 2
-            </span>
-          ` : ''}
+        <div class="adv-stu-meta">
+          <span class="adv-stu-code">${s.studentCode}</span>
+          <span class="adv-tag adv-tag--term" title="รอบฝึกงาน: ${s.semester === 'SUMMER' ? 'Summer' : 'เทอม ' + (s.semester || '2')}">${(s.studentCode ? s.studentCode.substring(0, 2) : '67') + '/' + (s.semester || '2')}</span>
+          ${s.roundInfo && s.roundInfo.currentRound >= 2 ? `<span class="adv-tag adv-tag--round" title="รอบที่ 2 (${s.roundInfo.currentTerm || ''})">รอบ 2</span>` : ''}
         </div>
       </td>
-      <td>${s.nameTh}</td>
-      <td><span class="text-xs font-medium text-slate-700" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
-      <td>${s.advisorName || '<span class="text-gray-400">-</span>'}</td>
+      <td><a class="adv-stu-name" href="/admin-student-detail?id=${s.id}">${s.nameTh || '-'}</a></td>
+      <td><span class="adv-major" title="${fullMajorName(s.major)}">${formatMajorName(s.major)}</span></td>
       <td>
         <div class="flex flex-col items-start gap-1 py-0.5">
-          <span class="inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full ${badgeColor}">
+          <span class="inline-block px-3 py-1 text-[13px] font-semibold rounded-full ${badgeColor}">
             ${badgeText}
           </span>
           ${alertTags.join('')}
-          ${s.hasPendingAcceptance ? `
-            <a href="/advisor-checklist-review?studentId=${s.id}"
-               class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-100 text-indigo-900 border border-indigo-300 shadow-sm hover:bg-indigo-200 no-underline transition-all"
-               title="นิสิตอัปโหลดใบตอบรับแล้ว คลิกเพื่อตรวจและอนุมัติ">
-              <span class="material-icons text-sm text-indigo-700">assignment_turned_in</span>
-              <span>📥 รอตรวจแบบตอบรับ!</span>
-            </a>
-          ` : s.acceptanceStatus === 'ADVISOR_APPROVED' || s.acceptanceStatus === 'ACCEPTED' ? `
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-              ✓ แบบตอบรับอนุมัติแล้ว
-            </span>
-          ` : ''}
+        </div>
+      </td>
+      <td>
+        <div class="adv-plc">
+          ${advisorPlacementCell(s)}
           ${s.coop ? `
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-violet-50 text-violet-800 border border-violet-200"
+            <span class="adv-plc-chip adv-plc-chip--coop"
               title="สหกิจศึกษา (เจ้าหน้าที่ดำเนินการ — อาจารย์ไม่ต้องอนุมัติ): ${advisorCoopEsc(s.coop.companyName)} · ${advisorCoopEsc(s.coop.positionTitle)}">
-              🎓 สหกิจ: ${advisorCoopEsc(s.coop.companyName)} · ${advisorCoopEsc(s.coop.status === 'ACCEPTED' ? s.coop.docStepLabel : s.coop.statusLabel)}
+              <span class="material-icons" aria-hidden="true">school</span>
+              สหกิจ: ${advisorCoopEsc(s.coop.companyName)} · ${advisorCoopEsc(s.coop.status === 'ACCEPTED' ? s.coop.docStepLabel : s.coop.statusLabel)}
             </span>
           ` : ''}
         </div>
       </td>
-      <td class="text-center">
-        <div style="display: flex; align-items: center; gap: 8px; justify-content: center; position: relative;">
-          <button class="btn-detail-dots" title="เมนูจัดการ" onclick="toggleActionMenu(event, ${s.id})" style="background:none;border:none;cursor:pointer;padding:4px;">
-            <span class="material-icons text-gray-500 hover:text-blue-600" style="font-size:18px;">more_vert</span>
+      <td class="adv-col-act">
+        <div style="display: flex; align-items: center; justify-content: flex-end; position: relative;">
+          <button type="button" class="btn-detail-dots adv-dots" title="เมนูจัดการ" aria-label="เมนูจัดการ" onclick="toggleActionMenu(event, ${s.id})">
+            <span class="material-icons">more_vert</span>
           </button>
-          <input type="checkbox" class="student-checkbox" data-id="${s.id}" ${isChecked ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;" />
 
           <!-- Dropdown เมนู (Profile / Check list / ตรวจแบบตอบรับ) -->
           <div id="dropdown-${s.id}" class="action-dropdown hidden absolute right-0 top-8 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1 w-44 text-left">
@@ -450,7 +480,7 @@ function renderStudentTable(students, total, page, totalPages) {
             </a>
             ${s.hasPendingAcceptance ? `
               <div class="border-t border-gray-100 my-1"></div>
-              <a href="/advisor-checklist-review?studentId=${s.id}" class="flex items-center gap-2 px-3 py-2 text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 no-underline transition-colors font-bold">
+              <a href="/advisor-checklist-review?studentId=${s.id}" onclick="return window.openAcceptanceLightbox(event, ${s.id})" class="flex items-center gap-2 px-3 py-2 text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 no-underline transition-colors font-bold">
                 <span class="material-icons text-base text-indigo-600">assignment_turned_in</span> ตรวจแบบตอบรับ
               </a>
             ` : ''}
@@ -470,6 +500,7 @@ function renderStudentTable(students, total, page, totalPages) {
       } else {
         selectedStudentIds.delete(id);
       }
+      e.target.closest('tr')?.classList.toggle('adv-row--selected', e.target.checked);
       updateSelectAllCheckbox();
     });
   });
@@ -479,6 +510,7 @@ function renderStudentTable(students, total, page, totalPages) {
     selectAllCheckbox.addEventListener('change', (e) => {
       tbody.querySelectorAll('.student-checkbox').forEach(cb => {
         cb.checked = e.target.checked;
+        cb.closest('tr')?.classList.toggle('adv-row--selected', e.target.checked);
         const id = parseInt(cb.dataset.id);
         if (e.target.checked) {
           selectedStudentIds.add(id);
@@ -525,17 +557,53 @@ window.toggleActionMenu = function(event, studentId) {
 
   if (!isAlreadyOpen) {
     dropdown.classList.remove('hidden');
+    positionActionMenu(dropdown, event.currentTarget);
     openDropdownStudentId = studentId;
   } else {
     openDropdownStudentId = null;
   }
 };
 
-// ปิด dropdown เมื่อคลิกที่อื่น
-document.addEventListener('click', () => {
+// วางเมนูแบบ fixed อิงตำแหน่งปุ่ม ⋮ (การ์ดมี overflow:hidden เมนูแบบ absolute จะโดนตัด)
+// ที่ด้านล่างไม่พอ → พลิกขึ้นไปเปิดด้านบนปุ่ม
+function positionActionMenu(dropdown, anchor) {
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  // ย้ายไปไว้ใต้ body: ถ้ามีกล่องแม่ใช้ transform/filter อยู่ fixed จะอิงกล่องนั้นแทนหน้าจอ (เมนูไปโผล่ผิดที่)
+  if (dropdown.parentElement !== document.body) {
+    dropdown.dataset.portal = '1';
+    document.body.appendChild(dropdown);
+  }
+  const r = anchor.getBoundingClientRect();
+  dropdown.style.position = 'fixed';
+  dropdown.style.zIndex = '960';
+  dropdown.style.right = 'auto';
+  dropdown.style.top = '0px';
+  dropdown.style.left = '0px';
+  // หน้าเว็บถูก CSS zoom (html { zoom: 0.8 } ใน modern-ict.css): ค่า top/left ที่ตั้งจะถูกคูณ zoom
+  // แต่ getBoundingClientRect ให้พิกัดหลังซูม → วัดอัตราซูมจริงด้วยการขยับเมนู 100px แล้วดูว่าไปจริงกี่ px
+  const origin = dropdown.getBoundingClientRect();
+  dropdown.style.left = '100px';
+  const scale = (dropdown.getBoundingClientRect().left - origin.left) / 100 || 1;
+  const menuW = origin.width;
+  const menuH = origin.height;
+  const gap = 6;
+  // คำนวณในพิกัดหน้าจอ (หลังซูม) แล้วหารด้วย scale ตอนตั้งค่า
+  const left = Math.max(8, Math.min(r.right - menuW, window.innerWidth - menuW - 8));
+  const fitsBelow = r.bottom + gap + menuH <= window.innerHeight - 8;
+  const top = fitsBelow ? r.bottom + gap : Math.max(8, r.top - gap - menuH);
+  dropdown.style.left = `${(left - origin.left) / scale}px`;
+  dropdown.style.top = `${(top - origin.top) / scale}px`;
+}
+
+function closeActionMenus() {
   document.querySelectorAll('.action-dropdown').forEach(d => d.classList.add('hidden'));
   openDropdownStudentId = null;
-});
+}
+
+// ปิด dropdown เมื่อคลิกที่อื่น / เลื่อนหน้า / ย่อขยายจอ (เมนูเป็น fixed จะไม่เลื่อนตามแถว)
+document.addEventListener('click', closeActionMenus);
+window.addEventListener('scroll', closeActionMenus, true);
+window.addEventListener('resize', closeActionMenus);
 
 // ==========================================
 // Pagination
@@ -547,18 +615,63 @@ function renderPagination(page, totalPages, total) {
 
   const start = total === 0 ? 0 : (page - 1) * pageLimit + 1;
   const end = Math.min(page * pageLimit, total);
-  if (infoEl) infoEl.textContent = `Showing ${start}-${end} from ${total} data`;
+  if (infoEl) infoEl.innerHTML = total === 0 ? 'ไม่มีข้อมูล' : `แสดง <b>${start}–${end}</b> จาก <b>${total}</b> คน`;
+
+  // จำนวนนิสิตบนหัวการ์ด
+  const countEl = document.getElementById('adv-student-count');
+  if (countEl) {
+    countEl.textContent = `${total} คน`;
+    countEl.style.display = '';
+  }
 
   paginationEl.innerHTML = '';
+  const goTo = (p) => { currentPage = p; loadStudents(); };
+  const navBtn = (icon, label, target, disabled) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'adv-page adv-page--nav';
+    btn.innerHTML = `<span class="material-icons" aria-hidden="true">${icon}</span>`;
+    btn.setAttribute('aria-label', label);
+    btn.disabled = disabled;
+    if (!disabled) btn.onclick = () => goTo(target);
+    return btn;
+  };
+
+  paginationEl.appendChild(navBtn('chevron_left', 'หน้าก่อนหน้า', page - 1, page <= 1));
   for (let i = 1; i <= Math.min(totalPages, 5); i++) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.textContent = i;
-    btn.className = i === page
-      ? 'w-7 h-7 rounded-lg bg-[#1541D2] text-white text-xs font-medium cursor-pointer border-none'
-      : 'w-7 h-7 rounded-lg bg-gray-100 text-gray-600 text-xs hover:bg-gray-200 cursor-pointer border-none';
-    btn.onclick = () => { currentPage = i; loadStudents(); };
+    btn.className = i === page ? 'adv-page adv-page--on' : 'adv-page';
+    if (i === page) btn.setAttribute('aria-current', 'page');
+    btn.onclick = () => goTo(i);
     paginationEl.appendChild(btn);
   }
+  paginationEl.appendChild(navBtn('chevron_right', 'หน้าถัดไป', page + 1, page >= totalPages));
+}
+
+// คอลัมน์ "สถานที่ฝึกงาน": สถานะแบบตอบรับ (ช่องเดียว ไม่แสดงชื่อบริษัท)
+//   อาจารย์ยังไม่ตรวจ (WAITING_ADVISOR_APPROVAL) → ปุ่ม "รอตรวจแบบตอบรับ!" เปิด Lightbox
+//   อาจารย์อนุมัติแล้ว (ADVISOR_APPROVED)       → "รอตรวจสอบจากแอดมิน"
+//   แอดมินยืนยันแล้ว (ACCEPTED)                 → "อนุมัติแล้ว"
+//   ไม่อนุมัติ (REJECTED)                       → "แบบตอบรับไม่อนุมัติ"
+function advisorPlacementCell(s) {
+  let chip = '';
+  if (s.hasPendingAcceptance || s.acceptanceStatus === 'WAITING_ADVISOR_APPROVAL') {
+    chip = `
+      <a href="/advisor-checklist-review?studentId=${s.id}" onclick="return window.openAcceptanceLightbox(event, ${s.id})"
+         class="adv-plc-chip adv-plc-chip--action" title="นิสิตอัปโหลดแบบตอบรับแล้ว คลิกเพื่อตรวจและอนุมัติ">
+        <span class="material-icons" aria-hidden="true">assignment_turned_in</span>รอตรวจแบบตอบรับ!
+      </a>`;
+  } else if (s.acceptanceStatus === 'ADVISOR_APPROVED') {
+    chip = '<span class="adv-plc-chip adv-plc-chip--wait"><span class="material-icons" aria-hidden="true">hourglass_top</span>รอตรวจสอบจากแอดมิน</span>';
+  } else if (s.acceptanceStatus === 'ACCEPTED') {
+    chip = '<span class="adv-plc-chip adv-plc-chip--ok"><span class="material-icons" aria-hidden="true">check_circle</span>อนุมัติแล้ว</span>';
+  } else if (s.acceptanceStatus === 'REJECTED') {
+    chip = '<span class="adv-plc-chip adv-plc-chip--bad"><span class="material-icons" aria-hidden="true">cancel</span>แบบตอบรับไม่อนุมัติ</span>';
+  }
+  // ไม่มีสถานะแบบตอบรับและไม่มีสหกิจ → ขีด
+  return chip || (s.coop ? '' : '<span class="adv-plc-empty">-</span>');
 }
 
 // ==========================================
