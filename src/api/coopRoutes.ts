@@ -19,6 +19,8 @@ import {
   ymd,
 } from "../utils/internshipWindows";
 import { uploadToCloudinary } from "../utils/cloudinary";
+import { notifyStaffUsers, notifyStudents } from "../utils/notifications";
+import { coopPayload, withNote } from "../utils/notificationRules";
 import { fetchFileBuffer } from "../utils/acceptanceOcr";
 import { mergeCoopDocuments } from "../utils/coopPdf";
 import {
@@ -437,6 +439,18 @@ adminCoopRouter.post("/super-admin/coop-applications/status", requireStaffOnly, 
         where: { id: { in: allowed } },
         data: { status, statusNote: note || null, statusUpdatedAt: new Date(), statusUpdatedBy: actor },
       });
+      const changed = await prisma.coopApplication.findMany({
+        where: { id: { in: allowed } },
+        select: { id: true, studentId: true, companyName: true, positionTitle: true },
+      });
+      const priority = status === "REJECTED" || status === "ACCEPTED" ? "HIGH" : "NORMAL";
+      // แจ้งทีละใบสมัคร (นิสิต 1 คนอาจมีหลายใบในชุดเดียวกัน)
+      await Promise.all(
+        changed.map((a) =>
+          notifyStudents([a.studentId], coopPayload(a.id, `COOP_${status}`, `ใบสมัครสหกิจ ${a.companyName}: ${COOP_APPLICATION_STATUS_LABEL[status]}`,
+            withNote(`ตำแหน่ง ${a.positionTitle}`, note), priority))
+        )
+      );
     }
     const skipped = ids.length - allowed.length;
     res.status(allowed.length ? 200 : 400).json({
@@ -493,6 +507,10 @@ adminCoopRouter.post(
         where: { id },
         data: { ...data, docStepUpdatedBy: actor } as any,
       });
+      if (step !== "NONE" && step !== app.docStep) {
+        await notifyStudents([app.studentId], coopPayload(app.id, `COOP_DOC_${step}`, `สหกิจ ${app.companyName}: ${COOP_DOC_STEP_LABEL[step]}`,
+          uploaded ? "มีไฟล์เอกสารแนบ ดาวน์โหลดได้ที่หน้าจัดการข้อมูลฝึกงาน" : "ดูความคืบหน้าได้ที่หน้าจัดการข้อมูลฝึกงาน"));
+      }
       res.json({
         success: true,
         message: `ตั้งขั้นเอกสารเป็น "${COOP_DOC_STEP_LABEL[step]}" แล้ว` + (uploaded ? ` (แนบ ${COOP_DOC_STEP_FIELDS[step as Exclude<typeof step, "NONE">].fileLabel})` : ""),
@@ -747,6 +765,16 @@ studentCoopRouter.post(
         await tx.student.update({ where: { id: ctx.student.id }, data: { internshipWindowId: resolved.window!.id } });
         return app;
       });
+
+      await notifyStaffUsers({
+        type: "COOP_APPLICATION_NEW",
+        category: "coop",
+        title: `ใบสมัครสหกิจใหม่: ${ctx.student.nameTh}`,
+        message: `${position.posting.companyName} · ${position.title} (รหัส ${ctx.student.studentCode})`,
+        link: "/admin-dashboard?ws=coop",
+        entityType: "CoopApplication",
+        entityId: created.id,
+      }, ctx.student.id);
 
       const gpa = ctx.student.gpa;
       res.json({

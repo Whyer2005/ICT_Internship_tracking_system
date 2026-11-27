@@ -1,5 +1,15 @@
 // @ts-nocheck
 // header.js — โหลด header.html พร้อม [REQ-01] Persistent Top Bar & Multi-Role Switcher
+// ปุ่มแจ้งเตือนลอยมุมขวาล่าง (ทุกโรล) — โหลด notification_bell.js ครั้งเดียวหลังใส่ header (header = ล็อกอินแล้ว)
+function loadNotificationBell() {
+    if (window.__ictNotifBell) { window.__ictNotifBell.mount(); return; }
+    if (document.getElementById('ict-ntf-script')) return;
+    const sc = document.createElement('script');
+    sc.id = 'ict-ntf-script';
+    sc.src = `/client-scripts/components/notification_bell.js?v=${Date.now()}`;
+    document.body.appendChild(sc);
+}
+
 function initPersistentHeader(templateUrl) {
     fetch(templateUrl)
         .then(response => response.text())
@@ -7,6 +17,7 @@ function initPersistentHeader(templateUrl) {
             const placeholder = document.getElementById('header-placeholder');
             if (!placeholder) return;
             placeholder.innerHTML = html;
+            loadNotificationBell();
 
             const menuToggle = document.getElementById('menu-toggle');
             const headerNav = document.getElementById('header-nav');

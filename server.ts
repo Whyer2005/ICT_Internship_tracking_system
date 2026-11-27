@@ -10,6 +10,7 @@ import authRoutes from "./src/auth/authRoutes";
 import studentRoutes from "./src/api/studentRoutes";
 import adminRoutes from "./src/api/adminRoutes";
 import advisorRoutes from "./src/api/advisorRoutes";
+import notificationRoutes from "./src/api/notificationRoutes";
 
 const app = express();
 
@@ -54,6 +55,9 @@ app.use("/api/admin", adminRoutes);
 
 // route APIs สำหรับอาจารย์ที่ปรึกษา ทั้งหมดอยู่ใต้ /api/advisor/...
 app.use("/api/advisor", advisorRoutes);
+
+// route การแจ้งเตือน (ใช้ร่วมทุกโรล) อยู่ใต้ /api/notifications/...
+app.use("/api/notifications", notificationRoutes);
 
 // เสิร์ฟ static uploads
 app.use("/uploads", express.static(path.join(process.cwd(), "public", "uploads")));

@@ -39,6 +39,8 @@ import { studentCoopRouter } from "./coopRoutes";
 import { COOP_FINAL_STATUSES } from "../utils/coopPostings";
 import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
 import { cleanOrganizer, isStudentUploadSource, normalizeHttpLink, studentCanEditTraining, trainingEvidenceError } from "../utils/trainingEvidence";
+import { notifyAdvisorsOfStudents, notifyCourseAdminsForStudents, notifyStaffUsers } from "../utils/notifications";
+import { priorityFromUrgency, studentEventPayload } from "../utils/notificationRules";
 import { CV_COMMENT_ROLE_LABEL, CV_STATE_LABEL, CvCommentRole, cvState, hasCv, isCommentForOlderFile, unseenCommentCount } from "../utils/cvReview";
 
 const router = express.Router();
@@ -175,6 +177,17 @@ router.post("/issue-reports", (req: Request, res: Response) => {
       };
       state.issueReports = [report, ...list];
       saveSuperAdminStateOrThrow(state);
+
+      await notifyStaffUsers({
+        type: "ISSUE_REPORT_NEW",
+        category: "issue",
+        priority: priorityFromUrgency(report.urgency),
+        title: `เรื่องแจ้งปัญหาใหม่ ${report.id}: ${report.title}`,
+        message: `${report.studentName} (${report.studentCode}) · หน้า ${report.page}`,
+        link: "/admin-dashboard?ws=issues",
+        entityType: "IssueReport",
+        entityId: report.id,
+      }, report.studentId);
 
       const { studentId, email, ...publicReport } = report;
       res.json({ success: true, message: `ส่งเรื่อง ${report.id} เรียบร้อยแล้ว`, report: publicReport });
@@ -425,6 +438,19 @@ router.post("/profile", upload.single("profileImage"), async (req: Request, res:
         const state = loadSuperAdminState();
         if (state.profileEditUnlocks) delete state.profileEditUnlocks[unlockKey];
         saveSuperAdminState(state);
+
+        const nameChanged = existingStudent.nameTh !== student.nameTh || existingStudent.nameEn !== student.nameEn;
+        await notifyStaffUsers({
+          type: "PROFILE_EDIT_DONE",
+          category: "account",
+          title: `${student.nameTh} บันทึกการแก้ไขข้อมูลส่วนตัวแล้ว`,
+          message: nameChanged
+            ? `ชื่อเดิม: ${existingStudent.nameTh} → ชื่อใหม่: ${student.nameTh} (${student.nameEn})`
+            : `รหัส ${student.studentCode} · ใช้สิทธิ์แก้ไขแล้ว ระบบล็อกข้อมูลกลับเรียบร้อย`,
+          link: `/admin-student-detail?id=${student.id}`,
+          entityType: "Student",
+          entityId: student.id,
+        }, student.id);
       }
     } else {
       const createData: any = {
@@ -754,6 +780,14 @@ router.post("/cv", upload.single("cv"), async (req: Request, res: Response) => {
       },
     });
 
+    // แจ้งอาจารย์ที่ปรึกษาเฉพาะกรณีอัปโหลดใหม่หลังจากมีคอมเมนต์แล้ว (นิสิตแก้ตามคอมเมนต์)
+    const commentCount = await prisma.cvComment.count({ where: { studentId: student.id } });
+    if (commentCount > 0) {
+      await notifyAdvisorsOfStudents([student.id], (s) =>
+        studentEventPayload(s, { type: "CV_REUPLOADED", category: "cv", entityType: "StudentCV", title: `${s.nameTh} อัปโหลด CV ฉบับใหม่แล้ว`, message: `ไฟล์ ${fileName} — ตรวจและคอมเมนต์เพิ่มเติมได้` })
+      );
+    }
+
     res.json({ success: true, message: "อัปโหลด CV สำเร็จ", cv });
   } catch (err: any) {
     console.error("POST /api/student/cv error:", err);
@@ -968,6 +1002,11 @@ router.post("/acceptance-form", upload.single("file"), async (req: Request, res:
       advisorAcceptanceReviewedAt: "",
     };
     saveSuperAdminState(latest);
+
+    await notifyAdvisorsOfStudents([student.id], (s) =>
+      studentEventPayload(s, { type: "ACCEPTANCE_FORM_SUBMITTED", category: "document", priority: "HIGH", entityType: "DocWorkflow", link: "/advisor-dashboard",
+        title: `${s.nameTh} ส่งแบบตอบรับจากบริษัท รอคุณอนุมัติ`, message: `ไฟล์ ${cleanFileName}` })
+    );
 
     res.json({
       success: true,
@@ -1415,6 +1454,26 @@ router.post("/companies", async (req: Request, res: Response) => {
       where: { id: student.id },
       data: { internshipWindowId: resolvedWindow.window.id },
     });
+
+    await notifyAdvisorsOfStudents([student.id], (s) => ({
+      type: "CHECKLIST_SUBMITTED",
+      category: "approval",
+      title: `${s.nameTh} ยื่น Checklist บริษัทใหม่ รอคุณตรวจ`,
+      message: `${finalCompName} · ตำแหน่ง ${finalPosition}`,
+      link: `/advisor-checklist-review?studentId=${s.id}&companyId=${company.id}`,
+      entityType: "Company",
+      entityId: company.id,
+    }));
+    await notifyCourseAdminsForStudents([student.id], (s) => ({
+      type: "PLACEMENT_SUBMITTED",
+      category: "approval",
+      priority: "LOW",
+      title: `${s.nameTh} ยื่นสถานที่ฝึกงานใหม่`,
+      message: `${finalCompName} (${finalProvince}) · รอบ ${windowDisplayLabel(resolvedWindow.window!)}${matchedMaster ? "" : " · บริษัทยังไม่อยู่ในฐานข้อมูลกลาง"}`,
+      link: `/admin-student-detail?id=${s.id}`,
+      entityType: "InternshipPlacement",
+      entityId: s.id,
+    }));
 
     res.json({
       success: true,

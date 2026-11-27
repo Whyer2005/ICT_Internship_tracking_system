@@ -5,6 +5,8 @@ import { getChecklistFormIdForMajor } from "../utils/checklistFormsDb";
 import { CV_STATE_LABEL, cvState, hasCv, uploadedAfterLastComment } from "../utils/cvReview";
 import requireAdvisor from "../auth/requireAdvisor";
 import { loadSuperAdminState, saveSuperAdminState, getStudentRoundState } from "../utils/superAdminStore";
+import { notifyStaffUsers, notifyStudents } from "../utils/notifications";
+import { checklistResultPayload, docWorkflowPayload, placementResultPayload, withNote } from "../utils/notificationRules";
 
 const router = express.Router();
 
@@ -507,6 +509,12 @@ router.put("/batch-checklist-status", async (req: Request, res: Response) => {
       },
     });
 
+    if (status !== "PENDING" && updateResult.count > 0) {
+      // แจ้งเฉพาะนิสิตที่มีบริษัทถูกอัปเดตจริง
+      const withCompanies = await prisma.company.findMany({ where: { studentId: { in: validIds } }, select: { studentId: true }, distinct: ["studentId"] });
+      await notifyStudents(withCompanies.map((c) => c.studentId), checklistResultPayload(status, note));
+    }
+
     res.json({
       success: true,
       message: `อัปเดตสถานะ Checklist ให้กับนิสิต ${validIds.length} คน (${updateResult.count} บริษัท) เรียบร้อยแล้ว`,
@@ -562,6 +570,12 @@ router.put("/batch-status", async (req: Request, res: Response) => {
         },
       });
 
+      if (status !== "PENDING" && updateResult.count > 0) {
+      // แจ้งเฉพาะนิสิตที่มีบริษัทถูกอัปเดตจริง
+      const withCompanies = await prisma.company.findMany({ where: { studentId: { in: validIds } }, select: { studentId: true }, distinct: ["studentId"] });
+      await notifyStudents(withCompanies.map((c) => c.studentId), checklistResultPayload(status, note));
+    }
+
       return res.json({
         success: true,
         message: `อัปเดตสถานะ Checklist ให้กับนิสิต ${validIds.length} คน (${updateResult.count} บริษัท) เรียบร้อยแล้ว`,
@@ -587,6 +601,8 @@ router.put("/batch-status", async (req: Request, res: Response) => {
           })
         )
       );
+
+      if (status !== "PENDING") await notifyStudents(validIds, placementResultPayload(status, note));
 
       return res.json({
         success: true,
@@ -814,6 +830,10 @@ router.put("/companies/:companyId/checklist-review", async (req: Request, res: R
       }
     }
 
+    if (status !== "PENDING") {
+      await notifyStudents([company.studentId], checklistResultPayload(status, note, company.name, company.id));
+    }
+
     res.json({
       success: true,
       message: "บันทึกผลการตรวจ Checklist เรียบร้อยแล้ว",
@@ -875,6 +895,18 @@ router.put("/companies/:companyId/allow-info-edit", async (req: Request, res: Re
       delete state.companyInfoEditUnlocks[key];
     }
     saveSuperAdminState(state);
+
+    if (allow) {
+      await notifyStudents([company.studentId], {
+        type: "COMPANY_INFO_EDIT_UNLOCKED",
+        category: "account",
+        title: `อาจารย์ที่ปรึกษาเปิดให้แก้ไขข้อมูลบริษัท ${company.name}`,
+        message: "แก้ไขข้อมูลบริษัท/ผู้ติดต่อได้ 1 ครั้ง (ไม่รวมชื่อบริษัทและคำตอบ Checklist)",
+        link: "/status-all",
+        entityType: "Company",
+        entityId: company.id,
+      });
+    }
 
     res.json({
       success: true,
@@ -1154,6 +1186,10 @@ router.put("/students/:studentId/placement-status", async (req: Request, res: Re
       student.companies || []
     );
 
+    if (status !== "PENDING") {
+      await notifyStudents([studentId], placementResultPayload(status, note, updated.id));
+    }
+
     res.json({
       success: true,
       placement: {
@@ -1215,6 +1251,18 @@ router.post("/documents/review-acceptance", async (req: Request, res: Response) 
         advisorAcceptanceReviewedBy: req.staff?.name || req.session.user?.username || "",
       };
       saveSuperAdminState(state);
+      await notifyStudents([student.id], docWorkflowPayload(student.id, "ACCEPTANCE_ADVISOR_APPROVED", "อาจารย์ที่ปรึกษาอนุมัติแบบตอบรับแล้ว",
+        withNote(`${wf.companyName || "สถานประกอบการ"} · รอเจ้าหน้าที่คณะยืนยันและออกหนังสือส่งตัว`, note)));
+      await notifyStaffUsers({
+        type: "ACCEPTANCE_READY_FOR_DISPATCH",
+        category: "document",
+        priority: "HIGH",
+        title: `${student.nameTh} พร้อมออกหนังสือส่งตัว`,
+        message: `อาจารย์ที่ปรึกษาอนุมัติแบบตอบรับจาก ${wf.companyName || "สถานประกอบการ"} แล้ว (รหัส ${student.studentCode})`,
+        link: "/admin-dashboard?ws=documents",
+        entityType: "DocWorkflow",
+        entityId: student.id,
+      }, student.id);
       return res.json({
         success: true,
         message: `อนุมัติแบบตอบรับของ ${student.nameTh} เรียบร้อยแล้ว ระบบได้ส่งเรื่องต่อไปยังเจ้าหน้าที่คณะ (Super Admin) เพื่อยืนยันและออกหนังสือส่งตัว`,
@@ -1304,6 +1352,8 @@ router.post("/documents/review-acceptance", async (req: Request, res: Response) 
       };
 
       saveSuperAdminState(state);
+      await notifyStudents([student.id], docWorkflowPayload(student.id, "ACCEPTANCE_ADVISOR_REJECTED", "อาจารย์ที่ปรึกษาไม่อนุมัติแบบตอบรับ",
+        withNote(`${companyName} · ระบบเก็บเข้าประวัติแล้ว กรุณายื่นบริษัทใหม่`, note), "HIGH"));
       return res.json({
         success: true,
         message: `บันทึกไม่อนุมัติแบบตอบรับของ ${student.nameTh} เรียบร้อยแล้ว ระบบได้เก็บประวัติเข้า Archive และปลดล็อกให้นิสิตยื่นบริษัทใหม่`,

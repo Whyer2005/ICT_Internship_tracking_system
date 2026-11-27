@@ -2,7 +2,6 @@
 
 import React from "react";
 import PageShell from "./PageShell";
-import FloatingNotification from "../FloatingNotification";
 import { ICT_MAJORS, majorLabel, majorOptionsHtml, ictMajorsDataScript } from "../../utils/majors";
 import { jobPositionsDataScript } from "../../utils/jobPositions";
 import { thaiProvincesDataScript } from "../../utils/thaiProvinces";
@@ -3304,8 +3303,6 @@ export default function AdminDashboardPage() {
       styles={PAGE_STYLES}
       scripts={PAGE_SCRIPTS}
       bodyHtml={PAGE_BODY_HTML}
-    >
-      <FloatingNotification />
-    </PageShell>
+    />
   );
 }

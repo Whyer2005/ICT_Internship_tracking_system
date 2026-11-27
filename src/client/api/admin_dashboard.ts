@@ -121,6 +121,13 @@ async function initAdminDashboard() {
         if (btnManageStaffRoles) btnManageStaffRoles.style.display = 'inline-flex';
         if (btnSetAdvisor) btnSetAdvisor.style.display = 'inline-flex';
         if (btnSetStatus) btnSetStatus.style.display = 'inline-flex';
+
+        // ลิงก์จากการแจ้งเตือน เช่น /admin-dashboard?ws=issues → เปิดแท็บงานนั้นทันที
+        const wsParam = urlParams.get('ws');
+        const validWs = ['overview', 'unlock', 'events', 'companies', 'coopjobs', 'documents', 'coop', 'checklist', 'issues'];
+        if (wsParam && validWs.includes(wsParam) && typeof window.switchAdminWorkspace === 'function') {
+          window.switchAdminWorkspace(wsParam);
+        }
       }
     }
   } catch (err) {

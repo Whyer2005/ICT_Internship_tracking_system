@@ -30,6 +30,8 @@ model User {
 
   student Student?
   staff   Staff?
+
+  notifications Notification[]
 }
 
 // =====================================================================
@@ -516,4 +518,39 @@ model CoopApplication {
   @@index([studentId])
   @@index([postingId])
   @@index([status])
+}
+
+// =====================================================================
+// 10. การแจ้งเตือน (Notification Center) — ทุกโรล
+//     audience = โรลที่ผู้รับต้องสลับไปใช้ถึงจะเห็น (STUDENT / ADVISOR / COURSE_ADMIN / STAFF)
+//     เพราะอาจารย์ 1 คนมีได้หลายโรล แจ้งเตือนจึงแยกตามโรลที่กำลังใช้งาน (activeRole)
+//     ดู src/utils/notifications.ts (สร้าง/อ่าน) และ src/utils/notificationRules.ts (กติกา)
+// =====================================================================
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+model Notification {
+  id              Int                  @id @default(autoincrement())
+  recipientUserId Int
+  recipient       User                 @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  audience        String               // STUDENT | ADVISOR | COURSE_ADMIN | STAFF
+  type            String               // รหัสเหตุการณ์ เช่น PLACEMENT_APPROVED, ISSUE_REPORT_NEW
+  category        String               // หมวดสำหรับกรอง เช่น approval, document, cv, issue, deadline
+  priority        NotificationPriority @default(NORMAL)
+  title           String
+  message         String
+  link            String?              // path ภายในระบบ เช่น /status-all
+  entityType      String?
+  entityId        String?
+  dedupeKey       String?              // กันแจ้งซ้ำ (เช่น เตือนใกล้ปิดรอบ) — null = ไม่กัน
+  major           String?              // สาขาของนิสิตที่เรื่องนี้เกี่ยวข้อง (ชื่อมาตรฐานจาก majors.ts) — ใช้กรอง "ทุกสาขา" ของ admin
+  readAt          DateTime?
+  createdAt       DateTime             @default(now())
+
+  @@unique([recipientUserId, audience, dedupeKey])
+  @@index([recipientUserId, audience, readAt, createdAt])
 }

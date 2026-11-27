@@ -42,6 +42,17 @@ import {
   toBatchStudent,
 } from "../utils/letterBatches";
 import { findMajor } from "../utils/majors";
+import { notifyAdvisorStaff, notifyAdvisorsOfStudents, notifyCourseAdminsForStudents, notifyStudents } from "../utils/notifications";
+import {
+  docWorkflowPayload,
+  isDecision,
+  placementResultPayload,
+  staffAssignedPayload,
+  StudentRef,
+  studentEventPayload,
+  trainingResultPayload,
+  withNote,
+} from "../utils/notificationRules";
 import { cohortAcademicYear, cohortCodeOf, ymd } from "../utils/internshipWindowRules";
 
 const upload = multer({
@@ -1038,6 +1049,16 @@ router.post("/students/:studentId/cv-comments", async (req: Request, res: Respon
       }),
       prisma.studentCV.update({ where: { studentId }, data: { lastCommentAt: now } }),
     ]);
+    const authorRoleLabel = CV_COMMENT_ROLE_LABEL[role as CvCommentRole] || "อาจารย์";
+    await notifyStudents([studentId], {
+      type: "CV_COMMENT",
+      category: "cv",
+      title: `${comment.authorName} (${authorRoleLabel}) คอมเมนต์ CV ของคุณ`,
+      message: `"${comment.message}"`,
+      link: "/cv",
+      entityType: "CvComment",
+      entityId: comment.id,
+    });
     res.json({ success: true, message: "บันทึกคอมเมนต์แล้ว — นิสิตจะเห็นในหน้า Resume (CV)", comment });
   } catch (err) {
     console.error("POST /api/admin/students/:id/cv-comments error:", err);
@@ -1091,6 +1112,8 @@ router.put("/students/:studentId/training/:trainingId/status", async (req: Reque
         reviewedAt: new Date(),
       },
     });
+
+    if (isDecision(status)) await notifyStudents([updated.studentId], trainingResultPayload(status, note, updated));
 
     res.json({ success: true, training: updated });
   } catch (err) {
@@ -1201,6 +1224,8 @@ router.put("/students/:studentId/placement-status", async (req: Request, res: Re
       student.companies || []
     );
 
+    if (isDecision(status)) await notifyStudents([studentId], placementResultPayload(status, note, updated.id));
+
     res.json({
       success: true,
       placement: {
@@ -1248,6 +1273,18 @@ router.post("/students/profile-edit-unlock", async (req: Request, res: Response)
     }
     saveSuperAdminStateOrThrow(state);
 
+    if (unlock !== false) {
+      await notifyStudents(allowed.map((s) => s.id), {
+        type: "PROFILE_EDIT_UNLOCKED",
+        category: "account",
+        priority: "HIGH",
+        title: "เปิดให้แก้ไขชื่อ-สกุล / GPAX แล้ว",
+        message: "แก้ไขข้อมูลส่วนตัวที่ล็อกตาม REG ได้ 1 ครั้ง — บันทึกแล้วระบบจะล็อกกลับอัตโนมัติ",
+        link: "/personal-info",
+        entityType: "Student",
+      });
+    }
+
     const skipped = ids.length - allowed.length;
     res.json({
       success: true,
@@ -1290,14 +1327,17 @@ router.put("/students/batch-status", async (req: Request, res: Response) => {
       // CV ไม่มีการอนุมัติแล้ว (คอมเมนต์รายคนในหน้า Profile นิสิต)
       return res.status(400).json({ success: false, message: "เลิกใช้การตั้งสถานะ CV แล้ว — อาจารย์คอมเมนต์ CV ได้ในหน้า Profile นิสิต" });
     } else if (statusType === "training") {
+      const pendingWhere = { studentId: { in: studentIds.map(Number) }, status: "PENDING" as const };
+      const pending = await prisma.trainingRecord.groupBy({ by: ["studentId"], where: pendingWhere, _count: { _all: true } });
       const result = await prisma.trainingRecord.updateMany({
-        where: {
-          studentId: { in: studentIds.map(Number) },
-          status: "PENDING",
-        },
+        where: pendingWhere,
         data: reviewData,
       });
       updatedCount = result.count;
+      if (isDecision(statusValue)) {
+        const countByStudent = new Map(pending.map((p) => [p.studentId, p._count._all]));
+        await notifyStudents([...countByStudent.keys()], (st) => trainingResultPayload(statusValue, note, countByStudent.get(st.id) ?? 0));
+      }
     } else if (statusType === "placement") {
       const canReviewPlacement = Boolean(
         req.staff?.isAdvisor ||
@@ -1307,11 +1347,15 @@ router.put("/students/batch-status", async (req: Request, res: Response) => {
       if (!canReviewPlacement) {
         return res.status(403).json({ success: false, message: "อาจารย์ที่ปรึกษาเท่านั้นที่เป็นผู้ตรวจและให้สถานะข้อมูลบริษัทที่เข้าฝึกงาน" });
       }
+      const placementWhere = { studentId: { in: studentIds.map(Number) } };
+      const withPlacement = await prisma.internshipPlacement.findMany({ where: placementWhere, select: { studentId: true } });
       const result = await prisma.internshipPlacement.updateMany({
-        where: { studentId: { in: studentIds.map(Number) } },
+        where: placementWhere,
         data: reviewData,
       });
       updatedCount = result.count;
+      // แจ้งเฉพาะนิสิตที่มีสถานที่ฝึกงานจริง (คนที่ยังไม่ยื่นไม่ถูกอัปเดต)
+      if (isDecision(statusValue)) await notifyStudents(withPlacement.map((p) => p.studentId), placementResultPayload(statusValue, note));
     } else {
       return res.status(400).json({ success: false, message: "statusType ไม่ถูกต้อง" });
     }
@@ -1353,6 +1397,19 @@ router.put("/students/batch-advisor", async (req: Request, res: Response) => {
       data: { advisorId: parseInt(advisorId, 10) },
     });
 
+    if (result.count > 0) {
+      await notifyAdvisorStaff(advisor.id, staffAssignedPayload("ADVISOR", advisor.id, result.count));
+      await notifyStudents(studentIds.map(Number), {
+        type: "ADVISOR_ASSIGNED",
+        category: "assignment",
+        title: `อาจารย์ที่ปรึกษาของคุณ: ${advisor.name}`,
+        message: "อาจารย์ที่ปรึกษาจะเป็นผู้ตรวจ Checklist และแบบตอบรับจากบริษัท",
+        link: "/profile",
+        entityType: "Staff",
+        entityId: advisor.id,
+      });
+    }
+
     res.json({ success: true, updatedCount: result.count });
   } catch (err) {
     console.error("PUT /api/admin/students/batch-advisor error:", err);
@@ -1389,6 +1446,8 @@ router.put("/students/batch-supervisor", async (req: Request, res: Response) => 
       data: { supervisorId: parseInt(supervisorId, 10) },
     });
 
+    if (result.count > 0) await notifyAdvisorStaff(supervisor.id, staffAssignedPayload("SUPERVISOR", supervisor.id, result.count));
+
     res.json({ success: true, updatedCount: result.count });
   } catch (err) {
     console.error("PUT /api/admin/students/batch-supervisor error:", err);
@@ -1416,6 +1475,12 @@ router.put("/students/drop", async (req: Request, res: Response) => {
 
     const dropReason = (reason && reason.trim()) ? reason.trim() : "ถอนรายวิชาฝึกงาน";
 
+    // แจ้งเฉพาะคนที่เปลี่ยนจากปกติ → ดรอปจริง (คนที่ดรอปอยู่แล้วไม่ต้องแจ้งซ้ำ)
+    const toDrop = await prisma.student.findMany({
+      where: { id: { in: studentIds.map(Number) }, isDropped: false },
+      select: { id: true },
+    });
+
     const result = await prisma.student.updateMany({
       where: { id: { in: studentIds.map(Number) } },
       data: {
@@ -1424,6 +1489,20 @@ router.put("/students/drop", async (req: Request, res: Response) => {
         droppedAt: new Date(),
       },
     });
+
+    const droppedIds = toDrop.map((s) => s.id);
+    await notifyStudents(droppedIds, {
+      type: "STUDENT_DROPPED",
+      category: "account",
+      priority: "HIGH",
+      title: "บัญชีของคุณถูกเปลี่ยนเป็นสถานะดรอปรายวิชาฝึกงาน",
+      message: `เหตุผล: ${dropReason} — หากไม่ถูกต้องกรุณาติดต่ออาจารย์ประจำวิชา`,
+      link: "/student-dashboard",
+      entityType: "Student",
+    });
+    await notifyAdvisorsOfStudents(droppedIds, (st) =>
+      studentEventPayload(st, { type: "ADVISEE_DROPPED", category: "assignment", entityType: "Student", title: `${st.nameTh} ดรอปรายวิชาฝึกงาน`, message: `เหตุผล: ${dropReason}` })
+    );
 
     res.json({
       success: true,
@@ -1454,6 +1533,12 @@ router.put("/students/restore", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "กรุณาเลือกนิสิตอย่างน้อย 1 คน" });
     }
 
+    // แจ้งเฉพาะคนที่ถูกดรอปอยู่จริงก่อนกู้คืน
+    const toRestore = await prisma.student.findMany({
+      where: { id: { in: studentIds.map(Number) }, isDropped: true },
+      select: { id: true },
+    });
+
     const result = await prisma.student.updateMany({
       where: { id: { in: studentIds.map(Number) } },
       data: {
@@ -1461,6 +1546,15 @@ router.put("/students/restore", async (req: Request, res: Response) => {
         dropReason: null,
         droppedAt: null,
       },
+    });
+
+    await notifyStudents(toRestore.map((s) => s.id), {
+      type: "STUDENT_RESTORED",
+      category: "account",
+      title: "กู้คืนสถานะนิสิตฝึกงานของคุณแล้ว",
+      message: "ใช้งานระบบได้ตามปกติ",
+      link: "/student-dashboard",
+      entityType: "Student",
     });
 
     res.json({
@@ -3321,7 +3415,7 @@ router.get("/super-admin/issue-reports", (_req: Request, res: Response) => {
 });
 
 // เปลี่ยนสถานะ + หมายเหตุตอบกลับนิสิต (นิสิตเห็นหมายเหตุนี้ในรายการ "เรื่องที่เคยแจ้ง")
-router.post("/super-admin/issue-reports/:id/status", (req: Request, res: Response) => {
+router.post("/super-admin/issue-reports/:id/status", async (req: Request, res: Response) => {
   try {
     const { status, adminNote } = req.body || {};
     if (!isIssueStatus(status)) {
@@ -3330,6 +3424,8 @@ router.post("/super-admin/issue-reports/:id/status", (req: Request, res: Respons
     const state = loadSuperAdminState();
     const report = (state.issueReports || []).find((r) => r.id === req.params.id);
     if (!report) return res.status(404).json({ success: false, message: "ไม่พบเรื่องที่แจ้ง" });
+    const prevStatus = report.status;
+    const prevNote = report.adminNote;
     report.status = status;
     if (adminNote !== undefined) {
       const note = String(adminNote || "").trim().slice(0, ISSUE_ADMIN_NOTE_MAX);
@@ -3337,6 +3433,18 @@ router.post("/super-admin/issue-reports/:id/status", (req: Request, res: Respons
     }
     report.updatedAt = new Date().toISOString();
     saveSuperAdminStateOrThrow(state);
+    // แจ้งเฉพาะเมื่อสถานะหรือหมายเหตุเปลี่ยนจริง (กดบันทึกซ้ำไม่แจ้งซ้ำ)
+    if (status !== "OPEN" && (status !== prevStatus || report.adminNote !== prevNote)) {
+      await notifyStudents([report.studentId], {
+        type: `ISSUE_${status}`,
+        category: "issue",
+        title: `เรื่อง ${report.id} "${report.title}" — ${ISSUE_STATUS[status]}`,
+        message: report.adminNote ? `ข้อความจากเจ้าหน้าที่: ${report.adminNote}` : "ดูรายละเอียดได้ที่หน้าแจ้งปัญหา",
+        link: "/report-issue",
+        entityType: "IssueReport",
+        entityId: report.id,
+      });
+    }
     res.json({ success: true, message: `อัปเดต ${report.id} เป็น "${ISSUE_STATUS[status]}" แล้ว`, report });
   } catch (err) {
     console.error("POST /api/admin/super-admin/issue-reports/:id/status error:", err);
@@ -3671,6 +3779,11 @@ router.post("/super-admin/documents/issue-request-letter", requireDocumentStaff,
 
     saveSuperAdminStateOrThrow(state);
 
+    await notifyStudents(students.map((s) => s.id), (st) =>
+      docWorkflowPayload(st.id, "REQUEST_LETTER_ISSUED", "ออกหนังสือขอความอนุเคราะห์แล้ว",
+        `เลขที่ ${finalDocNo} · ${state.docWorkflowMap[String(st.id)]?.companyName || "สถานประกอบการ"} — ดาวน์โหลดหนังสือ แล้วอัปโหลดแบบตอบรับเมื่อบริษัทกรอกแล้ว`, "HIGH")
+    );
+
     res.json({
       success: true,
       message:
@@ -3824,6 +3937,11 @@ router.post("/super-admin/documents/record-company-response", requireDocumentSta
       };
 
       saveSuperAdminState(state);
+      await notifyStudents([student.id], docWorkflowPayload(student.id, "COMPANY_REJECTED", `${companyName} ปฏิเสธการรับเข้าฝึกงาน`,
+        withNote("ระบบเก็บเข้าประวัติแล้ว กรุณายื่น Checklist บริษัทแห่งใหม่", note), "HIGH"));
+      await notifyAdvisorsOfStudents([student.id], (st) =>
+        studentEventPayload(st, { type: "COMPANY_REJECTED", category: "document", priority: "HIGH", entityType: "DocWorkflow", title: `${companyName} ปฏิเสธ ${st.nameTh}`, message: "นิสิตต้องยื่นบริษัทใหม่" })
+      );
       return res.json({
         success: true,
         message: `บันทึกผล "บริษัทปฏิเสธ" เรียบร้อยแล้ว ระบบได้ย้าย "${companyName}" เข้าสู่ Archive และปลดล็อกให้ ${student.nameTh} ยื่น Checklist บริษัทแห่งใหม่ได้ทันที`,
@@ -3856,6 +3974,7 @@ router.post("/super-admin/documents/record-company-response", requireDocumentSta
     };
 
     saveSuperAdminState(state);
+    await notifyStudents([student.id], docWorkflowPayload(student.id, "COMPANY_ACCEPTED", `${companyName} ตอบรับเข้าฝึกงานแล้ว`, "เจ้าหน้าที่ยืนยันผลแล้ว รอออกหนังสือส่งตัว"));
     res.json({
       success: true,
       message: `ยืนยันผลใบตอบรับ "รับเข้าฝึกงาน" ของ ${student.nameTh} (${companyName}) เรียบร้อยแล้ว พร้อมสำหรับการอนุมัติออกหนังสือส่งตัว`,
@@ -4008,6 +4127,16 @@ router.post("/super-admin/documents/issue-dispatch-letter", requireDocumentStaff
 
     saveSuperAdminStateOrThrow(state);
 
+    const dispatchIds = students.map((s) => s.id);
+    const dispatchInfo = (id: number) => `เลขที่ ${finalDocNo} · ${state.docWorkflowMap[String(id)]?.companyName || "สถานประกอบการ"}`;
+    await notifyStudents(dispatchIds, (st) =>
+      docWorkflowPayload(st.id, "DISPATCH_LETTER_ISSUED", "ออกหนังสือส่งตัวเข้าฝึกงานแล้ว", `${dispatchInfo(st.id)} — ดาวน์โหลดได้ที่หน้าจัดการข้อมูลฝึกงาน`, "HIGH")
+    );
+    const dispatchPayload = (st: StudentRef, priority?: "LOW") =>
+      studentEventPayload(st, { type: "DISPATCH_LETTER_ISSUED", category: "document", priority, entityType: "DocWorkflow", title: `${st.nameTh} ได้รับหนังสือส่งตัวแล้ว`, message: dispatchInfo(st.id) });
+    await notifyAdvisorsOfStudents(dispatchIds, (st) => dispatchPayload(st));
+    await notifyCourseAdminsForStudents(dispatchIds, (st) => dispatchPayload(st, "LOW"));
+
     res.json({
       success: true,
       message: `อนุมัติและออกหนังสือส่งตัวนิสิตเข้าฝึกงาน เลขที่ ${finalDocNo} จำนวน ${students.length} คน เรียบร้อยแล้ว`,
@@ -4034,6 +4163,10 @@ router.post("/super-admin/documents/toggle-lock", requireDocumentStaff, async (r
     wf.isLocked = !wf.isLocked;
     wf.unlockedByAdmin = !wf.isLocked;
     saveSuperAdminState(state);
+    if (!wf.isLocked) {
+      await notifyStudents([Number(studentId)], docWorkflowPayload(Number(studentId), "DOC_WORKFLOW_UNLOCKED",
+        "เจ้าหน้าที่ปลดล็อกเอกสารฝึกงานของคุณ", "แก้ไขข้อมูลบริษัทหรือขอออกหนังสือใหม่ได้ (กรณีพิเศษ)"));
+    }
     res.json({
       success: true,
       message: wf.isLocked
